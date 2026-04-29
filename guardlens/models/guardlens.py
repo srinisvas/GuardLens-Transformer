@@ -104,15 +104,25 @@ class GuardLens(nn.Module):
         turn_mask: torch.Tensor,
         role_ids: torch.Tensor,
         compute_attribution: bool = True,
+        attribution_mask: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         Full forward pass.
+
+        Args:
+            attribution_mask: [B, T, S] optional representation-level mask.
+                1=keep, 0=zero the embedding. Used by causal evaluation
+                metrics (deviation drop, flip rate, necessity, sufficiency).
 
         Returns token_embeds in the output dict so forward_cf can
         reuse them without re-running the backbone.
         """
         # 1. Encode turns
         token_embeds = self.encode_turns(input_ids, attention_mask)
+
+        # Apply representation-level counterfactual mask if provided
+        if attribution_mask is not None:
+            token_embeds = token_embeds * attribution_mask.unsqueeze(-1).float()
 
         # 2. Cross-turn attention
         cross_embeds = self.cross_turn(
