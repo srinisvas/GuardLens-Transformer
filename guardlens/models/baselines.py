@@ -46,7 +46,7 @@ class ConversationDeBERTa(nn.Module):
         ctx = torch.no_grad() if self.config.freeze_backbone else torch.enable_grad()
         with ctx:
             outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        cls_embed = outputs.last_hidden_state[:, 0, :]
+        cls_embed = outputs.last_hidden_state[:, 0, :].float()
         logits = self.classifier(cls_embed).squeeze(-1)
         return {
             "cls_logits": logits,
@@ -100,7 +100,7 @@ class TurnLevelClassifier(nn.Module):
         ctx = torch.no_grad() if self.config.freeze_backbone else torch.enable_grad()
         with ctx:
             outputs = self.backbone(input_ids=flat_ids, attention_mask=flat_mask)
-        cls_embeds = outputs.last_hidden_state[:, 0, :].reshape(B, T, -1)
+        cls_embeds = outputs.last_hidden_state[:, 0, :].float().reshape(B, T, -1)
 
         turn_logits = self.turn_classifier(cls_embeds).squeeze(-1)
         turn_logits = turn_logits.masked_fill(turn_mask == 0, -1e9)
