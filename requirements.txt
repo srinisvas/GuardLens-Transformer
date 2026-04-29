@@ -1,0 +1,6 @@
+# GuardLens training dependencies
+torch>=2.2.0
+transformers>=4.40.0
+accelerate>=0.28.0
+numpy>=1.24.0
+requests>=2.31.0
