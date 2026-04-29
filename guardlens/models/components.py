@@ -117,6 +117,7 @@ class ClassificationHead(nn.Module):
 
     def __init__(self, config: GuardLensConfig):
         super().__init__()
+        self.expects_fusion = config.use_gated_fusion
         input_dim = config.cross_turn_dim
         if config.use_gated_fusion:
             input_dim = config.cross_turn_dim * 2
@@ -134,6 +135,11 @@ class ClassificationHead(nn.Module):
     def forward(self, pooled: torch.Tensor, gated: torch.Tensor = None):
         if gated is not None:
             x = torch.cat([pooled, gated], dim=-1)
+        elif self.expects_fusion:
+            # Phase 1: attribution not computed yet, but MLP expects
+            # concatenated [pooled, gated]. Pad with zeros.
+            zeros = torch.zeros_like(pooled)
+            x = torch.cat([pooled, zeros], dim=-1)
         else:
             x = pooled
         return self.mlp(x)
