@@ -29,7 +29,7 @@
 set -uo pipefail  # No -e: we want to continue even if one model fails
 
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
-CONDA_ENV="$HOME/work/conda_envs/dataset_gen"
+CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
 DATA="$HOME/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl"
 BASE_OUTPUT="$HOME/work/results/dataset_gen/checkpoints"
 
