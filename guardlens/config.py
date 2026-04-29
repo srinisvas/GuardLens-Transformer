@@ -41,8 +41,11 @@ class GuardLensConfig:
     max_grad_norm: float = 1.0
 
     # Loss weights (scheduled during training)
-    lambda_attr: float = 0.5
-    lambda_cf: float = 0.3
+    # Attribution is the primary objective; classification is auxiliary.
+    # Phase 2+: L = lambda_cls * L_cls + lambda_attr * L_attr + lambda_cf * L_cf
+    lambda_cls: float = 0.2      # Classification: auxiliary signal
+    lambda_attr: float = 1.0     # Attribution: primary objective
+    lambda_cf: float = 0.5       # Counterfactual: causal refinement
 
     # Training phases
     phase1_epochs: int = 5    # Classification only

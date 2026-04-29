@@ -33,7 +33,7 @@ def train_epoch(
         model.backbone.eval()
 
     phase = get_current_phase(epoch, config)
-    lambda_attr, lambda_cf = get_lambda_schedule(epoch, config)
+    lambda_cls, lambda_attr, lambda_cf = get_lambda_schedule(epoch, config)
 
     total_loss = 0.0
     total_cls_loss = 0.0
@@ -63,7 +63,8 @@ def train_epoch(
 
         losses = loss_fn(
             outputs, labels, token_labels,
-            phase=phase, lambda_attr=lambda_attr, lambda_cf=lambda_cf,
+            phase=phase, lambda_cls=lambda_cls,
+            lambda_attr=lambda_attr, lambda_cf=lambda_cf,
         )
         loss = losses["total"]
 
@@ -109,6 +110,7 @@ def train_epoch(
         "cf_loss": total_cf_loss / max(1, n_batches),
         "accuracy": correct / max(1, total),
         "phase": phase,
+        "lambda_cls": lambda_cls,
         "lambda_attr": lambda_attr,
         "lambda_cf": lambda_cf,
     }
