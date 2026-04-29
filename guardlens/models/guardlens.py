@@ -80,7 +80,9 @@ class GuardLens(nn.Module):
             outputs = self.backbone(input_ids=flat_ids, attention_mask=flat_mask)
             hidden = outputs.last_hidden_state
 
-        return hidden.reshape(B, T, S, -1)
+        # DeBERTa may load in float16 on some systems. Trainable layers
+        # are float32, so cast here to avoid dtype mismatch.
+        return hidden.reshape(B, T, S, -1).float()
 
     def pool_with_mask(
         self,
