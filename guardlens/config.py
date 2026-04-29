@@ -67,4 +67,4 @@ class GuardLensConfig:
     device: str = "cuda"
     num_workers: int = 4
     eval_every: int = 1
-    patience: int = 5
+    patience: int = 8
