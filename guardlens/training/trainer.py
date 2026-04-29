@@ -33,7 +33,7 @@ def train_epoch(
         model.backbone.eval()
 
     phase = get_current_phase(epoch, config)
-    lambda_attr, lambda_cf = get_lambda_schedule(epoch, config)
+    lambda_cls, lambda_attr, lambda_cf = get_lambda_schedule(epoch, config)
 
     total_loss = 0.0
     total_cls_loss = 0.0
@@ -63,7 +63,8 @@ def train_epoch(
 
         losses = loss_fn(
             outputs, labels, token_labels,
-            phase=phase, lambda_attr=lambda_attr, lambda_cf=lambda_cf,
+            phase=phase, lambda_cls=lambda_cls,
+            lambda_attr=lambda_attr, lambda_cf=lambda_cf,
         )
         loss = losses["total"]
 
@@ -109,6 +110,7 @@ def train_epoch(
         "cf_loss": total_cf_loss / max(1, n_batches),
         "accuracy": correct / max(1, total),
         "phase": phase,
+        "lambda_cls": lambda_cls,
         "lambda_attr": lambda_attr,
         "lambda_cf": lambda_cf,
     }
@@ -319,8 +321,12 @@ def train(
     os.makedirs(output_dir, exist_ok=True)
 
     # Training loop
-    best_f1 = 0.0
+    # Track best checkpoint per phase. Phase 1 optimizes classification only.
+    # Phase 2+ optimizes a composite of classification F1 and attribution F1,
+    # because the paper's contribution is attribution, not just classification.
+    best_scores = {1: 0.0, 2: 0.0, 3: 0.0}
     patience_counter = 0
+    last_phase = 1
 
     print(f"\nTraining {config.max_epochs} epochs:")
     print(f"  Phase 1 (cls):  0-{config.phase1_epochs-1}")
@@ -349,31 +355,70 @@ def train(
                 parts = [f"{k}={v:.3f}" for k, v in val_metrics["difficulty_accuracy"].items()]
                 print(f"       diff: {' '.join(parts)}")
 
-            if val_metrics["f1"] > best_f1:
-                best_f1 = val_metrics["f1"]
+            # Reset patience when entering a new phase
+            if phase != last_phase:
+                patience_counter = 0
+                last_phase = phase
+
+            # Compute composite score based on phase
+            if phase == 1:
+                # Phase 1: pure classification
+                composite = val_metrics["f1"]
+            else:
+                # Phase 2+: 60% classification F1 + 40% attribution F1
+                # Attribution is the novel contribution and must be optimized
+                composite = 0.6 * val_metrics["f1"] + 0.4 * val_metrics["attr_f1"]
+
+            # Save best per phase
+            ckpt_name = f"best_phase{phase}.pt"
+            if composite > best_scores[phase]:
+                best_scores[phase] = composite
                 patience_counter = 0
                 torch.save({
                     "epoch": epoch,
+                    "phase": phase,
                     "model_name": model_name,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "config": config,
                     "val_metrics": val_metrics,
-                }, os.path.join(output_dir, "best.pt"))
-                print(f"       saved (F1={best_f1:.4f})")
+                    "composite_score": composite,
+                }, os.path.join(output_dir, ckpt_name))
+                print(f"       saved {ckpt_name} (composite={composite:.4f}, "
+                      f"F1={val_metrics['f1']:.4f}, attrF1={val_metrics['attr_f1']:.4f})")
             else:
                 patience_counter += 1
                 if patience_counter >= config.patience and phase >= 2:
                     print(f"       early stop (patience={config.patience})")
                     break
 
-    # Final test
+    # Select the best checkpoint for final evaluation:
+    # Prefer the highest phase checkpoint that exists (phase 3 > 2 > 1)
+    # because later phases have trained attribution heads.
+    best_ckpt_path = None
+    for p in [3, 2, 1]:
+        candidate = os.path.join(output_dir, f"best_phase{p}.pt")
+        if os.path.exists(candidate):
+            best_ckpt_path = candidate
+            break
+
+    if best_ckpt_path is None:
+        print("ERROR: No checkpoint found!")
+        return {}
+
+    # Also save as best.pt for convenience
+    import shutil
+    shutil.copy2(best_ckpt_path, os.path.join(output_dir, "best.pt"))
+
+    # Final test with the attribution-trained checkpoint
     print("\n" + "=" * 60)
     print(f"  Test evaluation ({model_name})")
+    print(f"  Checkpoint: {os.path.basename(best_ckpt_path)}")
     print("=" * 60)
 
-    ckpt = torch.load(os.path.join(output_dir, "best.pt"), weights_only=False)
+    ckpt = torch.load(best_ckpt_path, weights_only=False)
     model.load_state_dict(ckpt["model_state_dict"])
+    print(f"  Loaded from epoch {ckpt['epoch']}, phase {ckpt['phase']}")
     test_metrics = evaluate(model, test_loader, loss_fn, config, device)
 
     print(f"  Accuracy:  {test_metrics['accuracy']:.4f}")

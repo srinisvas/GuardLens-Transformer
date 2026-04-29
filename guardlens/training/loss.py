@@ -29,15 +29,22 @@ class GuardLensLoss(nn.Module):
         labels: torch.Tensor,
         token_labels: torch.Tensor,
         phase: int = 1,
-        lambda_attr: float = 0.5,
-        lambda_cf: float = 0.3,
+        lambda_cls: float = 1.0,
+        lambda_attr: float = 1.0,
+        lambda_cf: float = 0.5,
     ) -> Dict[str, torch.Tensor]:
         losses = {}
 
-        # Classification loss (always active)
+        # Classification loss
         l_cls = self.cls_loss(outputs["cls_logits"], labels.float())
         losses["cls"] = l_cls
-        total = l_cls
+
+        if phase == 1:
+            # Phase 1: classification only (full weight to bootstrap)
+            total = l_cls
+        else:
+            # Phase 2+: classification is auxiliary, attribution is primary
+            total = lambda_cls * l_cls
 
         # Attribution loss (phase 2+)
         if phase >= 2 and outputs["attr_logits"] is not None:
