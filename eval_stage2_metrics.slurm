@@ -1,40 +1,50 @@
 #!/bin/bash
-#SBATCH --job-name=guardlens_eval_metrics
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:a100:1
-#SBATCH --ntasks=1
+#SBATCH --job-name=gl-eval-metrics
+#SBATCH --account=V_cs_hat_capstone_mkhan74
+#SBATCH --partition=defq
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=40G
-#SBATCH --time=06:00:00
-#SBATCH --output=logs/eval_metrics_%j.out
-#SBATCH --error=logs/eval_metrics_%j.err
+#SBATCH --mem=64G
+#SBATCH --time=08:00:00
+#SBATCH --output=logs/eval_stage2_%j.out
+#SBATCH --error=logs/eval_stage2_%j.err
 
-set -euo pipefail
-mkdir -p logs
+# Stage 2: External evaluator + implicit/explicit subset analysis
+# Run after Stage 1 completes.
+# Submit: sbatch eval_stage2_metrics.slurm
+
+set -uo pipefail
+
+PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
+CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
+RESULTS_DIR="$HOME/work/results/dataset_gen"
+CKPT_DIR="$RESULTS_DIR/checkpoints"
+DATA="$RESULTS_DIR/semantic_multiturn_v10_augmented.jsonl"
+OUT_DIR="$RESULTS_DIR/results"
+
+CONDA_BASE=$(conda info --base 2>/dev/null)
+source "$CONDA_BASE/etc/profile.d/conda.sh"
+conda activate "$CONDA_ENV"
+
+export TMPDIR="$HOME/work/.tmp"
+export HF_HOME="$HOME/work/hf_models"
+export TRANSFORMERS_CACHE="$HOME/work/hf_models/hub"
+mkdir -p "$TMPDIR"
+
+cd "$PROJECT_DIR"
 
 echo "========================================================"
 echo "  GuardLens Eval Stage 2: External Eval + Subset Analysis"
-echo "  Job: $SLURM_JOB_ID  Node: $SLURMD_NODENAME"
-echo "  GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
+echo "  Job: ${SLURM_JOB_ID:-interactive}  Node: $(hostname)"
 echo "  Start: $(date)"
 echo "========================================================"
-
-source ~/.bashrc
-conda activate guardlens 2>/dev/null || source ~/work/venv/guardlens/bin/activate
-
-RESULTS_DIR=~/work/results/dataset_gen
-CKPT_DIR=$RESULTS_DIR/checkpoints
-DATA=$RESULTS_DIR/semantic_multiturn_v10_augmented.jsonl
-OUT_DIR=$RESULTS_DIR/results
-mkdir -p $OUT_DIR
-
-cd ~/work/GuardLens-Transformer
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 # -------------------------------------------------------
-# 2a. Implicit vs Explicit Subset Analysis
+# 2a. Implicit / Explicit / Hard-Negative Subset Analysis
 # -------------------------------------------------------
 echo ""
-echo "=== 2a. Implicit / Explicit / Hard-Negative Subset Analysis ==="
+echo "=== 2a. Implicit/Explicit/Hard-Negative Subset Analysis ==="
 echo "Start: $(date)"
 
 python -m guardlens.evaluation.eval_implicit_explicit \
@@ -44,9 +54,10 @@ python -m guardlens.evaluation.eval_implicit_explicit \
     --methods guardlens surface_risk integrated_gradients grad_x_input attention random \
     --top-k 0.05 0.10 0.15 0.20 \
     --batch-size 4 \
-    --device cuda
+    --device cuda \
+&& echo "2a: SUCCESS" || echo "2a: FAILED (exit $?)"
 
-echo "2a complete: $(date)"
+echo "2a end: $(date)"
 
 # -------------------------------------------------------
 # 2b. External Evaluator -- Full Test Set
@@ -64,60 +75,57 @@ python -m guardlens.evaluation.eval_external \
     --output "$OUT_DIR/external_eval_full.json" \
     --top-k 0.05 0.10 0.15 0.20 \
     --batch-size 4 \
-    --device cuda
+    --device cuda \
+&& echo "2b: SUCCESS" || echo "2b: FAILED (exit $?)"
 
-echo "2b complete: $(date)"
+echo "2b end: $(date)"
 
 # -------------------------------------------------------
-# 2c. External Evaluator -- Implicit Subset Only
+# 2c. External Evaluator -- Implicit Subset
 # -------------------------------------------------------
 echo ""
-echo "=== 2c. External Evaluator (implicit trigger subset) ==="
+echo "=== 2c. External Evaluator (implicit subset) ==="
 echo "Start: $(date)"
 
 python -m guardlens.evaluation.eval_external \
     --data "$DATA" \
     --attribution-checkpoint "$CKPT_DIR/guardlens/best.pt" \
-    --external-checkpoints \
-        "$CKPT_DIR/conversation_deberta/best.pt" \
+    --external-checkpoints "$CKPT_DIR/conversation_deberta/best.pt" \
     --output "$OUT_DIR/external_eval_implicit.json" \
     --top-k 0.05 0.10 0.15 0.20 \
     --subset implicit \
     --batch-size 4 \
-    --device cuda
+    --device cuda \
+&& echo "2c: SUCCESS" || echo "2c: FAILED (exit $?)"
 
-echo "2c complete: $(date)"
+echo "2c end: $(date)"
 
 # -------------------------------------------------------
-# 2d. External Evaluator -- Explicit Subset Only
+# 2d. External Evaluator -- Explicit Subset
 # -------------------------------------------------------
 echo ""
-echo "=== 2d. External Evaluator (explicit trigger subset) ==="
+echo "=== 2d. External Evaluator (explicit subset) ==="
 echo "Start: $(date)"
 
 python -m guardlens.evaluation.eval_external \
     --data "$DATA" \
     --attribution-checkpoint "$CKPT_DIR/guardlens/best.pt" \
-    --external-checkpoints \
-        "$CKPT_DIR/conversation_deberta/best.pt" \
+    --external-checkpoints "$CKPT_DIR/conversation_deberta/best.pt" \
     --output "$OUT_DIR/external_eval_explicit.json" \
     --top-k 0.05 0.10 0.15 0.20 \
     --subset explicit \
     --batch-size 4 \
-    --device cuda
+    --device cuda \
+&& echo "2d: SUCCESS" || echo "2d: FAILED (exit $?)"
 
-echo "2d complete: $(date)"
+echo "2d end: $(date)"
 
 echo ""
 echo "========================================================"
 echo "  Stage 2 complete: $(date)"
-echo "  Outputs:"
+echo "  Outputs in: $OUT_DIR"
 for f in implicit_explicit_eval.json external_eval_full.json \
           external_eval_implicit.json external_eval_explicit.json; do
-    if [ -f "$OUT_DIR/$f" ]; then
-        echo "    OK: $OUT_DIR/$f"
-    else
-        echo "    MISSING: $OUT_DIR/$f"
-    fi
+    [ -f "$OUT_DIR/$f" ] && echo "  OK: $f" || echo "  MISSING: $f"
 done
 echo "========================================================"
