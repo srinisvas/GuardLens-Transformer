@@ -130,11 +130,13 @@ class ExternalEvaluatorWrapper:
         turn_mask = batch.get("turn_mask", torch.ones(
             input_ids.shape[:2], device=self.device
         )).to(self.device)
+        role_ids = batch.get("role_ids", torch.zeros_like(
+            batch["input_ids"]
+        )).to(self.device)
 
         # Apply attribution mask: zero-out masked tokens by replacing with PAD
         if attribution_mask is not None:
             attr_mask = attribution_mask.to(self.device)  # [B, T, S]
-            # Where mask=0, replace token id with PAD and zero attention
             pad_ids = torch.full_like(input_ids, self.pad_token_id)
             input_ids = torch.where(attr_mask.bool(), input_ids, pad_ids)
             attention_mask = attention_mask * attr_mask
@@ -144,18 +146,17 @@ class ExternalEvaluatorWrapper:
             B, T, S = input_ids.shape
             flat_ids = input_ids.reshape(B, T * S)
             flat_mask = attention_mask.reshape(B, T * S)
-            # Trim trailing padding for efficiency
             max_len = flat_mask.sum(dim=1).max().item()
             max_len = max(1, int(max_len))
             flat_ids = flat_ids[:, :max_len]
             flat_mask = flat_mask[:, :max_len]
             out = self.model(input_ids=flat_ids, attention_mask=flat_mask)
         else:
-            # TurnLevelClassifier or similar [B, T, S] models
             out = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 turn_mask=turn_mask,
+                role_ids=role_ids,
             )
 
         return torch.sigmoid(out["cls_logits"])
