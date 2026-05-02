@@ -228,6 +228,7 @@ def evaluate_batch(
     batch: Dict,
     device: torch.device,
     top_k_fractions: List[float],
+    model_name: str = "guardlens",
 ) -> Dict:
     """
     Returns classification predictions and attribution-based causal metrics
@@ -241,13 +242,25 @@ def evaluate_batch(
     role_ids = batch["role_ids"].to(device)
     labels = batch["labels"].to(device)
 
-    out = model(
-        input_ids=input_ids,
-        attention_mask=attention_mask,
-        turn_mask=turn_mask,
-        role_ids=role_ids,
-        compute_attribution=True,
-    )
+    # ConversationDeBERTa expects flat [B, L] input -- flatten and trim padding
+    if model_name == "conversation_deberta":
+        B, T, S = input_ids.shape
+        flat_ids = input_ids.reshape(B, T * S)
+        flat_mask = attention_mask.reshape(B, T * S)
+        max_len = max(1, int(flat_mask.sum(dim=1).max().item()))
+        flat_ids = flat_ids[:, :max_len]
+        flat_mask = flat_mask[:, :max_len]
+        out = model(input_ids=flat_ids, attention_mask=flat_mask)
+        # No attribution head on flat baselines
+        out["attr_probs"] = None
+    else:
+        out = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            turn_mask=turn_mask,
+            role_ids=role_ids,
+            compute_attribution=True,
+        )
 
     probs = torch.sigmoid(out["cls_logits"])
     preds = (probs > 0.5).long()
@@ -447,7 +460,7 @@ def main():
         if (batch_idx + 1) % 20 == 0:
             print(f"  {batch_idx+1}/{len(eval_loader)}...")
 
-        result = evaluate_batch(model, batch, device, args.top_k)
+        result = evaluate_batch(model, batch, device, args.top_k, model_name=model_name)
         all_preds.extend(result["cls"]["preds"])
         all_labels.extend(result["cls"]["labels"])
         all_probs.extend(result["cls"]["probs"])
