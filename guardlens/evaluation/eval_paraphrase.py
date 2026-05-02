@@ -193,39 +193,61 @@ class HuggingFaceParaphraser(ParaphraseBackend):
 
     def __init__(
         self,
-        model_name: str = "meta-llama/Llama-3.1-8B-Instruct",
+        model_name: str = "Qwen/Qwen2.5-7B-Instruct",
         device: str = "cuda",
     ):
-        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+        from transformers import AutoModelForCausalLM, AutoTokenizer
         print(f"    Loading paraphrase model {model_name}...")
-        self.pipe = pipeline(
-            "text-generation",
-            model=model_name,
-            device=0 if device == "cuda" else -1,
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name,
             torch_dtype=torch.float16,
-            max_new_tokens=200,
-            temperature=0.7,
-            do_sample=True,
+            device_map="auto" if device == "cuda" else None,
         )
+        self.model.eval()
+        self.device = self.model.device
         self.model_name = model_name
-
-    def _build_prompt(self, text: str) -> str:
-        return (
-            f"<|system|>You are a paraphrasing assistant. Rewrite in different "
-            f"words, same meaning. Output ONLY the rewrite.\n"
-            f"<|user|>Rewrite: {text}\n"
-            f"<|assistant|>"
-        )
 
     def paraphrase(self, text: str, context: str = "") -> str:
         try:
-            result = self.pipe(self._build_prompt(text))[0]["generated_text"]
-            # Extract only the assistant's part
-            marker = "<|assistant|>"
-            if marker in result:
-                result = result.split(marker)[-1].strip()
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a paraphrasing assistant. When given a message, "
+                        "rewrite it in different words while preserving the exact "
+                        "intent and meaning. Output ONLY the rewritten message, "
+                        "nothing else."
+                    ),
+                },
+                {"role": "user", "content": f"Rewrite this: {text}"},
+            ]
+            input_ids = self.tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+            ).to(self.device)
+
+            with torch.no_grad():
+                out = self.model.generate(
+                    input_ids,
+                    max_new_tokens=200,
+                    temperature=0.7,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                )
+            new_tokens = out[0][input_ids.shape[1]:]
+            result = self.tokenizer.decode(
+                new_tokens, skip_special_tokens=True
+            ).strip()
+            # Strip common preambles the model adds despite "Output ONLY"
+            for prefix in ["Sure,", "Sure ", "Here is", "Here's",
+                           "Certainly,", "Rewrite:", "Rewritten:"]:
+                if result.lower().startswith(prefix.lower()):
+                    result = result[len(prefix):].strip(":,. ")
             return result if len(result) >= 10 else text
-        except Exception:
+        except Exception as e:
+            print(f"    HF paraphrase error: {e}")
             return text
 
 
