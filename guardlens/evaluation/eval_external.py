@@ -239,7 +239,9 @@ def compute_deviation_drop(
 
         valid = (
             batch["attention_mask"][i] *
-            batch.get("turn_mask", torch.ones_like(batch["attention_mask"])[:, :, 0].unsqueeze(-1))[i]
+            batch.get("turn_mask", torch.ones(
+                batch["attention_mask"].shape[:2]
+            ))[i].unsqueeze(-1)
         )
         topk_mask = _build_topk_mask(attr_scores[i], valid, k_frac)
         cf_prob = evaluator.get_prob(single, attribution_mask=topk_mask.unsqueeze(0))[0].item()
@@ -271,7 +273,9 @@ def compute_flip_rate(
 
         valid = (
             batch["attention_mask"][i] *
-            batch.get("turn_mask", torch.ones_like(batch["attention_mask"])[:, :, 0].unsqueeze(-1))[i]
+            batch.get("turn_mask", torch.ones(
+                batch["attention_mask"].shape[:2]
+            ))[i].unsqueeze(-1)
         )
         topk_mask = _build_topk_mask(attr_scores[i], valid, k_frac)
         cf_prob = evaluator.get_prob(single, attribution_mask=topk_mask.unsqueeze(0))[0].item()
@@ -315,7 +319,9 @@ def compute_sufficiency(
 
         valid = (
             batch["attention_mask"][i] *
-            batch.get("turn_mask", torch.ones_like(batch["attention_mask"])[:, :, 0].unsqueeze(-1))[i]
+            batch.get("turn_mask", torch.ones(
+                batch["attention_mask"].shape[:2]
+            ))[i].unsqueeze(-1)
         )
         suf_mask = _build_sufficiency_mask(attr_scores[i], valid, k_frac)
         cf_prob = evaluator.get_prob(single, attribution_mask=suf_mask.unsqueeze(0))[0].item()
