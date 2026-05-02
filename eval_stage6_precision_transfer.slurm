@@ -55,14 +55,19 @@ echo ""
 echo "=== 6a. Attribution Precision + Minimality Curve ==="
 echo "Start: $(date)"
 
+# Note: --batch-size 1 for safety with gradient methods.
+# Methods restricted to non-gradient ones: integrated_gradients and
+# grad_x_input run inside torch.enable_grad() and OOM at any non-trivial
+# batch size. The minimality curve story (sharp inflection) is best told
+# with guardlens vs surface_risk vs random anyway.
 python -m guardlens.evaluation.eval_attribution_precision \
     --data "$DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/attribution_precision.json" \
     --device cuda \
-    --batch-size 8 \
+    --batch-size 4 \
     --k-fracs 0.02 0.05 0.08 0.10 0.12 0.15 0.18 0.20 0.25 0.30 \
-    --methods guardlens surface_risk integrated_gradients grad_x_input random \
+    --methods guardlens surface_risk random \
 && echo "6a: SUCCESS" || echo "6a: FAILED (exit $?)"
 
 echo "6a end: $(date)"
