@@ -31,6 +31,8 @@ conda activate "$CONDA_ENV"
 export TMPDIR="$HOME/work/.tmp"
 export HF_HOME="$HOME/work/hf_models"
 export TRANSFORMERS_CACHE="$HOME/work/hf_models/hub"
+export HF_TOKEN=$(cat $HOME/.hf_token)
+export HUGGING_FACE_HUB_TOKEN=$HF_TOKEN
 mkdir -p "$TMPDIR"
 
 cd "$PROJECT_DIR"
