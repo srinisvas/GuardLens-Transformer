@@ -1,0 +1,76 @@
+{
+  "self_eval": {
+    "5%": {
+      "deviation_drop": 0.914713468987126,
+      "flip_rate": 0.9333333333333333,
+      "necessity": 0.9333333333333333,
+      "sufficiency": 0.8666666666666667,
+      "n_adversarial": 45
+    },
+    "10%": {
+      "deviation_drop": 0.9819299292431323,
+      "flip_rate": 1.0,
+      "necessity": 1.0,
+      "sufficiency": 0.9777777777777777,
+      "n_adversarial": 45
+    },
+    "15%": {
+      "deviation_drop": 0.9805234117313779,
+      "flip_rate": 1.0,
+      "necessity": 1.0,
+      "sufficiency": 1.0,
+      "n_adversarial": 45
+    },
+    "20%": {
+      "deviation_drop": 0.9740808303347472,
+      "flip_rate": 1.0,
+      "necessity": 1.0,
+      "sufficiency": 0.9777777777777777,
+      "n_adversarial": 45
+    }
+  },
+  "external_eval": {
+    "conversation_deberta (ext.)": {
+      "5%": {
+        "deviation_drop": 0.029406458139419556,
+        "flip_rate": 0.3333333333333333,
+        "necessity": 0.3333333333333333,
+        "sufficiency": 1.0,
+        "n_adversarial": 3
+      },
+      "10%": {
+        "deviation_drop": 0.05608856678009033,
+        "flip_rate": 0.3333333333333333,
+        "necessity": 0.3333333333333333,
+        "sufficiency": 1.0,
+        "n_adversarial": 3
+      },
+      "15%": {
+        "deviation_drop": 0.108660489320755,
+        "flip_rate": 1.0,
+        "necessity": 1.0,
+        "sufficiency": 1.0,
+        "n_adversarial": 3
+      },
+      "20%": {
+        "deviation_drop": 0.23946880549192429,
+        "flip_rate": 1.0,
+        "necessity": 1.0,
+        "sufficiency": 1.0,
+        "n_adversarial": 3
+      }
+    }
+  },
+  "subset": "explicit",
+  "n_test_samples": 50,
+  "top_k_fractions": [
+    0.05,
+    0.1,
+    0.15,
+    0.2
+  ],
+  "attribution_checkpoint": "/gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/guardlens/best.pt",
+  "external_checkpoints": [
+    "/gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/conversation_deberta/best.pt"
+  ]
+}

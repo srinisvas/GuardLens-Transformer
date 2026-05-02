@@ -1,0 +1,36 @@
+========================================================
+  GuardLens Eval Stage 1: Data Setup
+  Job: 20920  Node: g003
+  Start: Thu Apr 30 16:19:38 EDT 2026
+========================================================
+Verifying training checkpoints...
+  OK: guardlens/best.pt
+  OK: guardlens_no_fusion/best.pt
+  OK: guardlens_no_cf/best.pt
+  OK: turn_level/best.pt
+  OK: conversation_deberta/best.pt
+  OK: causal_eval_results.json
+
+Downloading AdvBench...
+  AdvBench: OK
+Downloading HarmBench...
+  HarmBench: OK
+Downloading JailbreakBench...
+  JailbreakBench: FAILED (will continue without it)
+
+Building cross_dataset_combined.jsonl...
+  Combined: 837 behaviors
+    advbench: 520
+    harmbench: 317
+
+========================================================
+  Stage 1 complete: Thu Apr 30 16:19:39 EDT 2026
+  Files in: /gpfs/home/s001/ssubram7/work/results/dataset_gen/eval_data
+total 3
+drwxrwxr-x 5 ssubram7 ssubram7   4096 Apr 30 16:19 .
+drwxrwxr-x 5 ssubram7 ssubram7   4096 Apr 30 16:19 ..
+drwxrwxr-x 2 ssubram7 ssubram7   4096 Apr 30 16:19 advbench
+-rw-rw-r-- 1 ssubram7 ssubram7 139974 Apr 30 16:19 cross_dataset_combined.jsonl
+drwxrwxr-x 2 ssubram7 ssubram7   4096 Apr 30 16:19 harmbench
+drwxrwxr-x 2 ssubram7 ssubram7   4096 Apr 30 16:19 jailbreakbench
+========================================================

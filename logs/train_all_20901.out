@@ -1,0 +1,512 @@
+========================================================
+  GuardLens: Full experiment suite
+  Job:    20901
+  Node:   g004
+  Data:   /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+
+========================================================
+  Training: guardlens (25 epochs)
+  Output:   /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/guardlens
+  Start:    12:21:34
+========================================================
+Device: cuda
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 records
+  Train: 1492, Val: 180, Test: 195
+Building model: guardlens (GuardLens)...
+  Total: 185,872,130  Trainable: 2,040,578  Frozen: 183,831,552
+
+Training 25 epochs:
+  Phase 1 (cls):  0-4
+  Phase 2 (+attr): 5-19
+  Phase 3 (+cf):  20-24
+Ep   0 P1 | loss 0.6768 acc 0.579 | val F1 0.000 acc 0.533 | attr F1 0.085
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   1 P1 | loss 0.4263 acc 0.782 | val F1 0.953 acc 0.956 | attr F1 0.060
+       diff: easy=0.939 medium=0.974 hard=0.977
+       saved best_phase1.pt (composite=0.9535, F1=0.9535, attrF1=0.0599)
+Ep   2 P1 | loss 0.1163 acc 0.970 | val F1 0.976 acc 0.978 | attr F1 0.040
+       diff: easy=0.980 medium=0.974 hard=0.977
+       saved best_phase1.pt (composite=0.9762, F1=0.9762, attrF1=0.0401)
+Ep   3 P1 | loss 0.0829 acc 0.982 | val F1 0.970 acc 0.972 | attr F1 0.018
+       diff: easy=0.969 medium=0.974 hard=0.977
+Ep   4 P1 | loss 0.0554 acc 0.989 | val F1 0.988 acc 0.989 | attr F1 0.021
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase1.pt (composite=0.9880, F1=0.9880, attrF1=0.0210)
+Ep   5 P2 | loss 0.0689 acc 0.989 | val F1 0.970 acc 0.972 | attr F1 0.078
+       diff: easy=0.969 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.6135, F1=0.9704, attrF1=0.0781)
+Ep   6 P2 | loss 0.0530 acc 0.991 | val F1 0.970 acc 0.972 | attr F1 0.065
+       diff: easy=0.969 medium=0.974 hard=0.977
+Ep   7 P2 | loss 0.0554 acc 0.991 | val F1 0.988 acc 0.989 | attr F1 0.377
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.7435, F1=0.9880, attrF1=0.3768)
+Ep   8 P2 | loss 0.0429 acc 0.993 | val F1 0.988 acc 0.989 | attr F1 0.526
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.8030, F1=0.9880, attrF1=0.5256)
+Ep   9 P2 | loss 0.0287 acc 0.993 | val F1 0.982 acc 0.983 | attr F1 0.516
+       diff: easy=0.990 medium=0.974 hard=0.977
+Ep  10 P2 | loss 0.0289 acc 0.997 | val F1 0.988 acc 0.989 | attr F1 0.674
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.8622, F1=0.9880, attrF1=0.6736)
+Ep  11 P2 | loss 0.0230 acc 0.999 | val F1 0.976 acc 0.978 | attr F1 0.695
+       diff: easy=0.980 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.8637, F1=0.9762, attrF1=0.6949)
+Ep  12 P2 | loss 0.0211 acc 1.000 | val F1 0.976 acc 0.978 | attr F1 0.719
+       diff: easy=0.990 medium=0.974 hard=0.955
+       saved best_phase2.pt (composite=0.8732, F1=0.9759, attrF1=0.7191)
+Ep  13 P2 | loss 0.0225 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.599
+       diff: easy=1.000 medium=0.974 hard=0.955
+Ep  14 P2 | loss 0.0224 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.730
+       diff: easy=1.000 medium=0.974 hard=0.955
+       saved best_phase2.pt (composite=0.8810, F1=0.9818, attrF1=0.7297)
+Ep  15 P2 | loss 0.0225 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.759
+       diff: easy=1.000 medium=0.974 hard=0.955
+       saved best_phase2.pt (composite=0.8926, F1=0.9818, attrF1=0.7588)
+Ep  16 P2 | loss 0.0227 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.735
+       diff: easy=1.000 medium=0.974 hard=0.955
+Ep  17 P2 | loss 0.0227 acc 1.000 | val F1 0.976 acc 0.978 | attr F1 0.743
+       diff: easy=0.990 medium=0.974 hard=0.955
+Ep  18 P2 | loss 0.0233 acc 1.000 | val F1 0.970 acc 0.972 | attr F1 0.769
+       diff: easy=0.980 medium=0.974 hard=0.955
+Ep  19 P2 | loss 0.0246 acc 1.000 | val F1 0.970 acc 0.972 | attr F1 0.725
+       diff: easy=0.980 medium=0.974 hard=0.955
+Ep  20 P3 | loss 0.0273 acc 0.995 | val F1 0.938 acc 0.944 | attr F1 0.741
+       diff: easy=0.980 medium=0.868 hard=0.932
+       saved best_phase3.pt (composite=0.8595, F1=0.9383, attrF1=0.7414)
+Ep  21 P3 | loss 0.0321 acc 0.989 | val F1 0.932 acc 0.939 | attr F1 0.746
+       diff: easy=0.980 medium=0.842 hard=0.932
+Ep  22 P3 | loss 0.0279 acc 0.995 | val F1 0.932 acc 0.939 | attr F1 0.748
+       diff: easy=0.980 medium=0.842 hard=0.932
+Ep  23 P3 | loss 0.0269 acc 0.997 | val F1 0.918 acc 0.928 | attr F1 0.745
+       diff: easy=0.969 medium=0.816 hard=0.932
+Ep  24 P3 | loss 0.0266 acc 0.998 | val F1 0.918 acc 0.928 | attr F1 0.744
+       diff: easy=0.969 medium=0.816 hard=0.932
+
+============================================================
+  Test evaluation (guardlens)
+  Checkpoint: best_phase3.pt
+============================================================
+  Loaded from epoch 20, phase 3
+  Accuracy:  0.9590
+  Precision: 0.9740
+  Recall:    0.9259
+  F1:        0.9494
+  Attr F1:   0.7438
+  By difficulty:
+    easy: 0.9815
+    medium: 0.8936
+    hard: 0.9750
+  By family:
+    false_positive_trap: 0.9230
+    distributed_fragmented: 0.9390
+    distributed_latent: 1.0000
+    hard_negative: 1.0000
+    isomorphic_hard_benign: 1.0000
+    late_guardrail_benign: 1.0000
+    implicit_semantic: 1.0000
+    borderline_benign: 1.0000
+
+  Clean vs augmented split:
+    Clean (130 samples):     F1=0.9565  Acc=0.9692  AttrF1=0.7651
+    Augmented (65 samples):  F1=0.9394  Acc=0.9385  AttrF1=0.7189
+  guardlens: SUCCESS
+  End: 12:29:01
+
+========================================================
+  Training: guardlens_no_fusion (20 epochs)
+  Output:   /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/guardlens_no_fusion
+  Start:    12:29:01
+========================================================
+Device: cuda
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 records
+  Train: 1492, Val: 180, Test: 195
+Building model: guardlens_no_fusion (GuardLensNoFusion)...
+  Total: 185,740,802  Trainable: 1,909,250  Frozen: 183,831,552
+
+Training 20 epochs:
+  Phase 1 (cls):  0-4
+  Phase 2 (+attr): 5-19
+  Phase 3 (+cf):  20-19
+Ep   0 P1 | loss 0.6752 acc 0.577 | val F1 0.699 acc 0.728 | attr F1 0.065
+       diff: easy=0.724 medium=0.711 hard=0.750
+       saved best_phase1.pt (composite=0.6994, F1=0.6994, attrF1=0.0648)
+Ep   1 P1 | loss 0.3703 acc 0.825 | val F1 0.943 acc 0.950 | attr F1 0.071
+       diff: easy=1.000 medium=0.816 hard=0.955
+       saved best_phase1.pt (composite=0.9434, F1=0.9434, attrF1=0.0714)
+Ep   2 P1 | loss 0.1048 acc 0.973 | val F1 0.988 acc 0.989 | attr F1 0.069
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase1.pt (composite=0.9880, F1=0.9880, attrF1=0.0689)
+Ep   3 P1 | loss 0.0588 acc 0.987 | val F1 0.982 acc 0.983 | attr F1 0.070
+       diff: easy=0.990 medium=0.974 hard=0.977
+Ep   4 P1 | loss 0.0601 acc 0.988 | val F1 0.970 acc 0.972 | attr F1 0.075
+       diff: easy=0.969 medium=0.974 hard=0.977
+Ep   5 P2 | loss 0.0611 acc 0.992 | val F1 0.970 acc 0.972 | attr F1 0.050
+       diff: easy=0.969 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.6023, F1=0.9704, attrF1=0.0502)
+Ep   6 P2 | loss 0.0490 acc 0.991 | val F1 0.982 acc 0.983 | attr F1 0.004
+       diff: easy=1.000 medium=0.947 hard=0.977
+Ep   7 P2 | loss 0.0356 acc 0.995 | val F1 0.976 acc 0.978 | attr F1 0.495
+       diff: easy=1.000 medium=0.947 hard=0.955
+       saved best_phase2.pt (composite=0.7834, F1=0.9756, attrF1=0.4950)
+Ep   8 P2 | loss 0.0301 acc 0.997 | val F1 0.976 acc 0.978 | attr F1 0.450
+       diff: easy=1.000 medium=0.921 hard=0.977
+Ep   9 P2 | loss 0.0231 acc 0.999 | val F1 0.982 acc 0.983 | attr F1 0.642
+       diff: easy=1.000 medium=0.947 hard=0.977
+       saved best_phase2.pt (composite=0.8458, F1=0.9818, attrF1=0.6418)
+Ep  10 P2 | loss 0.0220 acc 0.999 | val F1 0.982 acc 0.983 | attr F1 0.616
+       diff: easy=1.000 medium=0.947 hard=0.977
+Ep  11 P2 | loss 0.0222 acc 0.999 | val F1 0.982 acc 0.983 | attr F1 0.649
+       diff: easy=1.000 medium=0.947 hard=0.977
+       saved best_phase2.pt (composite=0.8485, F1=0.9818, attrF1=0.6485)
+Ep  12 P2 | loss 0.0225 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.696
+       diff: easy=1.000 medium=0.947 hard=0.977
+       saved best_phase2.pt (composite=0.8673, F1=0.9818, attrF1=0.6956)
+Ep  13 P2 | loss 0.0223 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.688
+       diff: easy=1.000 medium=0.947 hard=0.977
+Ep  14 P2 | loss 0.0235 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.724
+       diff: easy=1.000 medium=0.947 hard=0.977
+       saved best_phase2.pt (composite=0.8786, F1=0.9818, attrF1=0.7237)
+Ep  15 P2 | loss 0.0238 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.730
+       diff: easy=1.000 medium=0.947 hard=0.977
+       saved best_phase2.pt (composite=0.8811, F1=0.9818, attrF1=0.7300)
+Ep  16 P2 | loss 0.0248 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.728
+       diff: easy=1.000 medium=0.947 hard=0.977
+Ep  17 P2 | loss 0.0264 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.736
+       diff: easy=1.000 medium=0.947 hard=0.977
+       saved best_phase2.pt (composite=0.8834, F1=0.9818, attrF1=0.7358)
+Ep  18 P2 | loss 0.0274 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.737
+       diff: easy=1.000 medium=0.947 hard=0.977
+       saved best_phase2.pt (composite=0.8841, F1=0.9818, attrF1=0.7374)
+Ep  19 P2 | loss 0.0290 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.735
+       diff: easy=1.000 medium=0.947 hard=0.977
+
+============================================================
+  Test evaluation (guardlens_no_fusion)
+  Checkpoint: best_phase2.pt
+============================================================
+  Loaded from epoch 18, phase 2
+  Accuracy:  0.9795
+  Precision: 1.0000
+  Recall:    0.9506
+  F1:        0.9747
+  Attr F1:   0.7044
+  By difficulty:
+    easy: 1.0000
+    medium: 0.9362
+    hard: 0.9750
+  By family:
+    distributed_fragmented: 0.9390
+    late_guardrail_benign: 1.0000
+    hard_negative: 1.0000
+    distributed_latent: 1.0000
+    false_positive_trap: 1.0000
+    implicit_semantic: 1.0000
+    borderline_benign: 1.0000
+    isomorphic_hard_benign: 1.0000
+
+  Clean vs augmented split:
+    Clean (130 samples):     F1=0.9783  Acc=0.9846  AttrF1=0.7194
+    Augmented (65 samples):  F1=0.9697  Acc=0.9692  AttrF1=0.6859
+  guardlens_no_fusion: SUCCESS
+  End: 12:34:34
+
+========================================================
+  Training: guardlens_no_cf (20 epochs)
+  Output:   /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/guardlens_no_cf
+  Start:    12:34:34
+========================================================
+Device: cuda
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 records
+  Train: 1492, Val: 180, Test: 195
+Building model: guardlens_no_cf (GuardLensNoCF)...
+  Total: 185,872,130  Trainable: 2,040,578  Frozen: 183,831,552
+
+Training 20 epochs:
+  Phase 1 (cls):  0-4
+  Phase 2 (+attr): 5-19
+Ep   0 P1 | loss 0.6768 acc 0.579 | val F1 0.000 acc 0.533 | attr F1 0.085
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   1 P1 | loss 0.4263 acc 0.782 | val F1 0.953 acc 0.956 | attr F1 0.060
+       diff: easy=0.939 medium=0.974 hard=0.977
+       saved best_phase1.pt (composite=0.9535, F1=0.9535, attrF1=0.0599)
+Ep   2 P1 | loss 0.1162 acc 0.970 | val F1 0.976 acc 0.978 | attr F1 0.040
+       diff: easy=0.980 medium=0.974 hard=0.977
+       saved best_phase1.pt (composite=0.9762, F1=0.9762, attrF1=0.0402)
+Ep   3 P1 | loss 0.0832 acc 0.983 | val F1 0.988 acc 0.989 | attr F1 0.022
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase1.pt (composite=0.9880, F1=0.9880, attrF1=0.0225)
+Ep   4 P1 | loss 0.0580 acc 0.989 | val F1 0.988 acc 0.989 | attr F1 0.021
+       diff: easy=1.000 medium=0.974 hard=0.977
+Ep   5 P2 | loss 0.0613 acc 0.990 | val F1 0.951 acc 0.956 | attr F1 0.079
+       diff: easy=0.980 medium=0.895 hard=0.955
+       saved best_phase2.pt (composite=0.6025, F1=0.9512, attrF1=0.0793)
+Ep   6 P2 | loss 0.0568 acc 0.991 | val F1 0.988 acc 0.989 | attr F1 0.143
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.6498, F1=0.9880, attrF1=0.1426)
+Ep   7 P2 | loss 0.0511 acc 0.993 | val F1 0.988 acc 0.989 | attr F1 0.423
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.7621, F1=0.9880, attrF1=0.4233)
+Ep   8 P2 | loss 0.0394 acc 0.993 | val F1 0.982 acc 0.983 | attr F1 0.531
+       diff: easy=1.000 medium=0.947 hard=0.977
+       saved best_phase2.pt (composite=0.8017, F1=0.9818, attrF1=0.5315)
+Ep   9 P2 | loss 0.0271 acc 0.993 | val F1 0.988 acc 0.989 | attr F1 0.526
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.8031, F1=0.9880, attrF1=0.5259)
+Ep  10 P2 | loss 0.0290 acc 0.998 | val F1 0.988 acc 0.989 | attr F1 0.667
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.8595, F1=0.9880, attrF1=0.6669)
+Ep  11 P2 | loss 0.0227 acc 0.999 | val F1 0.988 acc 0.989 | attr F1 0.701
+       diff: easy=1.000 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.8730, F1=0.9880, attrF1=0.7006)
+Ep  12 P2 | loss 0.0223 acc 1.000 | val F1 0.982 acc 0.983 | attr F1 0.628
+       diff: easy=0.990 medium=0.974 hard=0.977
+Ep  13 P2 | loss 0.0228 acc 1.000 | val F1 0.976 acc 0.978 | attr F1 0.532
+       diff: easy=0.980 medium=0.974 hard=0.977
+Ep  14 P2 | loss 0.0236 acc 1.000 | val F1 0.976 acc 0.978 | attr F1 0.684
+       diff: easy=0.980 medium=0.974 hard=0.977
+Ep  15 P2 | loss 0.0237 acc 1.000 | val F1 0.976 acc 0.978 | attr F1 0.719
+       diff: easy=0.980 medium=0.974 hard=0.977
+       saved best_phase2.pt (composite=0.8735, F1=0.9762, attrF1=0.7195)
+Ep  16 P2 | loss 0.0252 acc 1.000 | val F1 0.976 acc 0.978 | attr F1 0.717
+       diff: easy=0.980 medium=0.974 hard=0.977
+Ep  17 P2 | loss 0.0263 acc 1.000 | val F1 0.976 acc 0.978 | attr F1 0.719
+       diff: easy=0.980 medium=0.974 hard=0.977
+Ep  18 P2 | loss 0.0274 acc 1.000 | val F1 0.976 acc 0.978 | attr F1 0.707
+       diff: easy=0.980 medium=0.974 hard=0.977
+Ep  19 P2 | loss 0.0289 acc 1.000 | val F1 0.976 acc 0.978 | attr F1 0.710
+       diff: easy=0.980 medium=0.974 hard=0.977
+
+============================================================
+  Test evaluation (guardlens_no_cf)
+  Checkpoint: best_phase2.pt
+============================================================
+  Loaded from epoch 15, phase 2
+  Accuracy:  0.9897
+  Precision: 0.9877
+  Recall:    0.9877
+  F1:        0.9877
+  Attr F1:   0.7274
+  By difficulty:
+    easy: 0.9907
+    medium: 0.9787
+    hard: 1.0000
+  By family:
+    false_positive_trap: 0.9620
+    distributed_fragmented: 0.9850
+    implicit_semantic: 1.0000
+    borderline_benign: 1.0000
+    isomorphic_hard_benign: 1.0000
+    hard_negative: 1.0000
+    late_guardrail_benign: 1.0000
+    distributed_latent: 1.0000
+
+  Clean vs augmented split:
+    Clean (130 samples):     F1=0.9787  Acc=0.9846  AttrF1=0.7516
+    Augmented (65 samples):  F1=1.0000  Acc=1.0000  AttrF1=0.6986
+  guardlens_no_cf: SUCCESS
+  End: 12:40:09
+
+========================================================
+  Training: turn_level (20 epochs)
+  Output:   /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/turn_level
+  Start:    12:40:09
+========================================================
+Device: cuda
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 records
+  Train: 1492, Val: 180, Test: 195
+Building model: turn_level (TurnLevelClassifier)...
+  Total: 184,028,673  Trainable: 197,121  Frozen: 183,831,552
+
+Training 20 epochs:
+  Phase 1 (cls):  0-4
+  Phase 2 (+attr): 5-19
+  Phase 3 (+cf):  20-19
+Ep   0 P1 | loss 0.6870 acc 0.562 | val F1 0.000 acc 0.533 | attr F1 0.000
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   1 P1 | loss 0.6802 acc 0.579 | val F1 0.000 acc 0.533 | attr F1 0.000
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   2 P1 | loss 0.6799 acc 0.577 | val F1 0.000 acc 0.533 | attr F1 0.000
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   3 P1 | loss 0.6767 acc 0.577 | val F1 0.000 acc 0.533 | attr F1 0.000
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   4 P1 | loss 0.6723 acc 0.583 | val F1 0.000 acc 0.533 | attr F1 0.000
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   5 P2 | loss 0.6639 acc 0.592 | val F1 0.047 acc 0.544 | attr F1 0.000
+       diff: easy=0.796 medium=0.184 hard=0.295
+       saved best_phase2.pt (composite=0.0279, F1=0.0465, attrF1=0.0000)
+Ep   6 P2 | loss 0.6197 acc 0.620 | val F1 0.112 acc 0.561 | attr F1 0.000
+       diff: easy=0.816 medium=0.184 hard=0.318
+       saved best_phase2.pt (composite=0.0674, F1=0.1124, attrF1=0.0000)
+Ep   7 P2 | loss 0.5729 acc 0.612 | val F1 0.426 acc 0.656 | attr F1 0.000
+       diff: easy=0.857 medium=0.342 hard=0.477
+       saved best_phase2.pt (composite=0.2556, F1=0.4259, attrF1=0.0000)
+Ep   8 P2 | loss 0.5252 acc 0.672 | val F1 0.320 acc 0.622 | attr F1 0.000
+       diff: easy=0.847 medium=0.263 hard=0.432
+Ep   9 P2 | loss 0.4814 acc 0.682 | val F1 0.320 acc 0.622 | attr F1 0.000
+       diff: easy=0.847 medium=0.263 hard=0.432
+Ep  10 P2 | loss 0.4389 acc 0.694 | val F1 0.548 acc 0.689 | attr F1 0.000
+       diff: easy=0.837 medium=0.342 hard=0.659
+       saved best_phase2.pt (composite=0.3290, F1=0.5484, attrF1=0.0000)
+Ep  11 P2 | loss 0.3994 acc 0.719 | val F1 0.565 acc 0.700 | attr F1 0.000
+       diff: easy=0.847 medium=0.342 hard=0.682
+       saved best_phase2.pt (composite=0.3387, F1=0.5645, attrF1=0.0000)
+Ep  12 P2 | loss 0.3589 acc 0.741 | val F1 0.213 acc 0.589 | attr F1 0.000
+       diff: easy=0.816 medium=0.263 hard=0.364
+Ep  13 P2 | loss 0.3255 acc 0.743 | val F1 0.522 acc 0.694 | attr F1 0.000
+       diff: easy=0.888 medium=0.289 hard=0.614
+Ep  14 P2 | loss 0.2896 acc 0.763 | val F1 0.513 acc 0.694 | attr F1 0.000
+       diff: easy=0.888 medium=0.289 hard=0.614
+Ep  15 P2 | loss 0.2588 acc 0.767 | val F1 0.726 acc 0.778 | attr F1 0.000
+       diff: easy=0.867 medium=0.526 hard=0.795
+       saved best_phase2.pt (composite=0.4356, F1=0.7260, attrF1=0.0000)
+Ep  16 P2 | loss 0.2295 acc 0.781 | val F1 0.486 acc 0.683 | attr F1 0.000
+       diff: easy=0.888 medium=0.289 hard=0.568
+Ep  17 P2 | loss 0.1987 acc 0.747 | val F1 0.595 acc 0.728 | attr F1 0.000
+       diff: easy=0.918 medium=0.342 hard=0.636
+Ep  18 P2 | loss 0.1681 acc 0.789 | val F1 0.681 acc 0.761 | attr F1 0.000
+       diff: easy=0.888 medium=0.421 hard=0.773
+Ep  19 P2 | loss 0.1404 acc 0.771 | val F1 0.656 acc 0.750 | attr F1 0.000
+       diff: easy=0.898 medium=0.421 hard=0.705
+
+============================================================
+  Test evaluation (turn_level)
+  Checkpoint: best_phase2.pt
+============================================================
+  Loaded from epoch 15, phase 2
+  Accuracy:  0.7846
+  Precision: 0.8545
+  Recall:    0.5802
+  F1:        0.6912
+  Attr F1:   0.0000
+  By difficulty:
+    easy: 0.9074
+    medium: 0.4681
+    hard: 0.8250
+  By family:
+    distributed_latent: 0.4000
+    distributed_fragmented: 0.5910
+    implicit_semantic: 0.8000
+    isomorphic_hard_benign: 0.8890
+    late_guardrail_benign: 0.9090
+    false_positive_trap: 0.9230
+    hard_negative: 1.0000
+    borderline_benign: 1.0000
+
+  Clean vs augmented split:
+    Clean (130 samples):     F1=0.6329  Acc=0.7769  AttrF1=0.0000
+    Augmented (65 samples):  F1=0.7719  Acc=0.8000  AttrF1=0.0000
+  turn_level: SUCCESS
+  End: 12:43:45
+
+========================================================
+  Training: conversation_deberta (20 epochs)
+  Output:   /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/conversation_deberta
+  Start:    12:43:45
+========================================================
+Device: cuda
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 records
+  Train: 1492, Val: 180, Test: 195
+Building model: conversation_deberta (ConversationDeBERTa)...
+  Total: 184,028,673  Trainable: 197,121  Frozen: 183,831,552
+
+Training 20 epochs:
+  Phase 1 (cls):  0-4
+  Phase 2 (+attr): 5-19
+  Phase 3 (+cf):  20-19
+Ep   0 P1 | loss 0.6865 acc 0.578 | val F1 0.000 acc 0.533 | attr F1 0.000
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   1 P1 | loss 0.6800 acc 0.581 | val F1 0.000 acc 0.533 | attr F1 0.000
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   2 P1 | loss 0.6764 acc 0.582 | val F1 0.000 acc 0.533 | attr F1 0.000
+       diff: easy=0.796 medium=0.158 hard=0.273
+Ep   3 P1 | loss 0.6694 acc 0.579 | val F1 0.280 acc 0.600 | attr F1 0.000
+       diff: easy=0.847 medium=0.289 hard=0.318
+       saved best_phase1.pt (composite=0.2800, F1=0.2800, attrF1=0.0000)
+Ep   4 P1 | loss 0.6552 acc 0.610 | val F1 0.280 acc 0.600 | attr F1 0.000
+       diff: easy=0.847 medium=0.289 hard=0.318
+Ep   5 P2 | loss 0.6389 acc 0.637 | val F1 0.110 acc 0.550 | attr F1 0.000
+       diff: easy=0.806 medium=0.211 hard=0.273
+       saved best_phase2.pt (composite=0.0659, F1=0.1099, attrF1=0.0000)
+Ep   6 P2 | loss 0.5849 acc 0.671 | val F1 0.151 acc 0.561 | attr F1 0.000
+       diff: easy=0.816 medium=0.211 hard=0.295
+       saved best_phase2.pt (composite=0.0903, F1=0.1505, attrF1=0.0000)
+Ep   7 P2 | loss 0.5348 acc 0.698 | val F1 0.585 acc 0.700 | attr F1 0.000
+       diff: easy=0.867 medium=0.500 hard=0.500
+       saved best_phase2.pt (composite=0.3508, F1=0.5846, attrF1=0.0000)
+Ep   8 P2 | loss 0.4869 acc 0.724 | val F1 0.425 acc 0.639 | attr F1 0.000
+       diff: easy=0.837 medium=0.395 hard=0.409
+Ep   9 P2 | loss 0.4537 acc 0.712 | val F1 0.479 acc 0.661 | attr F1 0.000
+       diff: easy=0.837 medium=0.500 hard=0.409
+Ep  10 P2 | loss 0.4127 acc 0.734 | val F1 0.777 acc 0.806 | attr F1 0.000
+       diff: easy=0.878 medium=0.737 hard=0.705
+       saved best_phase2.pt (composite=0.4662, F1=0.7771, attrF1=0.0000)
+Ep  11 P2 | loss 0.3741 acc 0.758 | val F1 0.792 acc 0.817 | attr F1 0.000
+       diff: easy=0.878 medium=0.789 hard=0.705
+       saved best_phase2.pt (composite=0.4755, F1=0.7925, attrF1=0.0000)
+Ep  12 P2 | loss 0.3384 acc 0.753 | val F1 0.227 acc 0.583 | attr F1 0.000
+       diff: easy=0.847 medium=0.237 hard=0.295
+Ep  13 P2 | loss 0.3124 acc 0.757 | val F1 0.686 acc 0.756 | attr F1 0.000
+       diff: easy=0.888 medium=0.579 hard=0.614
+Ep  14 P2 | loss 0.2810 acc 0.747 | val F1 0.585 acc 0.700 | attr F1 0.000
+       diff: easy=0.857 medium=0.500 hard=0.523
+Ep  15 P2 | loss 0.2474 acc 0.773 | val F1 0.800 acc 0.817 | attr F1 0.000
+       diff: easy=0.847 medium=0.842 hard=0.727
+       saved best_phase2.pt (composite=0.4800, F1=0.8000, attrF1=0.0000)
+Ep  16 P2 | loss 0.2216 acc 0.759 | val F1 0.578 acc 0.700 | attr F1 0.000
+       diff: easy=0.867 medium=0.500 hard=0.500
+Ep  17 P2 | loss 0.1937 acc 0.757 | val F1 0.735 acc 0.783 | attr F1 0.000
+       diff: easy=0.898 medium=0.632 hard=0.659
+Ep  18 P2 | loss 0.1614 acc 0.770 | val F1 0.761 acc 0.794 | attr F1 0.000
+       diff: easy=0.878 medium=0.684 hard=0.705
+Ep  19 P2 | loss 0.1336 acc 0.773 | val F1 0.766 acc 0.800 | attr F1 0.000
+       diff: easy=0.888 medium=0.684 hard=0.705
+
+============================================================
+  Test evaluation (conversation_deberta)
+  Checkpoint: best_phase2.pt
+============================================================
+  Loaded from epoch 15, phase 2
+  Accuracy:  0.7641
+  Precision: 0.7160
+  Recall:    0.7160
+  F1:        0.7160
+  Attr F1:   0.0000
+  By difficulty:
+    easy: 0.7963
+    medium: 0.7447
+    hard: 0.7000
+  By family:
+    late_guardrail_benign: 0.6000
+    distributed_latent: 0.6000
+    distributed_fragmented: 0.7580
+    implicit_semantic: 0.8000
+    isomorphic_hard_benign: 0.8890
+    hard_negative: 1.0000
+    false_positive_trap: 1.0000
+    borderline_benign: 1.0000
+
+  Clean vs augmented split:
+    Clean (130 samples):     F1=0.6593  Acc=0.7615  AttrF1=0.0000
+    Augmented (65 samples):  F1=0.7887  Acc=0.7692  AttrF1=0.0000
+  conversation_deberta: SUCCESS
+  End: 12:46:00
+
+========================================================
+  All experiments complete.
+  Results in: /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/
+========================================================
+
+  Model                  | Test results
+  -----------------------|-------------
+  guardlens               | F1=0.9494 Acc=0.9590 AttrF1=0.7438
+  guardlens_no_fusion     | F1=0.9747 Acc=0.9795 AttrF1=0.7044
+  guardlens_no_cf         | F1=0.9877 Acc=0.9897 AttrF1=0.7274
+  turn_level              | F1=0.6912 Acc=0.7846 AttrF1=0.0000
+  conversation_deberta    | F1=0.7160 Acc=0.7641 AttrF1=0.0000

@@ -1,0 +1,708 @@
+========================================================
+  GuardLens Eval Stage 2: External Eval + Subset Analysis
+  Job: 21656  Node: g003
+  Start: Sat May  2 10:03:47 EDT 2026
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+
+=== 2a. Implicit/Explicit/Hard-Negative Subset Analysis ===
+Start: Sat May  2 10:03:47 EDT 2026
+Device: cuda
+
+Loading checkpoint from /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/guardlens/best.pt...
+  Loaded guardlens
+
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 records
+  Test set: 195 samples
+  Subset 'implicit': 31 samples
+  Subset 'explicit': 50 samples
+  Subset 'hard_negative': 50 samples
+  Subset 'benign': 64 samples
+
+  Subset verification:
+    implicit            : n=  31  mean_SR=0.085  implicit_turns=62
+    explicit            : n=  50  mean_SR=0.105  implicit_turns=0
+    hard_negative       : n=  50  mean_SR=0.073  implicit_turns=0
+    benign              : n=  64  mean_SR=0.111  implicit_turns=0
+
+  Running implicit subset (31 samples)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8222
+    Pivot turn:  exact=0.3548  within1=0.4194
+    Dev drop:    {'5%': 0.21580740080753458, '10%': 0.31784622093346115, '15%': 0.5629739330643133, '20%': 0.7899097529245864}
+    Necessity:   {'5%': 0.25, '10%': 0.34375, '15%': 0.5625, '20%': 0.8125}
+    Sufficiency: {'5%': 0.3645833333333333, '10%': 0.6145833333333333, '15%': 0.8333333333333333, '20%': 0.8645833333333333}
+    Flip rates:  {'flip@5%': 0.2, 'flip@10%': 0.3, 'flip@15%': 0.5333333333333333, 'flip@20%': 0.8, 'n_adversarial': 30}
+    Trigger:     mean=39.7  median=45.5
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0275
+    Pivot turn:  exact=0.0000  within1=0.1935
+    Dev drop:    {'5%': 0.17366302355912921, '10%': 0.8850631539006599, '15%': 0.9784093910417369, '20%': 0.9784093910417369}
+    Necessity:   {'5%': 0.1875, '10%': 0.90625, '15%': 1.0, '20%': 1.0}
+    Sufficiency: {'5%': 0.6979166666666666, '10%': 0.9583333333333333, '15%': 0.9583333333333333, '20%': 0.9583333333333333}
+    Flip rates:  {'flip@5%': 1.0, 'flip@10%': 1.0, 'flip@15%': 1.0, 'flip@20%': 1.0, 'n_adversarial': 30}
+    Trigger:     mean=21.0  median=20.0
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.1308
+    Pivot turn:  exact=0.0000  within1=0.2258
+    Dev drop:    {'5%': 0.004793461412191391, '10%': 0.010817833244800568, '15%': 0.018442567437887192, '20%': 0.0251060388982296}
+    Necessity:   {'5%': 0.0, '10%': 0.03125, '15%': 0.0625, '20%': 0.0625}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.03333333333333333, 'flip@15%': 0.06666666666666667, 'flip@20%': 0.06666666666666667, 'n_adversarial': 30}
+    Trigger:     mean=281.7  median=297.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.2313
+    Pivot turn:  exact=0.0968  within1=0.1935
+    Dev drop:    {'5%': 0.021208751015365124, '10%': 0.03174902033060789, '15%': 0.1344177461869549, '20%': 0.1619857184086868}
+    Necessity:   {'5%': 0.03125, '10%': 0.0625, '15%': 0.15625, '20%': 0.1875}
+    Sufficiency: {'5%': 0.41666666666666663, '10%': 0.5416666666666666, '15%': 0.6770833333333333, '20%': 0.7083333333333333}
+    Flip rates:  {'flip@5%': 0.03333333333333333, 'flip@10%': 0.06666666666666667, 'flip@15%': 0.03333333333333333, 'flip@20%': 0.06666666666666667, 'n_adversarial': 30}
+    Trigger:     mean=195.3  median=234.5
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+guardlens                   0.5630    0.3000    0.5625    0.8333      45.5    0.3548
+surface_risk                0.9784    1.0000    1.0000    0.9583      20.0    0.0000
+attention                   0.0184    0.0333    0.0625    0.0000     297.0    0.0000
+random                      0.1344    0.0667    0.1562    0.6771     234.5    0.0968
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  guardlens              F1=0.8222  P=0.8789  R=0.7723
+  surface_risk           F1=0.0275  P=0.1088  R=0.0157
+  attention              F1=0.1308  P=0.0802  R=0.3536
+  random                 F1=0.2313  P=0.1511  R=0.4929
+====================================================================================================
+
+  Running explicit subset (50 samples)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.3622
+    Pivot turn:  exact=0.0800  within1=0.2400
+    Dev drop:    {'5%': 0.8139300240997657, '10%': 0.9614543558660583, '15%': 0.9800753853808438, '20%': 0.980085523117617}
+    Necessity:   {'5%': 0.8525641025641024, '10%': 0.9807692307692307, '15%': 1.0, '20%': 1.0}
+    Sufficiency: {'5%': 0.8076923076923077, '10%': 0.8461538461538461, '15%': 0.8461538461538461, '20%': 0.8846153846153846}
+    Flip rates:  {'flip@5%': 0.8444444444444444, 'flip@10%': 0.9777777777777777, 'flip@15%': 1.0, 'flip@20%': 1.0, 'n_adversarial': 45}
+    Trigger:     mean=8.8  median=7.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0917
+    Pivot turn:  exact=0.0600  within1=0.2800
+    Dev drop:    {'5%': 0.1025644781747803, '10%': 0.8615870501572107, '15%': 0.9801718508236567, '20%': 0.9801718508236567}
+    Necessity:   {'5%': 0.10256410256410256, '10%': 0.8782051282051282, '15%': 1.0, '20%': 1.0}
+    Sufficiency: {'5%': 0.75, '10%': 0.8846153846153846, '15%': 0.9038461538461539, '20%': 0.9038461538461539}
+    Flip rates:  {'flip@5%': 1.0, 'flip@10%': 1.0, 'flip@15%': 1.0, 'flip@20%': 1.0, 'n_adversarial': 45}
+    Trigger:     mean=23.8  median=24.0
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0174
+    Pivot turn:  exact=0.0600  within1=0.2000
+    Dev drop:    {'5%': 0.007921463021865258, '10%': 0.014918656303332401, '15%': 0.02017737313722953, '20%': 0.02483960565848228}
+    Necessity:   {'5%': 0.0, '10%': 0.02564102564102564, '15%': 0.02564102564102564, '20%': 0.05128205128205128}
+    Sufficiency: {'5%': 0.0, '10%': 0.019230769230769232, '15%': 0.019230769230769232, '20%': 0.019230769230769232}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.022222222222222223, 'flip@15%': 0.022222222222222223, 'flip@20%': 0.044444444444444446, 'n_adversarial': 45}
+    Trigger:     mean=289.3  median=302.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0490
+    Pivot turn:  exact=0.2000  within1=0.3200
+    Dev drop:    {'5%': 0.0035618279988949117, '10%': 0.004676698110042474, '15%': 0.00697005597444681, '20%': 0.014418057966022154}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.019230769230769232}
+    Sufficiency: {'5%': 0.3076923076923077, '10%': 0.4423076923076923, '15%': 0.6153846153846154, '20%': 0.7307692307692307}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.044444444444444446, 'flip@20%': 0.08888888888888889, 'n_adversarial': 45}
+    Trigger:     mean=199.9  median=193.0
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+guardlens                   0.9801    0.9778    1.0000    0.8462       7.0    0.0800
+surface_risk                0.9802    1.0000    1.0000    0.9038      24.0    0.0600
+attention                   0.0202    0.0222    0.0256    0.0192     302.0    0.0600
+random                      0.0070    0.0000    0.0000    0.6154     193.0    0.2000
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  guardlens              F1=0.3622  P=0.6093  R=0.2577
+  surface_risk           F1=0.0917  P=0.0862  R=0.0980
+  attention              F1=0.0174  P=0.0090  R=0.2745
+  random                 F1=0.0490  P=0.0257  R=0.5266
+====================================================================================================
+
+  Running hard_negative subset (50 samples)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+guardlens                   0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+surface_risk                0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+attention                   0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+random                      0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  guardlens              F1=0.0000  P=0.0000  R=0.0000
+  surface_risk           F1=0.0000  P=0.0000  R=0.0000
+  attention              F1=0.0000  P=0.0000  R=0.0000
+  random                 F1=0.0000  P=0.0000  R=0.0000
+====================================================================================================
+
+  Running benign subset (64 samples)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0002
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+guardlens                   0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+surface_risk                0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+attention                   0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+random                      0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  guardlens              F1=0.0000  P=0.0000  R=0.0000
+  surface_risk           F1=0.0000  P=0.0000  R=0.0000
+  attention              F1=0.0002  P=0.0001  R=1.0000
+  random                 F1=0.0000  P=0.0000  R=0.0000
+====================================================================================================
+
+================================================================================
+  Subset Analysis at top-15% token removal
+================================================================================
+
+  Subset: IMPLICIT
+  Method                       DevDrop       Flip        Nec        Suf
+  ------------------------- ---------- ---------- ---------- ----------
+  guardlens                      0.563      0.533      0.562      0.833
+  surface_risk                   0.978      1.000      1.000      0.958
+  attention                      0.018      0.067      0.062      0.000
+  random                         0.134      0.033      0.156      0.677
+
+  Subset: EXPLICIT
+  Method                       DevDrop       Flip        Nec        Suf
+  ------------------------- ---------- ---------- ---------- ----------
+  guardlens                      0.980      1.000      1.000      0.846
+  surface_risk                   0.980      1.000      1.000      0.904
+  attention                      0.020      0.022      0.026      0.019
+  random                         0.007      0.044      0.000      0.615
+
+  Subset: HARD_NEGATIVE
+  Method                       DevDrop       Flip        Nec        Suf
+  ------------------------- ---------- ---------- ---------- ----------
+  guardlens                      0.000      0.000      0.000      0.000
+  surface_risk                   0.000      0.000      0.000      0.000
+  attention                      0.000      0.000      0.000      0.000
+  random                         0.000      0.000      0.000      0.000
+
+  Subset: BENIGN
+  Method                       DevDrop       Flip        Nec        Suf
+  ------------------------- ---------- ---------- ---------- ----------
+  guardlens                      0.000      0.000      0.000      0.000
+  surface_risk                   0.000      0.000      0.000      0.000
+  attention                      0.000      0.000      0.000      0.000
+  random                         0.000      0.000      0.000      0.000
+
+  ============================================================
+  KEY CONTRAST: GuardLens vs Surface Risk
+  ============================================================
+  Subset                  GuardLens DD     SurfRisk DD      Delta
+  -------------------- --------------- --------------- ----------
+  implicit                       0.563           0.978     -0.415 ← KEY RESULT
+  explicit                       0.980           0.980     -0.000
+  hard_negative                  0.000           0.000     +0.000
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/dataset_gen/results/implicit_explicit_eval.json
+2a: SUCCESS
+Device: cuda
+
+Loading checkpoint from /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/guardlens/best.pt...
+  Loaded guardlens
+
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 records
+  Test set: 195 samples
+  Subset 'implicit': 31 samples
+  Subset 'explicit': 50 samples
+  Subset 'hard_negative': 50 samples
+  Subset 'benign': 64 samples
+
+  Subset verification:
+    implicit            : n=  31  mean_SR=0.085  implicit_turns=62
+    explicit            : n=  50  mean_SR=0.105  implicit_turns=0
+    hard_negative       : n=  50  mean_SR=0.073  implicit_turns=0
+    benign              : n=  64  mean_SR=0.111  implicit_turns=0
+
+  Running implicit subset (31 samples)...
+  Evaluator: same model (self-eval)
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0191
+    Pivot turn:  exact=0.0323  within1=0.0323
+    Dev drop:    {'5%': 0.2994720199700775, '10%': 0.5246620344779027, '15%': 0.7997855738261327, '20%': 0.8862925401238803}
+    Necessity:   {'5%': 0.3333333333333333, '10%': 0.5666666666666667, '15%': 0.8, '20%': 0.9333333333333333}
+    Sufficiency: {'5%': 0.8064516129032258, '10%': 0.8709677419354839, '15%': 0.8709677419354839, '20%': 0.8709677419354839}
+    Flip rates:  {'flip@5%': 0.3333333333333333, 'flip@10%': 0.5666666666666667, 'flip@15%': 0.8, 'flip@20%': 0.9333333333333333, 'n_adversarial': 30}
+    Trigger:     mean=30.5  median=25.5
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0119
+    Pivot turn:  exact=0.0323  within1=0.0323
+    Dev drop:    {'5%': 0.21993293348253548, '10%': 0.5496717702243283, '15%': 0.8016307242241358, '20%': 0.9007673617915619}
+    Necessity:   {'5%': 0.23333333333333334, '10%': 0.6, '15%': 0.8, '20%': 0.9333333333333333}
+    Sufficiency: {'5%': 0.7741935483870968, '10%': 0.8709677419354839, '15%': 0.8709677419354839, '20%': 0.8709677419354839}
+    Flip rates:  {'flip@5%': 0.23333333333333334, 'flip@10%': 0.6, 'flip@15%': 0.8, 'flip@20%': 0.9333333333333333, 'n_adversarial': 30}
+    Trigger:     mean=31.3  median=29.5
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+integrated_gradients        0.7998    0.5667    0.8000    0.8710      25.5    0.0323
+grad_x_input                0.8016    0.6000    0.8000    0.8710      29.5    0.0323
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  integrated_gradients   F1=0.0191  P=0.5652  R=0.0097
+  grad_x_input           F1=0.0119  P=0.5333  R=0.0060
+====================================================================================================
+
+  Running explicit subset (50 samples)...
+  Evaluator: same model (self-eval)
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0784
+    Pivot turn:  exact=0.1200  within1=0.2800
+    Dev drop:    {'5%': 0.4686748260769592, '10%': 0.7491990016039279, '15%': 0.8312895500054259, '20%': 0.9179102255846374}
+    Necessity:   {'5%': 0.4666666666666667, '10%': 0.7777777777777778, '15%': 0.8444444444444444, '20%': 0.9333333333333333}
+    Sufficiency: {'5%': 0.8, '10%': 0.84, '15%': 0.84, '20%': 0.86}
+    Flip rates:  {'flip@5%': 0.4666666666666667, 'flip@10%': 0.7777777777777778, 'flip@15%': 0.8444444444444444, 'flip@20%': 0.9333333333333333, 'n_adversarial': 45}
+    Trigger:     mean=25.8  median=17.0
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.1000
+    Pivot turn:  exact=0.1200  within1=0.2800
+    Dev drop:    {'5%': 0.4590334254312135, '10%': 0.7531563666872292, '15%': 0.8332974641247549, '20%': 0.9221213148783944}
+    Necessity:   {'5%': 0.4444444444444444, '10%': 0.7777777777777778, '15%': 0.8444444444444444, '20%': 0.9333333333333333}
+    Sufficiency: {'5%': 0.82, '10%': 0.84, '15%': 0.86, '20%': 0.86}
+    Flip rates:  {'flip@5%': 0.4444444444444444, 'flip@10%': 0.7777777777777778, 'flip@15%': 0.8444444444444444, 'flip@20%': 0.9333333333333333, 'n_adversarial': 45}
+    Trigger:     mean=25.7  median=17.0
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+integrated_gradients        0.8313    0.7778    0.8444    0.8400      17.0    0.1200
+grad_x_input                0.8333    0.7778    0.8444    0.8600      17.0    0.1200
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  integrated_gradients   F1=0.0784  P=0.3137  R=0.0448
+  grad_x_input           F1=0.1000  P=0.3333  R=0.0588
+====================================================================================================
+
+  Running hard_negative subset (50 samples)...
+  Evaluator: same model (self-eval)
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+integrated_gradients        0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+grad_x_input                0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  integrated_gradients   F1=0.0000  P=0.0000  R=0.0000
+  grad_x_input           F1=0.0000  P=0.0000  R=0.0000
+====================================================================================================
+
+  Running benign subset (64 samples)...
+  Evaluator: same model (self-eval)
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+integrated_gradients        0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+grad_x_input                0.0000    0.0000    0.0000    0.0000       0.0    0.0000
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  integrated_gradients   F1=0.0000  P=0.0000  R=0.0000
+  grad_x_input           F1=0.0000  P=0.0000  R=0.0000
+====================================================================================================
+
+================================================================================
+  Subset Analysis at top-15% token removal
+================================================================================
+
+  Subset: IMPLICIT
+  Method                       DevDrop       Flip        Nec        Suf
+  ------------------------- ---------- ---------- ---------- ----------
+  integrated_gradients           0.800      0.800      0.800      0.871
+  grad_x_input                   0.802      0.800      0.800      0.871
+
+  Subset: EXPLICIT
+  Method                       DevDrop       Flip        Nec        Suf
+  ------------------------- ---------- ---------- ---------- ----------
+  integrated_gradients           0.831      0.844      0.844      0.840
+  grad_x_input                   0.833      0.844      0.844      0.860
+
+  Subset: HARD_NEGATIVE
+  Method                       DevDrop       Flip        Nec        Suf
+  ------------------------- ---------- ---------- ---------- ----------
+  integrated_gradients           0.000      0.000      0.000      0.000
+  grad_x_input                   0.000      0.000      0.000      0.000
+
+  Subset: BENIGN
+  Method                       DevDrop       Flip        Nec        Suf
+  ------------------------- ---------- ---------- ---------- ----------
+  integrated_gradients           0.000      0.000      0.000      0.000
+  grad_x_input                   0.000      0.000      0.000      0.000
+
+  ============================================================
+  KEY CONTRAST: GuardLens vs Surface Risk
+  ============================================================
+  Subset                  GuardLens DD     SurfRisk DD      Delta
+  -------------------- --------------- --------------- ----------
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/dataset_gen/results/implicit_explicit_eval_grad.json
+2a-grad: SUCCESS
+2a end: Sat May  2 10:13:32 EDT 2026
+
+=== 2b. External Evaluator (full test set) ===
+Start: Sat May  2 10:13:32 EDT 2026
+Device: cuda
+
+Loading GuardLens attribution model from /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/guardlens/best.pt...
+  GuardLens loaded (epoch 20, phase 3)
+
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 total records
+  Using full test set: 195 samples
+  Test loader: 49 batches
+
+Loading 2 external evaluator(s)...
+  /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/conversation_deberta/best.pt...
+    Loaded conversation_deberta (epoch 15)
+  /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/turn_level/best.pt...
+    Loaded turn_level (epoch 15)
+
+Running self-eval (GuardLens -> GuardLens)...
+  Batch 10/49...
+  Batch 20/49...
+  Batch 30/49...
+  Batch 40/49...
+
+Running external evaluation...
+  Batch 10/49...
+  Batch 20/49...
+  Batch 30/49...
+  Batch 40/49...
+
+================================================================================
+  Self-Eval vs External-Eval Comparison
+  Attribution: GuardLens | Evaluator: varies
+================================================================================
+
+  Metrics at top-15% token removal:
+  Evaluator                         DevDrop       Flip        Nec        Suf
+  ------------------------------ ---------- ---------- ---------- ----------
+  GuardLens (self)                    0.878      0.893      0.893      0.973
+  conversation_deberta (ext.)         0.098      1.000      1.000      1.000
+  turn_level (ext.)                   0.124      0.681      0.681      0.915
+
+  Full breakdown by k (DevDrop | FlipRate):
+
+  GuardLens (self-eval):
+    5%: DD=0.619  Flip=0.627  Nec=0.627  Suf=0.653
+    10%: DD=0.712  Flip=0.720  Nec=0.720  Suf=0.853
+    15%: DD=0.878  Flip=0.893  Nec=0.893  Suf=0.973
+    20%: DD=0.964  Flip=0.987  Nec=0.987  Suf=0.987
+
+  conversation_deberta (ext.) (external eval):
+    5%: DD=0.022  Flip=0.250  Nec=0.250  Suf=1.000
+    10%: DD=0.042  Flip=0.250  Nec=0.250  Suf=1.000
+    15%: DD=0.098  Flip=1.000  Nec=1.000  Suf=1.000
+    20%: DD=0.210  Flip=1.000  Nec=1.000  Suf=1.000
+
+  turn_level (ext.) (external eval):
+    5%: DD=0.029  Flip=0.149  Nec=0.149  Suf=0.404
+    10%: DD=0.055  Flip=0.362  Nec=0.362  Suf=0.660
+    15%: DD=0.124  Flip=0.681  Nec=0.681  Suf=0.915
+    20%: DD=0.144  Flip=0.787  Nec=0.787  Suf=0.915
+
+  Gap analysis (self minus external at 15%):
+    conversation_deberta (ext.) | deviation_drop: +0.780 ⚠ large gap
+    conversation_deberta (ext.) | flip_rate: -0.107
+    conversation_deberta (ext.) | necessity: -0.107
+    conversation_deberta (ext.) | sufficiency: -0.027
+    turn_level (ext.) | deviation_drop: +0.754 ⚠ large gap
+    turn_level (ext.) | flip_rate: +0.212 ⚠ large gap
+    turn_level (ext.) | necessity: +0.212 ⚠ large gap
+    turn_level (ext.) | sufficiency: +0.058
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/dataset_gen/results/external_eval_full.json
+2b: SUCCESS
+2b end: Sat May  2 10:15:25 EDT 2026
+
+=== 2c. External Evaluator (implicit subset) ===
+Start: Sat May  2 10:15:25 EDT 2026
+Device: cuda
+
+Loading GuardLens attribution model from /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/guardlens/best.pt...
+  GuardLens loaded (epoch 20, phase 3)
+
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 total records
+  Implicit trigger subset: 31 samples
+  Test loader: 8 batches
+
+Loading 1 external evaluator(s)...
+  /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/conversation_deberta/best.pt...
+    Loaded conversation_deberta (epoch 15)
+
+Running self-eval (GuardLens -> GuardLens)...
+
+Running external evaluation...
+
+================================================================================
+  Self-Eval vs External-Eval Comparison
+  Attribution: GuardLens | Evaluator: varies
+================================================================================
+
+  Metrics at top-15% token removal:
+  Evaluator                         DevDrop       Flip        Nec        Suf
+  ------------------------------ ---------- ---------- ---------- ----------
+  GuardLens (self)                    0.725      0.733      0.733      0.933
+  conversation_deberta (ext.)         0.067      1.000      1.000      1.000
+
+  Full breakdown by k (DevDrop | FlipRate):
+
+  GuardLens (self-eval):
+    5%: DD=0.175  Flip=0.167  Nec=0.167  Suf=0.333
+    10%: DD=0.308  Flip=0.300  Nec=0.300  Suf=0.667
+    15%: DD=0.725  Flip=0.733  Nec=0.733  Suf=0.933
+    20%: DD=0.949  Flip=0.967  Nec=0.967  Suf=1.000
+
+  conversation_deberta (ext.) (external eval):
+    5%: DD=0.001  Flip=0.000  Nec=0.000  Suf=1.000
+    10%: DD=0.000  Flip=0.000  Nec=0.000  Suf=1.000
+    15%: DD=0.067  Flip=1.000  Nec=1.000  Suf=1.000
+    20%: DD=0.123  Flip=1.000  Nec=1.000  Suf=1.000
+
+  Gap analysis (self minus external at 15%):
+    conversation_deberta (ext.) | deviation_drop: +0.658 ⚠ large gap
+    conversation_deberta (ext.) | flip_rate: -0.267 ⚠ large gap
+    conversation_deberta (ext.) | necessity: -0.267 ⚠ large gap
+    conversation_deberta (ext.) | sufficiency: -0.067
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/dataset_gen/results/external_eval_implicit.json
+2c: SUCCESS
+2c end: Sat May  2 10:16:03 EDT 2026
+
+=== 2d. External Evaluator (explicit subset) ===
+Start: Sat May  2 10:16:03 EDT 2026
+Device: cuda
+
+Loading GuardLens attribution model from /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/guardlens/best.pt...
+  GuardLens loaded (epoch 20, phase 3)
+
+Loading data from /gpfs/home/s001/ssubram7/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl...
+  1867 total records
+  Explicit trigger subset: 50 samples
+  Test loader: 13 batches
+
+Loading 1 external evaluator(s)...
+  /gpfs/home/s001/ssubram7/work/results/dataset_gen/checkpoints/conversation_deberta/best.pt...
+    Loaded conversation_deberta (epoch 15)
+
+Running self-eval (GuardLens -> GuardLens)...
+  Batch 10/13...
+
+Running external evaluation...
+  Batch 10/13...
+
+================================================================================
+  Self-Eval vs External-Eval Comparison
+  Attribution: GuardLens | Evaluator: varies
+================================================================================
+
+  Metrics at top-15% token removal:
+  Evaluator                         DevDrop       Flip        Nec        Suf
+  ------------------------------ ---------- ---------- ---------- ----------
+  GuardLens (self)                    0.981      1.000      1.000      1.000
+  conversation_deberta (ext.)         0.109      1.000      1.000      1.000
+
+  Full breakdown by k (DevDrop | FlipRate):
+
+  GuardLens (self-eval):
+    5%: DD=0.915  Flip=0.933  Nec=0.933  Suf=0.867
+    10%: DD=0.982  Flip=1.000  Nec=1.000  Suf=0.978
+    15%: DD=0.981  Flip=1.000  Nec=1.000  Suf=1.000
+    20%: DD=0.974  Flip=1.000  Nec=1.000  Suf=0.978
+
+  conversation_deberta (ext.) (external eval):
+    5%: DD=0.029  Flip=0.333  Nec=0.333  Suf=1.000
+    10%: DD=0.056  Flip=0.333  Nec=0.333  Suf=1.000
+    15%: DD=0.109  Flip=1.000  Nec=1.000  Suf=1.000
+    20%: DD=0.239  Flip=1.000  Nec=1.000  Suf=1.000
+
+  Gap analysis (self minus external at 15%):
+    conversation_deberta (ext.) | deviation_drop: +0.872 ⚠ large gap
+    conversation_deberta (ext.) | flip_rate: +0.000
+    conversation_deberta (ext.) | necessity: +0.000
+    conversation_deberta (ext.) | sufficiency: +0.000
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/dataset_gen/results/external_eval_explicit.json
+2d: SUCCESS
+2d end: Sat May  2 10:16:57 EDT 2026
+
+========================================================
+  Stage 2 complete: Sat May  2 10:16:57 EDT 2026
+  Outputs in: /gpfs/home/s001/ssubram7/work/results/dataset_gen/results
+  OK: implicit_explicit_eval.json
+  OK: external_eval_full.json
+  OK: external_eval_implicit.json
+  OK: external_eval_explicit.json
+========================================================
