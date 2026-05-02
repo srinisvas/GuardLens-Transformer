@@ -186,10 +186,7 @@ class VLLMParaphraser(ParaphraseBackend):
 
 
 class HuggingFaceParaphraser(ParaphraseBackend):
-    """
-    Direct HuggingFace transformers backend.
-    Use when vLLM server is not running.
-    """
+    """Direct HuggingFace transformers backend using chat templates."""
 
     def __init__(
         self,
@@ -205,8 +202,11 @@ class HuggingFaceParaphraser(ParaphraseBackend):
             device_map="auto" if device == "cuda" else None,
         )
         self.model.eval()
-        self.device = self.model.device
+        # Get the actual device the model ended up on
+        self.device = next(self.model.parameters()).device
         self.model_name = model_name
+        if self.tokenizer.pad_token_id is None:
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
     def paraphrase(self, text: str, context: str = "") -> str:
         try:
@@ -214,19 +214,27 @@ class HuggingFaceParaphraser(ParaphraseBackend):
                 {
                     "role": "system",
                     "content": (
-                        "You are a paraphrasing assistant. When given a message, "
-                        "rewrite it in different words while preserving the exact "
+                        "You are a paraphrasing assistant. Rewrite the user's "
+                        "message in different words while preserving the exact "
                         "intent and meaning. Output ONLY the rewritten message, "
-                        "nothing else."
+                        "nothing else, no preamble."
                     ),
                 },
                 {"role": "user", "content": f"Rewrite this: {text}"},
             ]
-            input_ids = self.tokenizer.apply_chat_template(
+
+            # apply_chat_template can return either Tensor or BatchEncoding
+            # depending on transformers version. Handle both.
+            templated = self.tokenizer.apply_chat_template(
                 messages,
                 add_generation_prompt=True,
                 return_tensors="pt",
-            ).to(self.device)
+            )
+            if hasattr(templated, "input_ids"):
+                input_ids = templated.input_ids
+            else:
+                input_ids = templated
+            input_ids = input_ids.to(self.device)
 
             with torch.no_grad():
                 out = self.model.generate(
@@ -234,22 +242,29 @@ class HuggingFaceParaphraser(ParaphraseBackend):
                     max_new_tokens=200,
                     temperature=0.7,
                     do_sample=True,
-                    pad_token_id=self.tokenizer.eos_token_id,
+                    pad_token_id=self.tokenizer.pad_token_id,
                 )
             new_tokens = out[0][input_ids.shape[1]:]
             result = self.tokenizer.decode(
                 new_tokens, skip_special_tokens=True
             ).strip()
-            # Strip common preambles the model adds despite "Output ONLY"
-            for prefix in ["Sure,", "Sure ", "Here is", "Here's",
-                           "Certainly,", "Rewrite:", "Rewritten:"]:
+
+            # Strip preambles models often add despite "Output ONLY"
+            for prefix in ["Sure,", "Sure!", "Sure ", "Here is", "Here's",
+                           "Certainly,", "Certainly!", "Of course,",
+                           "Rewrite:", "Rewritten:", "Paraphrased:",
+                           "The rewritten message:", "Rewritten message:"]:
                 if result.lower().startswith(prefix.lower()):
-                    result = result[len(prefix):].strip(":,. ")
+                    result = result[len(prefix):].strip(":,.! ")
+            # Remove wrapping quotes if present
+            if len(result) >= 2 and result[0] in '"\'' and result[-1] in '"\'':
+                result = result[1:-1]
+
             return result if len(result) >= 10 else text
         except Exception as e:
-            print(f"    HF paraphrase error: {e}")
+            # Print full exception type + message so we can see what's wrong
+            print(f"    HF paraphrase error: {type(e).__name__}: {e}", flush=True)
             return text
-
 
 def build_paraphrase_backend(args) -> ParaphraseBackend:
     if args.paraphrase_model == "vllm":
