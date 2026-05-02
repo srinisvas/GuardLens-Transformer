@@ -393,7 +393,7 @@ def compute_sharpness(curve: Dict[str, float], k_fracs: List[float]) -> Dict:
         slope = 0.0
 
     # AUC (trapezoidal)
-    auc = float(np.trapz(rates, k_fracs))
+    auc = float(np.trapezoid(rates, k_fracs))
 
     return {
         "inflection_k": float(inflection_k),
