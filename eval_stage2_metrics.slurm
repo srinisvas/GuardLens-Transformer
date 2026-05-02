@@ -67,8 +67,6 @@ python -m guardlens.evaluation.eval_implicit_explicit \
     --device cuda \
 && echo "2a-grad: SUCCESS" || echo "2a-grad: FAILED (exit $?)"
 
-&& echo "2a: SUCCESS" || echo "2a: FAILED (exit $?)"
-
 echo "2a end: $(date)"
 
 # -------------------------------------------------------
