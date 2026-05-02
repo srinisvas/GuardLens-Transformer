@@ -51,10 +51,22 @@ python -m guardlens.evaluation.eval_implicit_explicit \
     --data "$DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/implicit_explicit_eval.json" \
-    --methods guardlens surface_risk integrated_gradients grad_x_input attention random \
+    --methods guardlens surface_risk attention random \
     --top-k 0.05 0.10 0.15 0.20 \
     --batch-size 4 \
     --device cuda \
+&& echo "2a: SUCCESS" || echo "2a: FAILED (exit $?)"
+
+python -m guardlens.evaluation.eval_implicit_explicit \
+    --data "$DATA" \
+    --checkpoint "$CKPT_DIR/guardlens/best.pt" \
+    --output "$OUT_DIR/implicit_explicit_eval_grad.json" \
+    --methods integrated_gradients grad_x_input \
+    --top-k 0.05 0.10 0.15 0.20 \
+    --batch-size 1 \
+    --device cuda \
+&& echo "2a-grad: SUCCESS" || echo "2a-grad: FAILED (exit $?)"
+
 && echo "2a: SUCCESS" || echo "2a: FAILED (exit $?)"
 
 echo "2a end: $(date)"
