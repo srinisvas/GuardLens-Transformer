@@ -1,5 +1,3 @@
-"""Training and evaluation loops."""
-
 import json
 import os
 import random
@@ -68,9 +66,7 @@ def train_epoch(
         )
         loss = losses["total"]
 
-        # Counterfactual loss (phase 3)
         if phase >= 3 and lambda_cf > 0:
-            # Compute progress through phase 3 for curriculum threshold
             phase3_start = config.phase1_epochs + config.phase2_epochs
             cf_progress = min(1.0, (epoch - phase3_start) / max(1, config.phase3_epochs))
 
@@ -167,7 +163,6 @@ def evaluate(
             all_difficulties.append(m["difficulty"])
             all_families.append(m["family"])
 
-        # Attribution metrics
         if outputs["attr_probs"] is not None:
             ap = (outputs["attr_probs"] > 0.5).long()
             valid = token_labels >= 0
@@ -179,7 +174,6 @@ def evaluate(
                 attr_fn += ((a_pred == 0) & (a_true == 1)).sum().item()
                 attr_tn += ((a_pred == 0) & (a_true == 0)).sum().item()
 
-    # Classification metrics
     preds_t = torch.tensor(all_preds)
     labels_t = torch.tensor(all_labels)
     tp = ((preds_t == 1) & (labels_t == 1)).sum().item()
@@ -192,7 +186,6 @@ def evaluate(
     recall = tp / max(1, tp + fn)
     f1 = 2 * precision * recall / max(1e-8, precision + recall)
 
-    # Per-difficulty accuracy
     diff_acc = {}
     for diff in ["easy", "medium", "hard"]:
         idx = [i for i, d in enumerate(all_difficulties) if d == diff]
@@ -200,7 +193,6 @@ def evaluate(
             c = sum(1 for i in idx if all_preds[i] == all_labels[i])
             diff_acc[diff] = c / len(idx)
 
-    # Per-family accuracy
     fam_acc = {}
     for fam in set(all_families):
         idx = [i for i, f in enumerate(all_families) if f == fam]
@@ -208,7 +200,6 @@ def evaluate(
             c = sum(1 for i in idx if all_preds[i] == all_labels[i])
             fam_acc[fam] = round(c / len(idx), 3)
 
-    # Attribution metrics
     attr_precision = attr_tp / max(1, attr_tp + attr_fp)
     attr_recall = attr_tp / max(1, attr_tp + attr_fn)
     attr_f1 = 2 * attr_precision * attr_recall / max(1e-8, attr_precision + attr_recall)
@@ -234,7 +225,6 @@ def train(
     output_dir: str,
     model_name: str = "guardlens",
 ):
-    """Full training pipeline."""
     random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
@@ -244,7 +234,6 @@ def train(
     device = torch.device(config.device if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    # Load data
     print(f"Loading data from {data_path}...")
     records = []
     with open(data_path, "r") as f:
@@ -253,18 +242,15 @@ def train(
                 records.append(json.loads(line))
     print(f"  {len(records)} records")
 
-    # Split
     train_idx, val_idx, test_idx = pair_aware_split(records, seed=config.seed)
     print(f"  Train: {len(train_idx)}, Val: {len(val_idx)}, Test: {len(test_idx)}")
 
-    # Dataset + loaders
     full_dataset = GuardLensDataset(records, config)
 
     from transformers import AutoTokenizer
     from guardlens.data.dataset import FlatConversationCollator
     tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
 
-    # Select collator based on model type
     if model_name == "conversation_deberta":
         collator = FlatConversationCollator(tokenizer, config)
     else:
@@ -287,7 +273,6 @@ def train(
         collate_fn=collator, num_workers=config.num_workers,
     )
 
-    # Model
     if model_name == "guardlens_no_cf":
         config.phase3_epochs = 0
         config.max_epochs = config.phase1_epochs + config.phase2_epochs
@@ -302,7 +287,6 @@ def train(
     total_params = sum(p.numel() for p in model.parameters())
     print(f"  Total: {total_params:,}  Trainable: {trainable:,}  Frozen: {total_params - trainable:,}")
 
-    # Optimizer + scheduler
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
         lr=config.learning_rate,
@@ -320,10 +304,6 @@ def train(
     loss_fn = GuardLensLoss(config)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Training loop
-    # Track best checkpoint per phase. Phase 1 optimizes classification only.
-    # Phase 2+ optimizes a composite of classification F1 and attribution F1,
-    # because the paper's contribution is attribution, not just classification.
     best_scores = {1: 0.0, 2: 0.0, 3: 0.0}
     patience_counter = 0
     last_phase = 1
@@ -355,21 +335,15 @@ def train(
                 parts = [f"{k}={v:.3f}" for k, v in val_metrics["difficulty_accuracy"].items()]
                 print(f"       diff: {' '.join(parts)}")
 
-            # Reset patience when entering a new phase
             if phase != last_phase:
                 patience_counter = 0
                 last_phase = phase
 
-            # Compute composite score based on phase
             if phase == 1:
-                # Phase 1: pure classification
                 composite = val_metrics["f1"]
             else:
-                # Phase 2+: 60% classification F1 + 40% attribution F1
-                # Attribution is the novel contribution and must be optimized
                 composite = 0.6 * val_metrics["f1"] + 0.4 * val_metrics["attr_f1"]
 
-            # Save best per phase
             ckpt_name = f"best_phase{phase}.pt"
             if composite > best_scores[phase]:
                 best_scores[phase] = composite
@@ -392,9 +366,6 @@ def train(
                     print(f"       early stop (patience={config.patience})")
                     break
 
-    # Select the best checkpoint for final evaluation:
-    # Prefer the highest phase checkpoint that exists (phase 3 > 2 > 1)
-    # because later phases have trained attribution heads.
     best_ckpt_path = None
     for p in [3, 2, 1]:
         candidate = os.path.join(output_dir, f"best_phase{p}.pt")
@@ -406,11 +377,9 @@ def train(
         print("ERROR: No checkpoint found!")
         return {}
 
-    # Also save as best.pt for convenience
     import shutil
     shutil.copy2(best_ckpt_path, os.path.join(output_dir, "best.pt"))
 
-    # Final test with the attribution-trained checkpoint
     print("\n" + "=" * 60)
     print(f"  Test evaluation ({model_name})")
     print(f"  Checkpoint: {os.path.basename(best_ckpt_path)}")
@@ -437,7 +406,6 @@ def train(
         for k, v in sorted(test_metrics["family_accuracy"].items(), key=lambda x: x[1]):
             print(f"    {k}: {v:.4f}")
 
-    # Clean vs augmented evaluation (paper requirement)
     test_records = [records[i] for i in test_idx]
     clean_test_idx = [
         i for i, r in enumerate(test_records)
@@ -491,3 +459,4 @@ def train(
         json.dump({k: v for k, v in test_metrics.items() if not isinstance(v, torch.Tensor)}, f, indent=2)
 
     return test_metrics
+

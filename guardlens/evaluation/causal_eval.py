@@ -1,34 +1,3 @@
-"""
-guardlens/evaluation/causal_eval.py
-
-Causal attribution evaluation framework.
-
-PRIMARY metrics (model-grounded, not label-grounded):
-  1. Deviation Drop     - P(adv) reduction when attributed tokens masked
-  2. Flip Rate          - % cases where removing top-k tokens flips unsafe->safe
-  3. Necessity          - Does removing attributed tokens eliminate deviation?
-  4. Sufficiency        - Do attributed tokens + minimal context preserve deviation?
-  5. Minimal Trigger    - Fewest tokens to flip prediction
-  6. Pivot Turn Acc     - Correct first adversarial turn identified?
-
-SECONDARY metric (label-grounded, de-emphasized in paper):
-  7. Token F1           - Overlap with synthetic causal span labels
-
-External evaluator:
-  Deviation Drop, Flip Rate, Necessity, and Sufficiency can optionally
-  use a SEPARATE model as the evaluator (not the same model that produced
-  the attribution). This removes the circularity concern:
-  "GuardLens attribution -> remove tokens -> evaluate with external model"
-
-Attribution baselines:
-  - GuardLens (trained attribution head)
-  - Attention weights (real transformer attention, not a proxy)
-  - Integrated Gradients (Captum)
-  - Gradient x Input
-  - Surface risk heuristic (keyword-based)
-  - Random tokens (lower bound)
-"""
-
 import json
 import os
 from typing import Callable, Dict, List, Optional, Tuple
@@ -39,15 +8,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 
-# =============================================================
-# Core metrics
-# =============================================================
-
 def token_f1(pred_mask: torch.Tensor, true_mask: torch.Tensor) -> Dict[str, float]:
-    """
-    Token-level P/R/F1 against synthetic labels.
-    SECONDARY metric -- de-emphasize in paper since labels are synthetic.
-    """
+
     tp = ((pred_mask == 1) & (true_mask == 1)).sum().item()
     fp = ((pred_mask == 1) & (true_mask == 0)).sum().item()
     fn = ((pred_mask == 0) & (true_mask == 1)).sum().item()
@@ -58,7 +20,6 @@ def token_f1(pred_mask: torch.Tensor, true_mask: torch.Tensor) -> Dict[str, floa
 
 
 def _get_prob(model, batch, device, attribution_mask=None):
-    """Get P(adversarial) from a model, optionally with masked tokens."""
     model.eval()
     with torch.no_grad():
         kwargs = dict(
@@ -76,10 +37,6 @@ def _get_prob(model, batch, device, attribution_mask=None):
 
 def _build_topk_mask(scores: torch.Tensor, valid: torch.Tensor,
                      k_frac: float) -> torch.Tensor:
-    """
-    Build a binary mask that zeros out the top-k% attributed tokens.
-    Returns mask where 1=keep, 0=remove.
-    """
     flat_scores = scores[valid.bool()].flatten()
     n_tokens = flat_scores.numel()
     if n_tokens == 0:
@@ -92,11 +49,7 @@ def _build_topk_mask(scores: torch.Tensor, valid: torch.Tensor,
 def _build_sufficiency_mask(scores: torch.Tensor, valid: torch.Tensor,
                             k_frac: float,
                             context_window: int = 2) -> torch.Tensor:
-    """
-    Build a mask that keeps ONLY top-k% tokens plus a context window
-    of `context_window` tokens on each side.
-    Returns mask where 1=keep, 0=remove.
-    """
+
     flat_scores = scores[valid.bool()].flatten()
     n_tokens = flat_scores.numel()
     if n_tokens == 0:
@@ -130,13 +83,7 @@ def deviation_drop(
     k_frac: float = 0.15,
     external_model=None,
 ) -> Dict[str, float]:
-    """
-    PRIMARY metric. Measures P(adv) drop when top-k attributed tokens
-    are masked.
 
-    If external_model is provided, it is used for evaluation instead of
-    the attribution model. This removes circularity.
-    """
     eval_model = external_model if external_model is not None else model
     labels = batch["labels"]
     adv_idx = (labels == 1).nonzero(as_tuple=True)[0]
@@ -176,13 +123,9 @@ def flip_rate(
     device: torch.device,
     external_model=None,
 ) -> Dict[str, float]:
-    """
-    PRIMARY metric. % of adversarial samples that flip unsafe->safe
-    when top-k attributed tokens are removed.
-    """
+
     eval_model = external_model if external_model is not None else model
 
-    # FIX #7: Use additive counting, not max
     flip_counts = {f"flip@{int(k*100)}%": 0 for k in top_k_fractions}
     total_adversarial = 0
 
@@ -230,10 +173,7 @@ def necessity_test(
     k_frac: float = 0.15,
     external_model=None,
 ) -> Dict[str, float]:
-    """
-    PRIMARY metric. Remove top-k attributed tokens.
-    Does the deviation disappear?
-    """
+
     eval_model = external_model if external_model is not None else model
     labels = batch["labels"]
     necessary = 0
@@ -269,13 +209,7 @@ def sufficiency_test(
     context_window: int = 2,
     external_model=None,
 ) -> Dict[str, float]:
-    """
-    PRIMARY metric. Keep ONLY top-k attributed tokens + context window
-    of 2 tokens on each side. Does the deviation persist?
 
-    FIX #6: Context window prevents removing ALL context. The 2-token
-    window preserves local syntax around the trigger phrase.
-    """
     eval_model = external_model if external_model is not None else model
     labels = batch["labels"]
     sufficient = 0
@@ -308,7 +242,6 @@ def minimal_trigger_size(
     device: torch.device,
     external_model=None,
 ) -> List[int]:
-    """Fewest top-attributed tokens to remove to flip unsafe->safe."""
     eval_model = external_model if external_model is not None else model
     labels = batch["labels"]
     sizes = []
@@ -353,7 +286,6 @@ def pivot_turn_accuracy(
     attr_scores: torch.Tensor,
     batch: Dict,
 ) -> Dict[str, float]:
-    """Correct identification of the first adversarial turn."""
     correct = 0
     within_1 = 0
     total = 0
@@ -390,12 +322,7 @@ def pivot_turn_accuracy(
             "within_1": within_1 / max(1, total), "total": total}
 
 
-# =============================================================
-# Helper: extract single sample from batch
-# =============================================================
-
 def _single_batch(batch: Dict, idx: int) -> Dict:
-    """Extract sample i from a batch as a new mini-batch of size 1."""
     return {
         "input_ids": batch["input_ids"][idx:idx+1],
         "attention_mask": batch["attention_mask"][idx:idx+1],
@@ -406,13 +333,7 @@ def _single_batch(batch: Dict, idx: int) -> Dict:
         "metadata": [batch["metadata"][idx]],
     }
 
-
-# =============================================================
-# Attribution methods
-# =============================================================
-
 def guardlens_attribution(model, batch, device) -> torch.Tensor:
-    """GuardLens trained attribution head."""
     model.eval()
     with torch.no_grad():
         out = model(
@@ -428,26 +349,20 @@ def guardlens_attribution(model, batch, device) -> torch.Tensor:
 
 
 def attention_attribution(model, batch, device) -> torch.Tensor:
-    """
-    FIX #2: Real attention weights from the cross-turn transformer.
-    Registers forward hooks on MultiheadAttention to capture weights.
-    """
+
     model.eval()
     B, T, S = batch["input_ids"].shape
     captured_weights = []
 
     def hook_fn(module, args, output):
-        # nn.MultiheadAttention returns (attn_output, attn_weights)
-        # when need_weights=True
+
         if isinstance(output, tuple) and len(output) >= 2:
             if output[1] is not None:
                 captured_weights.append(output[1].detach())
 
-    # Register hooks on all attention layers in the cross-turn transformer
     hooks = []
     for layer in model.cross_turn.transformer.layers:
         if hasattr(layer, 'self_attn'):
-            # Temporarily enable attention weight output
             old_flag = layer.self_attn.batch_first
             h = layer.self_attn.register_forward_hook(hook_fn)
             hooks.append(h)
@@ -481,10 +396,8 @@ def attention_attribution(model, batch, device) -> torch.Tensor:
             h.remove()
 
     if captured_weights:
-        # Average attention received by each token across heads and layers
-        # attn_weights shape: [B, n_heads, T*S, T*S]
+
         avg_attn = torch.stack(captured_weights).mean(dim=0)  # [B, heads, T*S, T*S]
-        # Sum attention received (column-wise = how much each token is attended to)
         token_importance = avg_attn.mean(dim=1).sum(dim=1)  # [B, T*S]
         token_importance = token_importance.reshape(B, T, S)
         # Normalize per sample
@@ -502,7 +415,6 @@ def attention_attribution(model, batch, device) -> torch.Tensor:
 
 
 def _representation_change_proxy(model, batch, device) -> torch.Tensor:
-    """Fallback: L2 norm of representation change through cross-turn attention."""
     B, T, S = batch["input_ids"].shape
     with torch.no_grad():
         token_embeds = model.encode_turns(
@@ -528,11 +440,7 @@ def _representation_change_proxy(model, batch, device) -> torch.Tensor:
 def integrated_gradients_attribution(
     model, batch, device, n_steps: int = 20,
 ) -> torch.Tensor:
-    """
-    FIX #3: Integrated Gradients implementation.
-    Approximates the path integral of gradients from a zero baseline
-    to the actual input embeddings.
-    """
+
     model.eval()
     B, T, S = batch["input_ids"].shape
 
@@ -611,7 +519,6 @@ def integrated_gradients_attribution(
 
 
 def gradient_x_input_attribution(model, batch, device) -> torch.Tensor:
-    """Gradient x Input: gradient of P(adv) w.r.t. embeddings * embeddings."""
     model.eval()
     B, T, S = batch["input_ids"].shape
 
@@ -669,11 +576,7 @@ def gradient_x_input_attribution(model, batch, device) -> torch.Tensor:
 
 
 def surface_risk_attribution(model, batch, device, tokenizer=None) -> torch.Tensor:
-    """
-    FIX #4: Keyword-based heuristic baseline.
-    Assigns high scores to tokens matching known adversarial vocabulary.
-    Requires tokenizer to decode input_ids back to text for matching.
-    """
+
     RISK_KEYWORDS = {
         "bypass", "exploit", "ignore", "override", "evasion", "evade",
         "inject", "injection", "jailbreak", "unsafe", "unrestricted",
@@ -707,7 +610,6 @@ def surface_risk_attribution(model, batch, device, tokenizer=None) -> torch.Tens
                     else:
                         scores[i, t, s_idx] = 0.05
     else:
-        # No tokenizer: assign uniform low scores (degenerate baseline)
         scores = 0.1 * batch["attention_mask"].float()
 
     scores = scores * batch["attention_mask"].float()
@@ -715,7 +617,6 @@ def surface_risk_attribution(model, batch, device, tokenizer=None) -> torch.Tens
 
 
 def random_attribution(model, batch, device) -> torch.Tensor:
-    """Random baseline: uniform random scores."""
     scores = torch.rand_like(batch["attention_mask"].float())
     return scores * batch["attention_mask"].float()
 
@@ -730,11 +631,6 @@ ATTRIBUTION_METHODS = {
     "random": random_attribution,
 }
 
-
-# =============================================================
-# Full evaluation pipeline
-# =============================================================
-
 def run_causal_evaluation(
     model,
     loader: DataLoader,
@@ -745,20 +641,7 @@ def run_causal_evaluation(
     context_window: int = 2,
     tokenizer=None,
 ) -> Dict:
-    """
-    Run the full causal attribution evaluation.
 
-    Args:
-        model: GuardLens model (source of attributions)
-        loader: test DataLoader
-        device: torch device
-        methods: attribution methods to compare
-        top_k_fractions: e.g. [0.05, 0.10, 0.15, 0.20]
-        external_model: separate model for deviation evaluation
-                        (removes circularity). If None, uses same model.
-        context_window: tokens to keep around attributed tokens in
-                        sufficiency test
-    """
     if methods is None:
         methods = ["guardlens", "attention", "integrated_gradients",
                     "grad_x_input", "surface_risk", "random"]
@@ -889,7 +772,7 @@ def run_causal_evaluation(
                 "max": int(np.max(sizes)),
             }
 
-        # Flip rate (separate pass for efficiency)
+        # Flip rate
         print(f"    Computing flip rates...")
         fr = flip_rate(model, loader, attr_fn, top_k_fractions, device, eval_model)
         method_results["flip_rates"] = fr
@@ -913,7 +796,7 @@ def run_causal_evaluation(
 
 
 def print_comparison_table(results: Dict):
-    """Print the paper's main comparison table."""
+
     methods = list(results.keys())
 
     print("\n" + "=" * 100)

@@ -1,10 +1,3 @@
-"""
-Training entry point.
-
-Usage:
-    python -m guardlens.train --data data.jsonl --output ./checkpoints
-    python -m guardlens.train --data data.jsonl --output ./checkpoints --model turn_level
-"""
 
 import argparse
 

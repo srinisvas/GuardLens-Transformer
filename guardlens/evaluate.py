@@ -1,10 +1,3 @@
-"""
-Evaluation entry point.
-
-Usage:
-    python -m guardlens.evaluate --data data.jsonl --checkpoint ./checkpoints/best.pt
-"""
-
 import argparse
 import json
 

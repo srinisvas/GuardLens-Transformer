@@ -1,72 +1,0 @@
-/gpfs/home/s001/ssubram7/work/conda_envs/guardlens_train/lib/python3.11/site-packages/torch/nn/modules/transformer.py:385: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
-  warnings.warn(
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-Loading weights:   0%|          | 0/198 [00:00<?, ?it/s]Loading weights: 100%|██████████| 198/198 [00:00<00:00, 36696.22it/s]
-[transformers] [1mDebertaV2Model LOAD REPORT[0m from: microsoft/deberta-v3-base
-Key                                     | Status     |  | 
-----------------------------------------+------------+--+-
-mask_predictions.classifier.weight      | UNEXPECTED |  | 
-lm_predictions.lm_head.dense.weight     | UNEXPECTED |  | 
-mask_predictions.dense.weight           | UNEXPECTED |  | 
-mask_predictions.dense.bias             | UNEXPECTED |  | 
-mask_predictions.LayerNorm.bias         | UNEXPECTED |  | 
-lm_predictions.lm_head.bias             | UNEXPECTED |  | 
-mask_predictions.LayerNorm.weight       | UNEXPECTED |  | 
-lm_predictions.lm_head.LayerNorm.bias   | UNEXPECTED |  | 
-mask_predictions.classifier.bias        | UNEXPECTED |  | 
-lm_predictions.lm_head.LayerNorm.weight | UNEXPECTED |  | 
-lm_predictions.lm_head.dense.bias       | UNEXPECTED |  | 
-
-Notes:
-- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
-[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
-Loading weights:   0%|          | 0/339 [00:00<?, ?it/s]Loading weights:   0%|          | 1/339 [00:01<06:29,  1.15s/it]Loading weights:   1%|          | 2/339 [00:01<03:16,  1.71it/s]Loading weights:   8%|▊         | 28/339 [00:01<00:10, 28.98it/s]Loading weights:  12%|█▏        | 40/339 [00:01<00:08, 34.81it/s]Loading weights:  15%|█▌        | 52/339 [00:02<00:07, 37.27it/s]Loading weights:  19%|█▉        | 64/339 [00:02<00:06, 40.10it/s]Loading weights:  22%|██▏       | 76/339 [00:02<00:05, 45.03it/s]Loading weights:  24%|██▍       | 82/339 [00:02<00:05, 44.69it/s]Loading weights:  26%|██▌       | 88/339 [00:02<00:05, 44.88it/s]Loading weights:  29%|██▉       | 100/339 [00:03<00:05, 46.46it/s]Loading weights:  33%|███▎      | 112/339 [00:03<00:05, 45.32it/s]Loading weights:  37%|███▋      | 124/339 [00:03<00:04, 46.91it/s]Loading weights:  40%|████      | 136/339 [00:03<00:04, 48.03it/s]Loading weights:  44%|████▎     | 148/339 [00:04<00:03, 47.96it/s]Loading weights:  46%|████▌     | 156/339 [00:04<00:03, 52.72it/s]Loading weights:  48%|████▊     | 162/339 [00:04<00:03, 45.18it/s]Loading weights:  51%|█████     | 172/339 [00:04<00:03, 50.13it/s]Loading weights:  54%|█████▍    | 184/339 [00:04<00:03, 47.41it/s]Loading weights:  58%|█████▊    | 196/339 [00:05<00:02, 48.32it/s]Loading weights:  61%|██████▏   | 208/339 [00:05<00:02, 47.97it/s]Loading weights:  65%|██████▍   | 220/339 [00:05<00:02, 46.48it/s]Loading weights:  68%|██████▊   | 232/339 [00:05<00:02, 49.84it/s]Loading weights:  72%|███████▏  | 244/339 [00:06<00:01, 48.32it/s]Loading weights:  76%|███████▌  | 256/339 [00:06<00:01, 51.07it/s]Loading weights:  79%|███████▉  | 268/339 [00:06<00:01, 51.55it/s]Loading weights:  83%|████████▎ | 280/339 [00:06<00:01, 53.47it/s]Loading weights:  84%|████████▍ | 286/339 [00:06<00:01, 51.53it/s]Loading weights:  86%|████████▌ | 292/339 [00:06<00:00, 49.45it/s]Loading weights:  90%|████████▉ | 304/339 [00:07<00:00, 47.80it/s]Loading weights:  91%|█████████ | 309/339 [00:07<00:00, 47.69it/s]Loading weights:  93%|█████████▎| 316/339 [00:07<00:00, 47.62it/s]Loading weights:  97%|█████████▋| 328/339 [00:07<00:00, 44.20it/s]Loading weights: 100%|██████████| 339/339 [00:07<00:00, 43.35it/s]
-[transformers] The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
-/gpfs/home/s001/ssubram7/work/conda_envs/guardlens_train/lib/python3.11/site-packages/torch/nn/modules/transformer.py:385: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
-  warnings.warn(
-Loading weights:   0%|          | 0/198 [00:00<?, ?it/s]Loading weights: 100%|██████████| 198/198 [00:00<00:00, 36416.23it/s]
-[transformers] [1mDebertaV2Model LOAD REPORT[0m from: microsoft/deberta-v3-base
-Key                                     | Status     |  | 
-----------------------------------------+------------+--+-
-mask_predictions.dense.bias             | UNEXPECTED |  | 
-lm_predictions.lm_head.dense.weight     | UNEXPECTED |  | 
-mask_predictions.LayerNorm.weight       | UNEXPECTED |  | 
-lm_predictions.lm_head.LayerNorm.weight | UNEXPECTED |  | 
-lm_predictions.lm_head.LayerNorm.bias   | UNEXPECTED |  | 
-mask_predictions.classifier.weight      | UNEXPECTED |  | 
-mask_predictions.LayerNorm.bias         | UNEXPECTED |  | 
-mask_predictions.classifier.bias        | UNEXPECTED |  | 
-mask_predictions.dense.weight           | UNEXPECTED |  | 
-lm_predictions.lm_head.bias             | UNEXPECTED |  | 
-lm_predictions.lm_head.dense.bias       | UNEXPECTED |  | 
-
-Notes:
-- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
-Loading weights:   0%|          | 0/339 [00:00<?, ?it/s]Loading weights:   0%|          | 1/339 [00:01<06:27,  1.15s/it]Loading weights:   1%|          | 2/339 [00:01<03:12,  1.75it/s]Loading weights:   7%|▋         | 24/339 [00:01<00:10, 29.68it/s]Loading weights:  10%|█         | 34/339 [00:01<00:09, 33.88it/s]Loading weights:  12%|█▏        | 42/339 [00:01<00:08, 34.80it/s]Loading weights:  15%|█▌        | 52/339 [00:02<00:07, 39.84it/s]Loading weights:  19%|█▉        | 64/339 [00:02<00:06, 43.91it/s]Loading weights:  21%|██        | 70/339 [00:02<00:05, 45.56it/s]Loading weights:  22%|██▏       | 76/339 [00:02<00:05, 46.14it/s]Loading weights:  26%|██▌       | 88/339 [00:02<00:05, 48.68it/s]Loading weights:  29%|██▉       | 100/339 [00:02<00:04, 50.34it/s]Loading weights:  33%|███▎      | 112/339 [00:03<00:04, 53.28it/s]Loading weights:  37%|███▋      | 124/339 [00:03<00:04, 47.29it/s]Loading weights:  40%|████      | 136/339 [00:03<00:03, 51.81it/s]Loading weights:  44%|████▎     | 148/339 [00:03<00:03, 52.32it/s]Loading weights:  47%|████▋     | 160/339 [00:04<00:03, 52.01it/s]Loading weights:  51%|█████     | 172/339 [00:04<00:03, 51.28it/s]Loading weights:  54%|█████▍    | 184/339 [00:04<00:02, 52.15it/s]Loading weights:  58%|█████▊    | 196/339 [00:04<00:02, 50.88it/s]Loading weights:  61%|██████▏   | 208/339 [00:05<00:02, 47.93it/s]Loading weights:  65%|██████▍   | 220/339 [00:05<00:02, 48.63it/s]Loading weights:  68%|██████▊   | 232/339 [00:05<00:02, 48.83it/s]Loading weights:  72%|███████▏  | 244/339 [00:05<00:02, 46.37it/s]Loading weights:  73%|███████▎  | 249/339 [00:05<00:01, 46.45it/s]Loading weights:  76%|███████▌  | 256/339 [00:06<00:01, 46.72it/s]Loading weights:  79%|███████▉  | 268/339 [00:06<00:01, 48.46it/s]Loading weights:  81%|████████  | 273/339 [00:06<00:01, 47.07it/s]Loading weights:  83%|████████▎ | 280/339 [00:06<00:01, 45.33it/s]Loading weights:  86%|████████▌ | 292/339 [00:06<00:00, 49.07it/s]Loading weights:  90%|████████▉ | 304/339 [00:07<00:00, 50.99it/s]Loading weights:  91%|█████████▏| 310/339 [00:07<00:00, 46.71it/s]Loading weights:  93%|█████████▎| 316/339 [00:07<00:00, 48.94it/s]Loading weights:  95%|█████████▍| 321/339 [00:07<00:00, 45.07it/s]Loading weights:  97%|█████████▋| 328/339 [00:07<00:00, 50.18it/s]Loading weights: 100%|██████████| 339/339 [00:07<00:00, 44.25it/s]
-[transformers] The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
-/gpfs/home/s001/ssubram7/work/conda_envs/guardlens_train/lib/python3.11/site-packages/torch/nn/modules/transformer.py:385: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
-  warnings.warn(
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-Loading weights:   0%|          | 0/198 [00:00<?, ?it/s]Loading weights: 100%|██████████| 198/198 [00:00<00:00, 36908.23it/s]
-[transformers] [1mDebertaV2Model LOAD REPORT[0m from: microsoft/deberta-v3-base
-Key                                     | Status     |  | 
-----------------------------------------+------------+--+-
-mask_predictions.dense.weight           | UNEXPECTED |  | 
-mask_predictions.LayerNorm.weight       | UNEXPECTED |  | 
-lm_predictions.lm_head.LayerNorm.bias   | UNEXPECTED |  | 
-mask_predictions.classifier.bias        | UNEXPECTED |  | 
-lm_predictions.lm_head.dense.bias       | UNEXPECTED |  | 
-lm_predictions.lm_head.dense.weight     | UNEXPECTED |  | 
-mask_predictions.LayerNorm.bias         | UNEXPECTED |  | 
-lm_predictions.lm_head.LayerNorm.weight | UNEXPECTED |  | 
-mask_predictions.classifier.weight      | UNEXPECTED |  | 
-lm_predictions.lm_head.bias             | UNEXPECTED |  | 
-mask_predictions.dense.bias             | UNEXPECTED |  | 
-
-Notes:
-- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
-[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
-Loading weights:   0%|          | 0/339 [00:00<?, ?it/s]Loading weights:   0%|          | 1/339 [00:01<06:21,  1.13s/it]Loading weights:   1%|          | 2/339 [00:01<04:27,  1.26it/s]Loading weights:  15%|█▌        | 52/339 [00:01<00:06, 42.01it/s]Loading weights:  18%|█▊        | 61/339 [00:02<00:06, 45.98it/s]Loading weights:  20%|██        | 69/339 [00:02<00:06, 43.77it/s]Loading weights:  22%|██▏       | 76/339 [00:02<00:05, 44.13it/s]Loading weights:  26%|██▌       | 88/339 [00:02<00:05, 47.13it/s]Loading weights:  29%|██▉       | 100/339 [00:02<00:04, 50.05it/s]Loading weights:  33%|███▎      | 112/339 [00:03<00:04, 51.46it/s]Loading weights:  35%|███▍      | 118/339 [00:03<00:05, 41.96it/s]Loading weights:  40%|████      | 136/339 [00:03<00:03, 51.08it/s]Loading weights:  44%|████▎     | 148/339 [00:03<00:03, 51.19it/s]Loading weights:  47%|████▋     | 160/339 [00:04<00:03, 51.92it/s]Loading weights:  49%|████▉     | 166/339 [00:04<00:03, 52.51it/s]Loading weights:  51%|█████     | 172/339 [00:04<00:03, 53.70it/s]Loading weights:  54%|█████▍    | 184/339 [00:04<00:03, 51.49it/s]Loading weights:  58%|█████▊    | 196/339 [00:04<00:02, 51.90it/s]Loading weights:  61%|██████▏   | 208/339 [00:04<00:02, 52.89it/s]Loading weights:  63%|██████▎   | 214/339 [00:05<00:02, 51.82it/s]Loading weights:  65%|██████▍   | 220/339 [00:05<00:02, 48.58it/s]Loading weights:  68%|██████▊   | 232/339 [00:05<00:02, 48.93it/s]Loading weights:  72%|███████▏  | 244/339 [00:05<00:02, 43.87it/s]Loading weights:  76%|███████▌  | 257/339 [00:05<00:01, 52.46it/s]Loading weights:  79%|███████▉  | 268/339 [00:06<00:01, 57.18it/s]Loading weights:  81%|████████  | 275/339 [00:06<00:01, 57.69it/s]Loading weights:  83%|████████▎ | 282/339 [00:06<00:01, 47.99it/s]Loading weights:  86%|████████▌ | 292/339 [00:06<00:00, 51.13it/s]Loading weights:  90%|████████▉ | 304/339 [00:06<00:00, 46.67it/s]Loading weights:  93%|█████████▎| 316/339 [00:07<00:00, 47.17it/s]Loading weights:  97%|█████████▋| 328/339 [00:07<00:00, 48.47it/s]Loading weights: 100%|██████████| 339/339 [00:07<00:00, 45.39it/s]
-[transformers] The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.

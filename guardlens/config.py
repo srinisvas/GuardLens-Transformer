@@ -1,5 +1,3 @@
-"""Model and training configuration."""
-
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -41,11 +39,10 @@ class GuardLensConfig:
     max_grad_norm: float = 1.0
 
     # Loss weights (scheduled during training)
-    # Attribution is the primary objective; classification is auxiliary.
-    # Phase 2+: L = lambda_cls * L_cls + lambda_attr * L_attr + lambda_cf * L_cf
-    lambda_cls: float = 0.2      # Classification: auxiliary signal
-    lambda_attr: float = 1.0     # Attribution: primary objective
-    lambda_cf: float = 0.5       # Counterfactual: causal refinement
+
+    lambda_cls: float = 0.2      # Classification
+    lambda_attr: float = 1.0     # Attribution
+    lambda_cf: float = 0.5       # Counterfactual
 
     # Training phases
     phase1_epochs: int = 5    # Classification only

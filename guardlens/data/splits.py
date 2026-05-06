@@ -1,5 +1,3 @@
-"""Pair-aware train/val/test splitting."""
-
 import random
 from typing import Dict, List, Tuple
 
@@ -10,11 +8,6 @@ def pair_aware_split(
     val_ratio: float = 0.1,
     seed: int = 42,
 ) -> Tuple[List[int], List[int], List[int]]:
-    """
-    Split by pair_id so both twins go into the same split.
-    Prevents leakage where the model sees one twin's topic
-    during training and gets a free hint on the other during eval.
-    """
     rng = random.Random(seed)
 
     pair_map = {}

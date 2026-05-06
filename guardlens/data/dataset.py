@@ -1,5 +1,3 @@
-"""Dataset and collation for GuardLens."""
-
 from typing import Dict, List
 
 import torch
@@ -9,16 +7,6 @@ from guardlens.config import GuardLensConfig
 
 
 class GuardLensDataset(Dataset):
-    """
-    Loads JSONL records and prepares them for the hierarchical model.
-
-    Each sample produces:
-      - turn_texts: List[str] of turn texts
-      - turn_roles: List[int] (0=user, 1=assistant)
-      - label: int (0=benign, 1=adversarial)
-      - char_labels: per-turn character-level binary labels
-      - metadata: dict for evaluation breakdowns
-    """
 
     def __init__(self, records: List[Dict], config: GuardLensConfig):
         self.records = records
@@ -67,18 +55,6 @@ class GuardLensDataset(Dataset):
 
 
 class GuardLensCollator:
-    """
-    Tokenizes turns, aligns character-level labels to token-level,
-    and pads everything into tensors.
-
-    Output shapes:
-      input_ids:     [B, T, S]
-      attention_mask: [B, T, S]
-      turn_mask:     [B, T]
-      role_ids:      [B, T]
-      token_labels:  [B, T, S]  (1=causal, 0=not, -1=ignore)
-      labels:        [B]
-    """
 
     def __init__(self, tokenizer, config: GuardLensConfig):
         self.tokenizer = tokenizer
@@ -182,18 +158,6 @@ class GuardLensCollator:
 
 
 class FlatConversationCollator:
-    """
-    Collator for ConversationDeBERTa baseline.
-
-    Concatenates all turns into a single sequence with [SEP] between
-    them, truncates to max_total_tokens. No turn structure preserved.
-
-    Output shapes:
-      input_ids:     [B, L]
-      attention_mask: [B, L]
-      labels:        [B]
-      token_labels:  [B, L]  (for compatibility, mostly -1)
-    """
 
     def __init__(self, tokenizer, config: GuardLensConfig):
         self.tokenizer = tokenizer
@@ -208,7 +172,6 @@ class FlatConversationCollator:
         metadata = []
 
         for item in batch:
-            # Concatenate turns with [SEP]
             full_text = f" {self.sep} ".join(item["turn_texts"])
 
             enc = self.tokenizer(
@@ -224,14 +187,12 @@ class FlatConversationCollator:
             attn_mask = enc["attention_mask"].squeeze(0)
             offsets = enc["offset_mapping"].squeeze(0)
 
-            # Build char labels for the concatenated text
             char_labels = []
             for cl in item["char_labels"]:
                 char_labels.extend(cl)
                 char_labels.extend([0] * (len(f" {self.sep} ")))
             char_labels = char_labels[:len(full_text)]
 
-            # Align to tokens
             tok_labels = torch.full(
                 (self.config.max_total_tokens,), -1, dtype=torch.long,
             )
@@ -255,7 +216,6 @@ class FlatConversationCollator:
                 "pivot_turn_id": item["pivot_turn_id"],
             })
 
-        # Dummy turn_mask and role_ids for interface compatibility
         B = len(all_input_ids)
         return {
             "input_ids": torch.stack(all_input_ids),

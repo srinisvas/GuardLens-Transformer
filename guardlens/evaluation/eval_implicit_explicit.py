@@ -1,49 +1,3 @@
-"""
-guardlens/evaluation/eval_implicit_explicit.py
-
-Implicit vs explicit trigger subset analysis.
-
-This is the key experiment for addressing the surface risk concern.
-
-The concern:
-  The surface_risk baseline achieves near-perfect Deviation Drop at 15-20%
-  (0.990/0.991) and Flip Rate of 1.0. This suggests that in the full test
-  set, keyword-level attribution is nearly sufficient. If that's the case,
-  GuardLens's attribution may not be meaningfully better than a lexical
-  baseline on conversations that HAVE explicit keywords.
-
-The counter-argument (what we want to demonstrate):
-  On IMPLICIT trigger conversations (zero keyword overlap, adversarial intent
-  comes entirely from conversation context), surface risk attribution should
-  collapse while GuardLens attribution should remain strong.
-
-Subsets:
-  1. Implicit: turns with implicit_trigger=True (IMPLICIT_ATTACK_PATHS family)
-     These conversations have no explicit safety keywords. Surface risk score
-     on these turns should be ~0.
-  2. Explicit: adversarial conversations with surface-level keywords
-     (MALICIOUS_TRIGGER / PAYLOAD_SPAN span labels with exact/semantic match)
-  3. Hard negatives: label=0 conversations with adversarial-sounding vocabulary
-     (the false positive trap) -- tests specificity
-
-Per-baseline metrics for each subset:
-  GuardLens, IG, Grad×Input, Surface Risk, Attention, Random
-  → Deviation Drop, Flip Rate, Necessity, Sufficiency
-
-Paper positioning:
-  "On explicit trigger conversations, surface-form baselines are competitive.
-   On implicit trigger conversations -- where adversarial intent is encoded
-   entirely in conversation context -- GuardLens maintains [X]% deviation drop
-   while the surface risk baseline drops to [Y]%."
-
-Usage:
-    python -m guardlens.evaluation.eval_implicit_explicit \\
-        --data ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
-        --checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
-        --output ~/work/results/dataset_gen/results/implicit_explicit_eval.json \\
-        --device cuda
-"""
-
 import argparse
 import json
 import os
@@ -71,11 +25,7 @@ def partition_test_set(
     test_records: List[Dict],
     test_idx: List[int],
 ) -> Dict[str, List[int]]:
-    """
-    Partition test records into subsets by trigger type.
 
-    Returns dict of subset_name -> list of GLOBAL indices into records.
-    """
     implicit_global = []
     explicit_global = []
     hard_neg_global = []
@@ -111,10 +61,7 @@ def partition_test_set(
 
 
 def compute_surface_risk_score(text: str) -> float:
-    """
-    Compute surface risk for a text string -- same logic as augment_dataset.py.
-    Used to verify that implicit trigger turns really have low surface risk.
-    """
+
     _SR_HIGH = {
         "improve success rate": 0.80, "less detectable": 0.75,
         "blend in": 0.65, "more convincing": 0.55,
@@ -138,10 +85,7 @@ def verify_subset_properties(
     subsets: Dict[str, List[int]],
     all_records: List[Dict],
 ):
-    """
-    Print summary stats for each subset to verify they have the expected properties.
-    Implicit triggers should have low surface risk. Explicit should have high.
-    """
+
     record_by_idx = {i: all_records[i] for subset in subsets.values() for i in subset}
 
     print("\n  Subset verification:")
@@ -181,7 +125,6 @@ def run_subset_eval(
     tokenizer,
     subset_name: str,
 ) -> Dict:
-    """Run full causal eval on a subset."""
     if not global_indices:
         return {"error": "empty subset"}
 
@@ -209,10 +152,7 @@ def print_subset_comparison(
     top_k_fractions: List[float],
     focus_k: float = 0.15,
 ):
-    """
-    Print a table comparing methods across subsets.
-    Focus on the implicit vs explicit vs hard_negative contrast.
-    """
+
     k_str = f"{int(focus_k*100)}%"
     methods = list(next(iter(all_results.values())).keys()) if all_results else []
 

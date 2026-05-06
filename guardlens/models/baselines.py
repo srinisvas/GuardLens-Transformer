@@ -1,5 +1,3 @@
-"""Baseline models and ablation variants for comparison."""
-
 import torch
 import torch.nn as nn
 
@@ -8,16 +6,6 @@ from guardlens.models.guardlens import GuardLens
 
 
 class ConversationDeBERTa(nn.Module):
-    """
-    Baseline: Flat conversation classifier.
-
-    Concatenates all turns into one sequence with [SEP] between
-    turns, encodes with DeBERTa, pools [CLS], classifies.
-    No turn structure, no attribution.
-
-    Tests: "Does explicit turn structure matter?"
-    """
-
     def __init__(self, config: GuardLensConfig):
         super().__init__()
         self.config = config
@@ -42,7 +30,6 @@ class ConversationDeBERTa(nn.Module):
         self.backbone_loaded = True
 
     def forward(self, input_ids, attention_mask, **kwargs):
-        """Expects pre-concatenated: input_ids [B, L], attention_mask [B, L]."""
         ctx = torch.no_grad() if self.config.freeze_backbone else torch.enable_grad()
         with ctx:
             outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
@@ -57,17 +44,6 @@ class ConversationDeBERTa(nn.Module):
 
 
 class TurnLevelClassifier(nn.Module):
-    """
-    Baseline: Per-turn independent classifier.
-
-    Encodes each turn independently, classifies each turn, takes
-    max over turn predictions. No cross-turn attention.
-
-    Tests: "Does cross-turn reasoning matter?"
-    Expected: fails on implicit triggers where no single turn
-    is adversarial in isolation.
-    """
-
     def __init__(self, config: GuardLensConfig):
         super().__init__()
         self.config = config
@@ -92,7 +68,6 @@ class TurnLevelClassifier(nn.Module):
         self.backbone_loaded = True
 
     def forward(self, input_ids, attention_mask, turn_mask, **kwargs):
-        """input_ids: [B, T, S], attention_mask: [B, T, S], turn_mask: [B, T]."""
         B, T, S = input_ids.shape
         flat_ids = input_ids.reshape(B * T, S)
         flat_mask = attention_mask.reshape(B * T, S)
@@ -115,14 +90,6 @@ class TurnLevelClassifier(nn.Module):
 
 
 class GuardLensNoFusion(GuardLens):
-    """
-    Ablation: GuardLens without gated fusion.
-
-    Attribution head exists and is trained, but its output does NOT
-    feed into the classification head. Tests whether the fusion
-    mechanism is necessary.
-    """
-
     def __init__(self, config: GuardLensConfig):
         ablation_config = GuardLensConfig(
             **{k: v for k, v in vars(config).items() if not k.startswith("_")}
@@ -132,11 +99,4 @@ class GuardLensNoFusion(GuardLens):
 
 
 class GuardLensNoCF(GuardLens):
-    """
-    Ablation: GuardLens without counterfactual consistency loss.
-
-    Full architecture including gated fusion, but trained with
-    phase3_epochs=0 (no L_cf). Tests whether counterfactual
-    training improves attribution faithfulness.
-    """
-    pass  # Same model, config.phase3_epochs set to 0 during training
+    pass

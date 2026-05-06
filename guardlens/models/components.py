@@ -1,5 +1,3 @@
-"""Reusable model components for GuardLens and baselines."""
-
 import math
 
 import torch
@@ -9,11 +7,6 @@ from guardlens.config import GuardLensConfig
 
 
 class TurnPositionEncoding(nn.Module):
-    """
-    Turn-level position information:
-      - Sinusoidal turn index
-      - Learned role embedding (user=0, assistant=1)
-    """
 
     def __init__(self, d_model: int, max_turns: int = 16):
         super().__init__()
@@ -30,29 +23,11 @@ class TurnPositionEncoding(nn.Module):
         self.register_buffer("pe", pe)
 
     def forward(self, turn_idx: torch.Tensor, role_ids: torch.Tensor):
-        """
-        Args:
-            turn_idx: [B, T]
-            role_ids: [B, T]
-        Returns:
-            [B, T, D]
-        """
+
         return self.pe[turn_idx] + self.role_embedding(role_ids)
 
 
 class CrossTurnAttention(nn.Module):
-    """
-    Flattened token-level cross-turn attention with turn/role
-    position embeddings.
-
-    Flattens all tokens from all turns into a single sequence
-    [B, T*S, D] and runs transformer self-attention. Turn structure
-    is encoded via additive position embeddings (sinusoidal turn
-    index + learned role).
-
-    This allows individual tokens in turn 5 to attend directly
-    to individual tokens in turn 2.
-    """
 
     def __init__(self, config: GuardLensConfig):
         super().__init__()
@@ -83,15 +58,7 @@ class CrossTurnAttention(nn.Module):
         turn_mask: torch.Tensor,
         role_ids: torch.Tensor,
     ) -> torch.Tensor:
-        """
-        Args:
-            token_embeds: [B, T, S, D_backbone]
-            attention_mask: [B, T, S]
-            turn_mask: [B, T]
-            role_ids: [B, T]
-        Returns:
-            [B, T, S, D_cross]
-        """
+
         B, T, S, D = token_embeds.shape
 
         x = self.input_proj(token_embeds)
@@ -110,10 +77,6 @@ class CrossTurnAttention(nn.Module):
 
 
 class ClassificationHead(nn.Module):
-    """
-    Pools representations and produces P(adversarial).
-    Optionally receives gated input from the attribution head.
-    """
 
     def __init__(self, config: GuardLensConfig):
         super().__init__()
@@ -136,8 +99,6 @@ class ClassificationHead(nn.Module):
         if gated is not None:
             x = torch.cat([pooled, gated], dim=-1)
         elif self.expects_fusion:
-            # Phase 1: attribution not computed yet, but MLP expects
-            # concatenated [pooled, gated]. Pad with zeros.
             zeros = torch.zeros_like(pooled)
             x = torch.cat([pooled, zeros], dim=-1)
         else:
@@ -146,7 +107,6 @@ class ClassificationHead(nn.Module):
 
 
 class AttributionHead(nn.Module):
-    """Per-token P(causal | token_i)."""
 
     def __init__(self, config: GuardLensConfig):
         super().__init__()
@@ -158,5 +118,4 @@ class AttributionHead(nn.Module):
         )
 
     def forward(self, token_embeds: torch.Tensor) -> torch.Tensor:
-        """[B, T, S, D] -> [B, T, S]"""
         return self.mlp(token_embeds).squeeze(-1)

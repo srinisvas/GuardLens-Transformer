@@ -1,41 +1,3 @@
-"""
-guardlens/evaluation/eval_attribution_precision.py
-
-Two analyses not yet in the evaluation suite:
-
-1. HARD NEGATIVE ATTRIBUTION PRECISION
-   On benign samples with adversarial-sounding vocabulary (hard negatives,
-   borderline samples, false positive traps), does GuardLens hallucinate
-   causal tokens? Measures:
-     - False Positive Attribution Rate (FPAR): fraction of tokens in benign
-       samples that receive high attribution (> 0.5). Ideally near 0.
-     - Attribution Sparsity on Benign: entropy / concentration of attribution
-       mass. A good model should have diffuse, low-confidence attribution on
-       benign samples, not concentrated high scores.
-     - Specificity: FPAR(hard_negative) vs FPAR(genuine_benign). Hard negatives
-       should be harder -- the gap quantifies how well the model handles them.
-
-2. MINIMALITY SENSITIVITY CURVE
-   Current results show median trigger size = 7 tokens (GuardLens) but this
-   alone doesn't prove minimality. The sensitivity curve tests:
-     - Compute flip rate at k, k-Δ, k-2Δ, ...
-     - A sharp drop from k → k-Δ means the model found a compact, necessary
-       set. Flat curve means the trigger set is over-estimated.
-   Formally: if FlipRate(k%) >> FlipRate((k-5)%) for small k, the trigger is
-   near-minimal. If the curve is flat, attribution includes redundant tokens.
-
-   We plot: flip rate vs k for {guardlens, IG, surface_risk, random}
-   GuardLens should have the sharpest inflection point, demonstrating the
-   trigger identification is both precise and near-minimal.
-
-Usage:
-    python -m guardlens.evaluation.eval_attribution_precision \\
-        --data ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
-        --checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
-        --output ~/work/results/dataset_gen/results/attribution_precision.json \\
-        --device cuda
-"""
-
 import argparse
 import json
 import os
@@ -55,11 +17,6 @@ from guardlens.config import GuardLensConfig
 from guardlens.data.dataset import GuardLensDataset, GuardLensCollator
 from guardlens.data.splits import pair_aware_split
 from guardlens.models import MODEL_REGISTRY
-
-
-# -------------------------------------------------------
-# Attribution extraction (all methods)
-# -------------------------------------------------------
 
 def get_guardlens_scores(model, batch, device) -> torch.Tensor:
     model.eval()
@@ -82,7 +39,6 @@ def get_random_scores(batch) -> torch.Tensor:
 
 
 def get_surface_risk_scores(batch, tokenizer) -> torch.Tensor:
-    """Surface risk: score each token by membership in SR vocabulary."""
     _SR = {
         "improve", "success", "rate", "detectable", "blend", "convincing",
         "scrutiny", "reduce", "suspicion", "bypass", "exploit", "override",
@@ -111,26 +67,13 @@ ATTRIBUTION_FNS = {
     "random": lambda model, batch, device: get_random_scores(batch),
 }
 
-
-# -------------------------------------------------------
-# 1. Hard Negative Attribution Precision
-# -------------------------------------------------------
-
 def compute_fpar(
     attr_scores: torch.Tensor,   # [B, T, S]
     attention_mask: torch.Tensor,# [B, T, S]
     turn_mask: torch.Tensor,     # [B, T]
     threshold: float = 0.5,
 ) -> Dict[str, float]:
-    """
-    False Positive Attribution Rate:
-      Fraction of valid tokens in the batch with attr_score > threshold.
 
-    Also computes:
-      - Mean attribution score (lower = model is uncertain, good for benign)
-      - Attribution entropy (higher = more diffuse, good for benign)
-      - Max attribution score
-    """
     valid_mask = (attention_mask * turn_mask.unsqueeze(-1)).bool()  # [B, T, S]
 
     all_scores = attr_scores[valid_mask]  # [N_valid]
@@ -141,8 +84,7 @@ def compute_fpar(
     mean_score = all_scores.mean().item()
     max_score = all_scores.max().item()
 
-    # Attribution entropy: treat per-sample attr as a distribution
-    # High entropy = diffuse (good for benign), low = concentrated (good for adversarial)
+    # Attribution entropy
     entropies = []
     B = attr_scores.shape[0]
     for b in range(B):
@@ -174,19 +116,17 @@ def run_hard_negative_analysis(
     device: torch.device,
     batch_size: int = 8,
 ) -> Dict:
-    """
-    Partition test set into subsets and compute attribution statistics for each.
-    """
+
     dataset = GuardLensDataset(records, config)
 
     # Partition test indices
     all_records = [records[i] for i in test_idx]
     subsets = {
-        "adversarial":     [],  # label=1, genuine adversarial
-        "hard_negative":   [],  # label=0, adversarial-sounding vocabulary
-        "borderline":      [],  # label=0, near-miss cases
-        "genuine_benign":  [],  # label=0, clearly benign
-        "false_pos_trap":  [],  # label=0, explicitly designed as FP traps
+        "adversarial":     [],
+        "hard_negative":   [],
+        "borderline":      [],
+        "genuine_benign":  [],
+        "false_pos_trap":  [],
     }
 
     for local_i, global_i in enumerate(test_idx):
@@ -259,11 +199,6 @@ def run_hard_negative_analysis(
 
     return results
 
-
-# -------------------------------------------------------
-# 2. Minimality Sensitivity Curve
-# -------------------------------------------------------
-
 @torch.no_grad()
 def compute_flip_rate_at_k(
     model: torch.nn.Module,
@@ -272,7 +207,6 @@ def compute_flip_rate_at_k(
     device: torch.device,
     k_frac: float,
 ) -> Tuple[int, int]:
-    """Compute (n_flipped, n_tested) at a given k fraction."""
     labels = batch["labels"]
     adv_idx = (labels == 1).nonzero(as_tuple=True)[0]
     flips = 0
@@ -290,7 +224,7 @@ def compute_flip_rate_at_k(
         orig_out = model(**single_input, compute_attribution=False)
         orig_prob = torch.sigmoid(orig_out["cls_logits"])[0].item()
         if orig_prob < 0.5:
-            continue  # Not classified as adversarial, skip
+            continue
 
         # Build top-k mask
         valid = (batch["attention_mask"][i] * batch["turn_mask"][i].unsqueeze(-1)).bool()
@@ -321,10 +255,7 @@ def run_minimality_curve(
     methods: Dict[str, callable],
     k_fracs: List[float],
 ) -> Dict:
-    """
-    Compute flip rate at each k fraction for each attribution method.
-    Returns {method: {k_str: flip_rate}} for plotting.
-    """
+
     # Accumulate (flips, tested) per method per k
     counts = {
         method: {f"{int(k*100)}%": [0, 0] for k in k_fracs}
@@ -364,25 +295,13 @@ def run_minimality_curve(
 
 
 def compute_sharpness(curve: Dict[str, float], k_fracs: List[float]) -> Dict:
-    """
-    Quantify how 'sharp' the flip rate curve is.
 
-    A near-minimal trigger set has a sharp inflection: flip rate is low at
-    small k, then jumps sharply at the trigger size. Flat curves indicate
-    redundancy (many tokens can each independently flip the prediction).
-
-    Metrics:
-      - inflection_k: k where flip rate first exceeds 0.5
-      - slope_at_inflection: average slope around that k (larger = sharper)
-      - auc: area under the curve (lower AUC at small k = more compact trigger)
-    """
     rates = [curve.get(f"{int(k*100)}%", 0.0) for k in k_fracs]
 
     # Inflection point: first k where flip rate >= 0.5
     inflection_idx = next((i for i, r in enumerate(rates) if r >= 0.5), len(rates) - 1)
     inflection_k = k_fracs[inflection_idx] if inflection_idx < len(k_fracs) else k_fracs[-1]
 
-    # Slope at inflection
     if 0 < inflection_idx < len(rates) - 1:
         slope = (rates[inflection_idx + 1] - rates[inflection_idx - 1]) / \
                 (k_fracs[inflection_idx + 1] - k_fracs[inflection_idx - 1])
@@ -392,7 +311,7 @@ def compute_sharpness(curve: Dict[str, float], k_fracs: List[float]) -> Dict:
     else:
         slope = 0.0
 
-    # AUC (trapezoidal)
+    # AUC
     auc = float(np.trapezoid(rates, k_fracs))
 
     return {
@@ -401,11 +320,6 @@ def compute_sharpness(curve: Dict[str, float], k_fracs: List[float]) -> Dict:
         "auc": auc,
         "rates": {f"{int(k*100)}%": r for k, r in zip(k_fracs, rates)},
     }
-
-
-# -------------------------------------------------------
-# Main
-# -------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -457,9 +371,6 @@ def main():
     _, _, test_idx = pair_aware_split(records, seed=config.seed)
     print(f"  Test set: {len(test_idx)} samples")
 
-    # ============================================================
-    # Analysis 1: Hard negative attribution precision
-    # ============================================================
     print("\n" + "=" * 65)
     print("  Analysis 1: Hard Negative Attribution Precision")
     print("=" * 65)
@@ -499,15 +410,11 @@ def main():
               f"{adv_fpar:.4f} vs {hn_fpar:.4f} "
               f"(gap={adv_fpar - hn_fpar:+.4f})")
 
-    # ============================================================
-    # Analysis 2: Minimality sensitivity curve
-    # ============================================================
     print("\n" + "=" * 65)
     print("  Analysis 2: Minimality Sensitivity Curve")
     print(f"  k values: {args.k_fracs}")
     print("=" * 65)
 
-    # Import attribution methods from causal_eval
     try:
         from guardlens.evaluation.causal_eval import (
             guardlens_attribution,
@@ -542,7 +449,6 @@ def main():
             "random": lambda m, b, d: get_random_scores(b),
         }
 
-    # Test set loader (adversarial only for flip rate measurement)
     adv_test_idx = [
         test_idx[i] for i, r in enumerate([records[j] for j in test_idx])
         if r.get("label") == 1
@@ -601,9 +507,6 @@ def main():
     print("    Slope at inflection: larger = sharper, more near-minimal trigger")
     print("    AUC: smaller = flip achieved with fewer tokens (more compact)")
 
-    # ============================================================
-    # Save results
-    # ============================================================
     output = {
         "hard_negative_attribution_precision": hn_results,
         "minimality_curve": {

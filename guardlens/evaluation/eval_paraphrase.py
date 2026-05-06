@@ -1,51 +1,3 @@
-"""
-guardlens/evaluation/eval_paraphrase.py
-
-Paraphrase robustness: does GuardLens attribution follow semantics,
-not surface wording?
-
-Core question:
-  If we take the same adversarial conversation and rephrase each turn
-  (preserving intent, changing wording), do the same turns/tokens still
-  receive high attribution scores?
-
-  High Spearman ρ (> 0.6) between original and paraphrase attribution =
-  attribution is tracking semantic content, not lexical patterns.
-  Low ρ (< 0.3) = attribution is sensitive to surface form, which is a
-  red flag for lexical overfitting.
-
-Paraphrasing approach:
-  Uses vLLM on HPC (Llama-3-8B or Mistral-7B) or Ollama locally.
-  Each user turn is independently paraphrased with the instruction:
-    "Rewrite the following message in different words, preserving the
-     exact intent and meaning. Do not add or remove content."
-
-  Critical design choice: paraphrase each turn INDEPENDENTLY (not the
-  full conversation at once). This ensures the semantic role of each
-  turn is preserved, just with different surface form.
-
-Metrics:
-  1. Turn-level Spearman ρ: Rank correlation of per-turn mean
-     attribution scores between original and paraphrase. Averaged
-     across adversarial test samples.
-  2. Token-level Spearman ρ: Rank correlation of per-token attr scores
-     within each turn (flattened). More sensitive to local wording.
-  3. Top-k stability: What fraction of the top-k attributed tokens
-     (by turn) are shared between original and paraphrase?
-  4. Pivot turn stability: Does the same turn get identified as the
-     highest-attributed user turn?
-
-Usage:
-    python -m guardlens.evaluation.eval_paraphrase \\
-        --data ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
-        --checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
-        --output ~/work/results/dataset_gen/results/paraphrase_eval.json \\
-        --paraphrase-model vllm \\
-        --vllm-model meta-llama/Llama-3.1-8B-Instruct \\
-        --n-samples 150 \\
-        --device cuda
-"""
-
 import argparse
 import json
 import os
@@ -69,13 +21,7 @@ from guardlens.data.splits import pair_aware_split
 from guardlens.models import MODEL_REGISTRY
 
 
-# -------------------------------------------------------
-# Paraphrase backends
-# -------------------------------------------------------
-
 class ParaphraseBackend:
-    """Base class. Subclassed by vLLM, Ollama, and HuggingFace backends."""
-
     def paraphrase(self, text: str, context: str = "") -> str:
         raise NotImplementedError
 
@@ -84,8 +30,6 @@ class ParaphraseBackend:
 
 
 class OllamaParaphraser(ParaphraseBackend):
-    """Local Ollama backend. Fallback for testing."""
-
     def __init__(self, model: str = "qwen2.5:3b",
                  url: str = "http://localhost:11434/api/generate"):
         import requests
@@ -116,21 +60,15 @@ class OllamaParaphraser(ParaphraseBackend):
             )
             resp.raise_for_status()
             result = resp.json()["response"].strip()
-            # Strip common prefixes the model might add
             for prefix in ["Rewritten:", "Here is", "Here's", "Sure,", "Certainly,"]:
                 if result.lower().startswith(prefix.lower()):
                     result = result[len(prefix):].strip()
             return result if len(result) >= 10 else text
         except Exception:
-            return text  # Return original on failure
+            return text
 
 
 class VLLMParaphraser(ParaphraseBackend):
-    """
-    vLLM OpenAI-compatible server backend.
-    Start with: vllm serve <model> --port 8000
-    """
-
     def __init__(
         self,
         model: str = "meta-llama/Llama-3.1-8B-Instruct",
@@ -176,18 +114,14 @@ class VLLMParaphraser(ParaphraseBackend):
             return text
 
     def paraphrase_batch(self, texts: List[str]) -> List[str]:
-        """Batch paraphrase using multiple concurrent requests."""
         results = []
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i:i + self.batch_size]
-            # Could parallelise with asyncio but sequential is fine for eval
             results.extend([self.paraphrase(t) for t in batch])
         return results
 
 
 class HuggingFaceParaphraser(ParaphraseBackend):
-    """Direct HuggingFace transformers backend using chat templates."""
-
     def __init__(
         self,
         model_name: str = "Qwen/Qwen2.5-7B-Instruct",
@@ -202,7 +136,6 @@ class HuggingFaceParaphraser(ParaphraseBackend):
             device_map="auto" if device == "cuda" else None,
         )
         self.model.eval()
-        # Get the actual device the model ended up on
         self.device = next(self.model.parameters()).device
         self.model_name = model_name
         if self.tokenizer.pad_token_id is None:
@@ -223,8 +156,6 @@ class HuggingFaceParaphraser(ParaphraseBackend):
                 {"role": "user", "content": f"Rewrite this: {text}"},
             ]
 
-            # apply_chat_template can return either Tensor or BatchEncoding
-            # depending on transformers version. Handle both.
             templated = self.tokenizer.apply_chat_template(
                 messages,
                 add_generation_prompt=True,
@@ -249,20 +180,17 @@ class HuggingFaceParaphraser(ParaphraseBackend):
                 new_tokens, skip_special_tokens=True
             ).strip()
 
-            # Strip preambles models often add despite "Output ONLY"
             for prefix in ["Sure,", "Sure!", "Sure ", "Here is", "Here's",
                            "Certainly,", "Certainly!", "Of course,",
                            "Rewrite:", "Rewritten:", "Paraphrased:",
                            "The rewritten message:", "Rewritten message:"]:
                 if result.lower().startswith(prefix.lower()):
                     result = result[len(prefix):].strip(":,.! ")
-            # Remove wrapping quotes if present
             if len(result) >= 2 and result[0] in '"\'' and result[-1] in '"\'':
                 result = result[1:-1]
 
             return result if len(result) >= 10 else text
         except Exception as e:
-            # Print full exception type + message so we can see what's wrong
             print(f"    HF paraphrase error: {type(e).__name__}: {e}", flush=True)
             return text
 
@@ -278,19 +206,10 @@ def build_paraphrase_backend(args) -> ParaphraseBackend:
         return OllamaParaphraser(model=args.ollama_model)
 
 
-# -------------------------------------------------------
-# Paraphrase a full conversation record
-# -------------------------------------------------------
-
 def paraphrase_record(
     record: Dict,
     paraphraser: ParaphraseBackend,
 ) -> Dict:
-    """
-    Return a copy of the record with all user turn texts paraphrased.
-    Assistant turns are kept unchanged (they're not part of attribution).
-    Metadata is updated to indicate paraphrase.
-    """
     import copy
     paraphrased = copy.deepcopy(record)
 
@@ -309,10 +228,6 @@ def paraphrase_record(
     return paraphrased
 
 
-# -------------------------------------------------------
-# Attribution score extraction for a single record
-# -------------------------------------------------------
-
 @torch.no_grad()
 def get_attribution_scores(
     model: torch.nn.Module,
@@ -322,12 +237,6 @@ def get_attribution_scores(
     config: GuardLensConfig,
     device: torch.device,
 ) -> Optional[torch.Tensor]:
-    """
-    Returns attr_probs [T, S] for a single record.
-    Inserts the record into a temporary dataset (batch size 1).
-    """
-    # Build a temporary dataset with just this record
-    # We need to put it at index 0 of all_records temporarily
     temp_records = [record]
     temp_dataset = GuardLensDataset(temp_records, config)
     temp_loader = DataLoader(
@@ -349,28 +258,19 @@ def get_attribution_scores(
         )
         if out["attr_probs"] is None:
             return None
-        return out["attr_probs"][0].cpu()  # [T, S]
+        return out["attr_probs"][0].cpu()
 
     return None
 
 
-# -------------------------------------------------------
-# Robustness metrics
-# -------------------------------------------------------
-
 def compute_robustness_metrics(
-    orig_attr: torch.Tensor,  # [T, S]
-    para_attr: torch.Tensor,  # [T, S]
-    attention_mask: Optional[torch.Tensor] = None,  # [T, S]
+    orig_attr: torch.Tensor,
+    para_attr: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = None,
     top_k: float = 0.15,
 ) -> Dict:
-    """
-    Compute turn-level and token-level Spearman ρ between original
-    and paraphrase attribution scores.
-    """
     T, S = orig_attr.shape
 
-    # Turn-level: mean attr score per turn
     if attention_mask is not None:
         mask = attention_mask.float()
         orig_turn = (orig_attr * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
@@ -390,7 +290,6 @@ def compute_robustness_metrics(
         turn_rho = float(corr.statistic) if not np.isnan(corr.statistic) else 0.0
         turn_p = float(corr.pvalue)
 
-    # Token-level: flatten all valid tokens
     if attention_mask is not None:
         valid = attention_mask.bool().flatten()
         orig_tok = orig_attr.flatten()[valid].numpy()
@@ -405,7 +304,6 @@ def compute_robustness_metrics(
         corr_tok = spearmanr(orig_tok, para_tok)
         tok_rho = float(corr_tok.statistic) if not np.isnan(corr_tok.statistic) else 0.0
 
-    # Top-k stability: fraction of top-k tokens shared between original and paraphrase
     n_total = len(orig_tok)
     k = max(1, int(n_total * top_k))
     if n_total >= k:
@@ -415,7 +313,6 @@ def compute_robustness_metrics(
     else:
         topk_stability = 0.0
 
-    # Pivot turn stability: does the same turn have the highest mean attribution?
     orig_pivot = int(np.argmax(orig_turn_np))
     para_pivot = int(np.argmax(para_turn_np))
     pivot_stable = int(orig_pivot == para_pivot)
@@ -430,10 +327,6 @@ def compute_robustness_metrics(
         "para_pivot_turn": para_pivot,
     }
 
-
-# -------------------------------------------------------
-# Main
-# -------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Paraphrase robustness evaluation")
@@ -466,7 +359,6 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    # Load model
     print(f"\nLoading checkpoint from {args.checkpoint}...")
     ckpt = torch.load(args.checkpoint, weights_only=False, map_location=device)
     config = ckpt["config"]
@@ -483,7 +375,6 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
     collator = GuardLensCollator(tokenizer, config)
 
-    # Load data
     print(f"\nLoading data from {args.data}...")
     records = []
     with open(args.data) as f:
@@ -494,7 +385,6 @@ def main():
     _, _, test_idx = pair_aware_split(records, seed=config.seed)
     test_records = [records[i] for i in test_idx]
 
-    # Select adversarial samples only (attribution is on adversarial conversations)
     adv_records = [r for r in test_records if r["label"] == 1]
 
     if args.subset == "implicit":
@@ -515,11 +405,9 @@ def main():
     sampled = rng.sample(adv_records, min(args.n_samples, len(adv_records)))
     print(f"  Sampled: {len(sampled)} records for paraphrase evaluation")
 
-    # Build paraphrase backend
     print(f"\nInitialising paraphrase backend ({args.paraphrase_model})...")
     paraphraser = build_paraphrase_backend(args)
 
-    # Main loop: for each sample, paraphrase and compare attribution
     print(f"\nRunning paraphrase robustness evaluation...")
     all_metrics = []
     examples = []
@@ -528,30 +416,25 @@ def main():
         if (sample_idx + 1) % 10 == 0:
             print(f"  {sample_idx+1}/{len(sampled)}...")
 
-        # Paraphrase the conversation
         try:
             para_record = paraphrase_record(record, paraphraser)
         except Exception as e:
             print(f"    Paraphrase failed for sample {sample_idx}: {e}")
             continue
 
-        # Get attribution scores for original
         orig_attr = get_attribution_scores(model, record, records, collator, config, device)
         if orig_attr is None:
             continue
 
-        # Get attribution scores for paraphrase
         para_attr = get_attribution_scores(model, para_record, records, collator, config, device)
         if para_attr is None:
             continue
 
-        # Ensure same shape (in case tokenisation differs)
         T = min(orig_attr.shape[0], para_attr.shape[0])
         S = min(orig_attr.shape[1], para_attr.shape[1])
         orig_attr_trunc = orig_attr[:T, :S]
         para_attr_trunc = para_attr[:T, :S]
 
-        # Compute metrics
         metrics = compute_robustness_metrics(
             orig_attr_trunc,
             para_attr_trunc,
@@ -564,7 +447,6 @@ def main():
         )
         all_metrics.append(metrics)
 
-        # Save examples with attribution scores
         if len(examples) < args.save_examples:
             orig_turns = [t["text"] for t in record["turns"] if t["role"] == "user"]
             para_turns = [t["text"] for t in para_record["turns"] if t["role"] == "user"]
@@ -580,7 +462,6 @@ def main():
         print("ERROR: No valid samples processed.")
         return
 
-    # Aggregate
     turn_rhos = [m["turn_rho"] for m in all_metrics]
     tok_rhos = [m["token_rho"] for m in all_metrics]
     stabilities = [m["topk_stability"] for m in all_metrics]
@@ -595,7 +476,6 @@ def main():
     print(f"  Top-{int(args.top_k*100)}% token stability: {np.mean(stabilities):.4f}")
     print(f"  Pivot turn stability:   {np.mean(pivot_stables):.4f}")
 
-    # Implicit vs explicit breakdown
     implicit_metrics = [m for m in all_metrics if m["has_implicit"]]
     explicit_metrics = [m for m in all_metrics if not m["has_implicit"]]
     if implicit_metrics:
@@ -607,7 +487,6 @@ def main():
         print(f"    Turn ρ: {np.mean([m['turn_rho'] for m in explicit_metrics]):.4f}")
         print(f"    Tok  ρ: {np.mean([m['token_rho'] for m in explicit_metrics]):.4f}")
 
-    # Interpretation guidance
     mean_turn_rho = np.mean(turn_rhos)
     if mean_turn_rho >= 0.6:
         interp = "Strong: attribution tracks semantic content across paraphrase."
@@ -617,7 +496,6 @@ def main():
         interp = "Weak: attribution may be sensitive to surface wording."
     print(f"\n  Interpretation: {interp}")
 
-    # Save
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
     output = {
         "n_samples": len(all_metrics),
