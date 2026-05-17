@@ -1,4 +1,4 @@
-"""GuardLens: the full model with backbone, cross-turn attention, dual heads, and gated fusion."""
+"""GuardLens: full model with backbone, cross-turn attention, dual heads, gated fusion, and pivot head."""
 
 from typing import Dict, Optional
 
@@ -18,12 +18,9 @@ class GuardLens(nn.Module):
     Hierarchical transformer for multi-turn adversarial prompt
     detection with causal token attribution.
 
-    Forward pass:
-      1. Encode each turn with frozen backbone
-      2. Flattened token-level cross-turn attention
-      3. Attribution head: per-token causal scores
-      4. Gated fusion: attribution weights gate classification input
-      5. Classification head: conversation-level prediction
+    v11 additions:
+      - Pivot head: per-turn logit for pivot detection [B, T+1]
+      - Pivot kind head: classifies pivot type [B, n_pivot_kinds]
     """
 
     def __init__(self, config: GuardLensConfig):
@@ -43,8 +40,27 @@ class GuardLens(nn.Module):
                 nn.Sigmoid(),
             )
 
+        # Pivot head: predicts which turn is the pivot (or no-pivot)
+        if config.use_pivot_head:
+            self.pivot_head = nn.Sequential(
+                nn.Linear(config.cross_turn_dim, config.cls_hidden_dim),
+                nn.GELU(),
+                nn.Dropout(0.1),
+                nn.Linear(config.cls_hidden_dim, 1),
+            )
+            # No-pivot embedding (learned, appended as extra "turn")
+            self.no_pivot_embedding = nn.Parameter(
+                torch.randn(config.cross_turn_dim) * 0.02,
+            )
+            # Pivot kind classifier
+            self.pivot_kind_head = nn.Sequential(
+                nn.Linear(config.cross_turn_dim, config.cls_hidden_dim),
+                nn.GELU(),
+                nn.Dropout(0.1),
+                nn.Linear(config.cls_hidden_dim, config.n_pivot_kinds),
+            )
+
     def setup_backbone(self):
-        """Load the pretrained backbone. Called once before training."""
         if self.backbone_loaded:
             return
         from transformers import AutoModel
@@ -57,20 +73,7 @@ class GuardLens(nn.Module):
             self.backbone.eval()
         self.backbone_loaded = True
 
-    def encode_turns(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Encode each turn independently with the frozen backbone.
-
-        Args:
-            input_ids: [B, T, S]
-            attention_mask: [B, T, S]
-        Returns:
-            [B, T, S, D_backbone]
-        """
+    def encode_turns(self, input_ids, attention_mask):
         B, T, S = input_ids.shape
         flat_ids = input_ids.reshape(B * T, S)
         flat_mask = attention_mask.reshape(B * T, S)
@@ -80,22 +83,24 @@ class GuardLens(nn.Module):
             outputs = self.backbone(input_ids=flat_ids, attention_mask=flat_mask)
             hidden = outputs.last_hidden_state
 
-        # DeBERTa may load in float16 on some systems. Trainable layers
-        # are float32, so cast here to avoid dtype mismatch.
         return hidden.reshape(B, T, S, -1).float()
 
-    def pool_with_mask(
-        self,
-        embeds: torch.Tensor,
-        mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """Mean-pool over valid tokens. [B, T, S, D] -> [B, D]."""
+    def pool_with_mask(self, embeds, mask):
         B, T, S, D = embeds.shape
         flat = embeds.reshape(B, T * S, D)
         flat_mask = mask.reshape(B, T * S).unsqueeze(-1).float()
         summed = (flat * flat_mask).sum(dim=1)
         counts = flat_mask.sum(dim=1).clamp(min=1)
         return summed / counts
+
+    def pool_per_turn(self, embeds, attention_mask, turn_mask):
+        """Pool each turn independently: [B, T, S, D] -> [B, T, D]."""
+        B, T, S, D = embeds.shape
+        mask = (attention_mask * turn_mask.unsqueeze(-1)).float()  # [B, T, S]
+        mask = mask.unsqueeze(-1)  # [B, T, S, 1]
+        summed = (embeds * mask).sum(dim=2)  # [B, T, D]
+        counts = mask.sum(dim=2).clamp(min=1)  # [B, T, 1]
+        return summed / counts  # [B, T, D]
 
     def forward(
         self,
@@ -106,21 +111,9 @@ class GuardLens(nn.Module):
         compute_attribution: bool = True,
         attribution_mask: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
-        """
-        Full forward pass.
-
-        Args:
-            attribution_mask: [B, T, S] optional representation-level mask.
-                1=keep, 0=zero the embedding. Used by causal evaluation
-                metrics (deviation drop, flip rate, necessity, sufficiency).
-
-        Returns token_embeds in the output dict so forward_cf can
-        reuse them without re-running the backbone.
-        """
         # 1. Encode turns
         token_embeds = self.encode_turns(input_ids, attention_mask)
 
-        # Apply representation-level counterfactual mask if provided
         if attribution_mask is not None:
             token_embeds = token_embeds * attribution_mask.unsqueeze(-1).float()
 
@@ -150,13 +143,39 @@ class GuardLens(nn.Module):
         # 6. Classification
         cls_logits = self.cls_head(pooled, gated)
 
-        return {
+        result = {
             "cls_logits": cls_logits.squeeze(-1),
             "attr_logits": attr_logits,
             "attr_probs": attr_probs,
             "pooled": pooled,
-            "token_embeds": token_embeds.detach(),  # Cached for forward_cf
+            "token_embeds": token_embeds.detach(),
         }
+
+        # 7. Pivot head
+        if self.config.use_pivot_head and compute_attribution:
+            turn_pooled = self.pool_per_turn(
+                cross_embeds, attention_mask, turn_mask,
+            )  # [B, T, D]
+
+            pivot_scores = self.pivot_head(turn_pooled).squeeze(-1)  # [B, T]
+            # Mask padded turns
+            pivot_scores = pivot_scores.masked_fill(turn_mask == 0, -1e9)
+
+            # Append no-pivot score
+            B = turn_pooled.size(0)
+            no_pivot_score = self.no_pivot_embedding.unsqueeze(0).expand(B, -1)
+            no_pivot_logit = self.pivot_head(no_pivot_score)  # [B, 1]
+            pivot_logits = torch.cat([pivot_scores, no_pivot_logit], dim=1)  # [B, T+1]
+
+            result["pivot_logits"] = pivot_logits
+
+            # Pivot kind: use the predicted pivot turn's embedding
+            # During training, use the ground-truth pivot turn
+            # During inference, use argmax of pivot_logits
+            pivot_kind_logits = self.pivot_kind_head(pooled)  # [B, n_pivot_kinds]
+            result["pivot_kind_logits"] = pivot_kind_logits
+
+        return result
 
     def forward_cf(
         self,
@@ -166,28 +185,11 @@ class GuardLens(nn.Module):
         role_ids: torch.Tensor,
         attribution_mask: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
-        """
-        Lightweight counterfactual forward pass.
-
-        Reuses pre-computed backbone embeddings from forward().
-        Only runs cross-turn attention + classification head.
-        Skips: backbone encoding, attribution head, gated fusion.
-
-        Cost: ~10% of a full forward pass.
-        """
-        # Apply representation-level mask to cached embeddings
         masked_embeds = token_embeds * attribution_mask.unsqueeze(-1).float()
-
-        # Cross-turn attention (trainable, receives gradients)
         cross_embeds = self.cross_turn(
             masked_embeds, attention_mask, turn_mask, role_ids,
         )
-
-        # Pool + classify (no fusion -- attribution is disabled)
         valid_mask = attention_mask * turn_mask.unsqueeze(-1)
         pooled = self.pool_with_mask(cross_embeds, valid_mask)
         cls_logits = self.cls_head(pooled, None)
-
-        return {
-            "cls_logits": cls_logits.squeeze(-1),
-        }
+        return {"cls_logits": cls_logits.squeeze(-1)}
