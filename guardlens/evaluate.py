@@ -1,7 +1,12 @@
 """
-Evaluation entry point.
+Evaluation entry point — v11 compatible.
 
 Usage:
+    python -m guardlens.evaluate \
+        --test-path splits/test.jsonl \
+        --checkpoint ./checkpoints/best.pt
+
+    # Fallback single file:
     python -m guardlens.evaluate --data data.jsonl --checkpoint ./checkpoints/best.pt
 """
 
@@ -13,15 +18,15 @@ from torch.utils.data import DataLoader, Subset
 
 from guardlens.config import GuardLensConfig
 from guardlens.data.dataset import GuardLensDataset, GuardLensCollator
-from guardlens.data.splits import pair_aware_split
 from guardlens.models import MODEL_REGISTRY
 from guardlens.training.loss import GuardLensLoss
 from guardlens.training.trainer import evaluate
+from guardlens.evaluation.eval_utils import load_test_data, add_test_path_args
 
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate GuardLens")
-    parser.add_argument("--data", type=str, required=True)
+    parser = add_test_path_args(parser)
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--device", type=str, default="cuda")
@@ -34,15 +39,13 @@ def main():
     ckpt = torch.load(args.checkpoint, weights_only=False, map_location=device)
     config = ckpt["config"]
     model_name = ckpt.get("model_name", "guardlens")
+    threshold = ckpt.get("threshold", 0.5)
+    print(f"Model: {model_name}, threshold: {threshold:.2f}")
 
     # Load data
-    records = []
-    with open(args.data, "r") as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line))
-
-    _, _, test_idx = pair_aware_split(records, seed=config.seed)
+    records, test_idx = load_test_data(
+        test_path=args.test_path, data_path=args.data, seed=config.seed,
+    )
 
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
@@ -64,9 +67,12 @@ def main():
     model = model.to(device)
 
     loss_fn = GuardLensLoss(config)
-    results = evaluate(model, test_loader, loss_fn, config, device)
+    results = evaluate(model, test_loader, loss_fn, config, device, threshold=threshold)
 
-    print(json.dumps(results, indent=2))
+    print(json.dumps(
+        {k: v for k, v in results.items() if not isinstance(v, torch.Tensor)},
+        indent=2,
+    ))
 
 
 if __name__ == "__main__":

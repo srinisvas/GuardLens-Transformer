@@ -17,7 +17,7 @@ set -uo pipefail
 
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
-RESULTS_DIR="$HOME/work/results/dataset_gen"
+RESULTS_DIR="$HOME/work/results/guardlens_v11"
 OUT_DIR="$RESULTS_DIR/results"
 EVAL_DATA="$RESULTS_DIR/eval_data"
 
@@ -49,13 +49,12 @@ for model in guardlens guardlens_no_fusion guardlens_no_cf turn_level conversati
     echo "  OK: $model/best.pt"
 done
 
-# ---- Verify causal eval results ----
-if [ ! -f "$OUT_DIR/causal_eval_results.json" ]; then
-    echo "ERROR: $OUT_DIR/causal_eval_results.json not found."
-    echo "Move it there with: mv causal_eval_results.json $OUT_DIR/"
-    exit 1
+# ---- Check for causal eval results (optional, generated in Stage 2) ----
+if [ -f "$OUT_DIR/causal_eval_results.json" ]; then
+    echo "  OK: causal_eval_results.json (pre-existing)"
+else
+    echo "  NOTE: causal_eval_results.json not found yet (will be generated in Stage 2)"
 fi
-echo "  OK: causal_eval_results.json"
 
 # ---- Download datasets ----
 echo ""

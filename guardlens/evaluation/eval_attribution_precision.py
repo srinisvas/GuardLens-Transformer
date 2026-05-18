@@ -30,7 +30,7 @@ Two analyses not yet in the evaluation suite:
 
 Usage:
     python -m guardlens.evaluation.eval_attribution_precision \\
-        --data ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
+        --data ~/work/results/dataset_gen/splits/test.jsonl \\
         --checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
         --output ~/work/results/dataset_gen/results/attribution_precision.json \\
         --device cuda
@@ -179,29 +179,34 @@ def run_hard_negative_analysis(
     """
     dataset = GuardLensDataset(records, config)
 
-    # Partition test indices
+    # Partition test indices — v11 compatible
     all_records = [records[i] for i in test_idx]
     subsets = {
         "adversarial":     [],  # label=1, genuine adversarial
-        "hard_negative":   [],  # label=0, adversarial-sounding vocabulary
-        "borderline":      [],  # label=0, near-miss cases
-        "genuine_benign":  [],  # label=0, clearly benign
-        "false_pos_trap":  [],  # label=0, explicitly designed as FP traps
+        "hard_negative":   [],  # label=0, validated_benign_twin or hard_benign/topic_matched
+        "borderline":      [],  # label=0, false_lead_benign
+        "genuine_benign":  [],  # label=0, clean_benign from separate pool
+        "false_pos_trap":  [],  # label=0, research_technical (uses risky vocabulary safely)
     }
 
     for local_i, global_i in enumerate(test_idx):
         r = records[global_i]
         label = r.get("label", 0)
         family = r.get("family", "")
+        benign_status = r.get("benign_status", "none")
 
         if label == 1:
             subsets["adversarial"].append(global_i)
-        elif family == "hard_negative":
+        elif benign_status == "validated_benign_twin":
             subsets["hard_negative"].append(global_i)
-        elif family == "borderline_benign":
+        elif family in ("hard_benign", "topic_matched_safe"):
+            subsets["hard_negative"].append(global_i)
+        elif family == "false_lead_benign":
             subsets["borderline"].append(global_i)
-        elif family == "false_positive_trap":
+        elif family == "research_technical":
             subsets["false_pos_trap"].append(global_i)
+        elif benign_status == "clean_benign":
+            subsets["genuine_benign"].append(global_i)
         else:
             subsets["genuine_benign"].append(global_i)
 
@@ -411,7 +416,10 @@ def main():
     parser = argparse.ArgumentParser(
         description="Hard negative attribution precision and minimality curve"
     )
-    parser.add_argument("--data", required=True)
+    parser.add_argument("--test-path", type=str, default="",
+                        help="Path to pre-split test.jsonl (preferred)")
+    parser.add_argument("--data", default="",
+                        help="Fallback: single JSONL file to re-split")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output",
                         default="./results/attribution_precision.json")
@@ -446,16 +454,25 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
     collator = GuardLensCollator(tokenizer, config)
 
-    # Load data
-    print(f"\nLoading data {args.data}...")
-    records = []
-    with open(args.data) as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line))
-
-    _, _, test_idx = pair_aware_split(records, seed=config.seed)
-    print(f"  Test set: {len(test_idx)} samples")
+    # Load data (pre-split or fallback)
+    if args.test_path and os.path.exists(args.test_path):
+        print(f"\nLoading test data from {args.test_path}...")
+        records = []
+        with open(args.test_path) as f:
+            for line in f:
+                if line.strip():
+                    records.append(json.loads(line))
+        test_idx = list(range(len(records)))
+        print(f"  {len(records)} test records")
+    else:
+        print(f"\nLoading data {args.data}...")
+        records = []
+        with open(args.data) as f:
+            for line in f:
+                if line.strip():
+                    records.append(json.loads(line))
+        _, _, test_idx = pair_aware_split(records, seed=config.seed)
+        print(f"  Test set: {len(test_idx)} samples")
 
     # ============================================================
     # Analysis 1: Hard negative attribution precision

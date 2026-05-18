@@ -33,10 +33,10 @@ Quantisation:
 
 Usage:
     python -m guardlens.evaluation.eval_cross_model_transfer \\
-        --data ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
+        --data ~/work/results/dataset_gen/splits/test.jsonl \\
         --checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
         --output ~/work/results/dataset_gen/results/cross_model_transfer.json \\
-        --llamaguard-model meta-llama/Meta-Llama-Guard-3-8B \\
+        --external-model google/shieldgemma-9b \\
         --quantization 8bit \\
         --n-samples 50 --k-frac 0.15 --device cuda
 """
@@ -335,9 +335,7 @@ def phase1_extract_and_build(
                 "sample_idx": idx,
                 "family": record.get("family"),
                 "subtype": record.get("subtype"),
-                "has_implicit": any(
-                    t.get("implicit_trigger") for t in record.get("turns", [])
-                ),
+                "has_implicit": record.get("pivot_kind") in ("contextual_pivot", "distributed"),
                 "variants": {
                     "original":             _turns_to_api(record),
                     "guardlens_ablated":    ablate_by_importance(record, word_imp, k_frac),
@@ -653,12 +651,16 @@ def print_results(tfr: Dict, scored_entries: List[Dict], k_frac: float, model_na
 
 def main():
     parser = argparse.ArgumentParser(description="Cross-model transfer (two-phase)")
-    parser.add_argument("--data", required=True)
+    parser.add_argument("--test-path", type=str, default="",
+                        help="Path to pre-split test.jsonl (preferred)")
+    parser.add_argument("--data", default="",
+                        help="Fallback: single JSONL file")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output",
                         default="./results/cross_model_transfer.json")
-    parser.add_argument("--llamaguard-model",
-                        default="meta-llama/Meta-Llama-Guard-3-8B")
+    parser.add_argument("--external-model",
+                        default="google/shieldgemma-9b",
+                        help="External safety model for transfer eval (ShieldGemma or LlamaGuard)")
     parser.add_argument("--quantization", default="8bit",
                         choices=["8bit", "4bit", "none"],
                         help="8bit: ~9GB, 4bit: ~5GB, none: ~16GB float16")
@@ -667,10 +669,10 @@ def main():
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--subset", default=None,
-                        choices=["implicit", "explicit", None])
+                        choices=["contextual_pivot", "lexical_pivot", "transfer_success", None],
+                        help="v11 subset filter")
     parser.add_argument("--variants-cache", default=None,
-                        help="Path to save/load phase 1 variants. "
-                             "If file exists, skip phase 1 and go straight to scoring.")
+                        help="Path to save/load phase 1 variants.")
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -712,25 +714,33 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
         collator = GuardLensCollator(tokenizer, config)
 
-        print(f"\nLoading data from {args.data}...")
-        records = []
-        with open(args.data) as f:
-            for line in f:
-                if line.strip():
-                    records.append(json.loads(line))
+        print(f"\nLoading data...")
+        if args.test_path and os.path.exists(args.test_path):
+            records = []
+            with open(args.test_path) as f:
+                for line in f:
+                    if line.strip():
+                        records.append(json.loads(line))
+            test_records = records
+        else:
+            records = []
+            with open(args.data) as f:
+                for line in f:
+                    if line.strip():
+                        records.append(json.loads(line))
+            _, _, test_idx = pair_aware_split(records, seed=config.seed)
+            test_records = [records[i] for i in test_idx]
 
-        _, _, test_idx = pair_aware_split(records, seed=config.seed)
-        test_records = [records[i] for i in test_idx]
-
-        if args.subset == "implicit":
+        # v11 subset filtering
+        if args.subset == "contextual_pivot":
             test_records = [r for r in test_records
-                            if any(t.get("implicit_trigger")
-                                   for t in r.get("turns", []))]
-        elif args.subset == "explicit":
+                            if r.get("pivot_kind") == "contextual_pivot"]
+        elif args.subset == "lexical_pivot":
             test_records = [r for r in test_records
-                            if r.get("label") == 1
-                            and not any(t.get("implicit_trigger")
-                                        for t in r.get("turns", []))]
+                            if r.get("pivot_kind") == "lexical_pivot"]
+        elif args.subset == "transfer_success":
+            test_records = [r for r in test_records
+                            if r.get("transfer_tier") == "transfer_success"]
         print(f"  {len(test_records)} test records")
 
         n_processed = phase1_extract_and_build(
@@ -762,7 +772,7 @@ def main():
     # ============================================================
     # Phase 2: LlamaGuard scoring
     # ============================================================
-    print(f"\nPhase 2: Loading ShieldGemma-9B ({args.llamaguard_model}, "
+    print(f"\nPhase 2: Loading ShieldGemma-9B ({args.external_model}, "
           f"{args.quantization})...")
 
     # Check bitsandbytes available for quantisation
@@ -776,7 +786,7 @@ def main():
             args.quantization = "none"
 
     sg_model, sg_tokenizer, yes_token_id, no_token_id = _load_shieldgemma(
-        args.llamaguard_model, args.quantization
+        args.external_model, args.quantization
     )
     report_gpu_memory("ShieldGemma loaded")
 
@@ -790,7 +800,7 @@ def main():
         threshold=0.5,
     )
 
-    print_results(transfer_flip_rates, scored_entries, args.k_frac, args.llamaguard_model)
+    print_results(transfer_flip_rates, scored_entries, args.k_frac, args.external_model)
 
     # Save final output
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
@@ -798,13 +808,13 @@ def main():
         "transfer_flip_rates": transfer_flip_rates,
         "k_frac": args.k_frac,
         "n_samples": n_processed,
-        "shieldgemma_model": args.llamaguard_model,
+        "shieldgemma_model": args.external_model,
         "quantization": args.quantization,
         "threshold": 0.5,
         "policy": "dangerous_content",
         "subset": args.subset or "full",
         "llm_provider": "shieldgemma",
-        "llm_model": args.llamaguard_model,
+        "llm_model": args.external_model,
         # Include per-sample for collation script compatibility
         "per_sample": [
             {

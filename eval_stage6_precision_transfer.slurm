@@ -19,9 +19,9 @@ set -uo pipefail
 
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
-RESULTS_DIR="$HOME/work/results/dataset_gen"
+RESULTS_DIR="$HOME/work/results/guardlens_v11"
 CKPT_DIR="$RESULTS_DIR/checkpoints"
-DATA="$RESULTS_DIR/semantic_multiturn_v10_augmented.jsonl"
+TEST_DATA="$HOME/staging/dataset_gen_output/splits/test.jsonl"
 OUT_DIR="$RESULTS_DIR/results"
 
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -63,7 +63,7 @@ echo "Start: $(date)"
 # batch size. The minimality curve story (sharp inflection) is best told
 # with guardlens vs surface_risk vs random anyway.
 python -m guardlens.evaluation.eval_attribution_precision \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/attribution_precision.json" \
     --device cuda \
@@ -85,10 +85,10 @@ echo "Start: $(date)"
 
 # Full test set (50 samples)
 python -m guardlens.evaluation.eval_cross_model_transfer \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/cross_model_transfer_full.json" \
-    --llamaguard-model google/shieldgemma-9b \
+    --external-model google/shieldgemma-9b \
     --quantization 8bit \
     --n-samples 50 \
     --k-frac 0.15 \
@@ -100,12 +100,12 @@ echo "6b-full end: $(date)"
 
 # Implicit subset (30 samples -- key result)
 python -m guardlens.evaluation.eval_cross_model_transfer \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/cross_model_transfer_implicit.json" \
-    --llamaguard-model google/shieldgemma-9b \
+    --external-model google/shieldgemma-9b \
     --quantization 8bit \
-    --subset implicit \
+    --subset contextual_pivot \
     --n-samples 30 \
     --k-frac 0.15 \
     --variants-cache "$OUT_DIR/transfer_variants_implicit.jsonl" \

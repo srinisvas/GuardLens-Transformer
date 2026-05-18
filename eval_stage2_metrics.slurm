@@ -17,9 +17,9 @@ set -uo pipefail
 
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
-RESULTS_DIR="$HOME/work/results/dataset_gen"
+RESULTS_DIR="$HOME/work/results/guardlens_v11"
 CKPT_DIR="$RESULTS_DIR/checkpoints"
-DATA="$RESULTS_DIR/semantic_multiturn_v10_augmented.jsonl"
+TEST_DATA="$HOME/staging/dataset_gen_output/splits/test.jsonl"
 OUT_DIR="$RESULTS_DIR/results"
 
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -48,7 +48,7 @@ echo "=== 2a. Implicit/Explicit/Hard-Negative Subset Analysis ==="
 echo "Start: $(date)"
 
 python -m guardlens.evaluation.eval_implicit_explicit \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/implicit_explicit_eval.json" \
     --methods guardlens surface_risk attention random \
@@ -58,7 +58,7 @@ python -m guardlens.evaluation.eval_implicit_explicit \
 && echo "2a: SUCCESS" || echo "2a: FAILED (exit $?)"
 
 python -m guardlens.evaluation.eval_implicit_explicit \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/implicit_explicit_eval_grad.json" \
     --methods integrated_gradients grad_x_input \
@@ -77,7 +77,7 @@ echo "=== 2b. External Evaluator (full test set) ==="
 echo "Start: $(date)"
 
 python -m guardlens.evaluation.eval_external \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --attribution-checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --external-checkpoints \
         "$CKPT_DIR/conversation_deberta/best.pt" \
@@ -98,12 +98,12 @@ echo "=== 2c. External Evaluator (implicit subset) ==="
 echo "Start: $(date)"
 
 python -m guardlens.evaluation.eval_external \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --attribution-checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --external-checkpoints "$CKPT_DIR/conversation_deberta/best.pt" \
-    --output "$OUT_DIR/external_eval_implicit.json" \
+    --output "$OUT_DIR/external_eval_contextual.json" \
     --top-k 0.05 0.10 0.15 0.20 \
-    --subset implicit \
+    --subset contextual_pivot \
     --batch-size 4 \
     --device cuda \
 && echo "2c: SUCCESS" || echo "2c: FAILED (exit $?)"
@@ -118,24 +118,49 @@ echo "=== 2d. External Evaluator (explicit subset) ==="
 echo "Start: $(date)"
 
 python -m guardlens.evaluation.eval_external \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --attribution-checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --external-checkpoints "$CKPT_DIR/conversation_deberta/best.pt" \
-    --output "$OUT_DIR/external_eval_explicit.json" \
+    --output "$OUT_DIR/external_eval_lexical.json" \
     --top-k 0.05 0.10 0.15 0.20 \
-    --subset explicit \
+    --subset lexical_pivot \
     --batch-size 4 \
     --device cuda \
 && echo "2d: SUCCESS" || echo "2d: FAILED (exit $?)"
 
 echo "2d end: $(date)"
 
+# ---- 2e: Boundary stress test (issue 13) ----
+echo ""
+echo "2e: Boundary stress test..."
+
+BOUNDARY1="$RESULTS_DIR/old_benign_boundary_or_unused.jsonl"
+BOUNDARY2="$RESULTS_DIR/benign_boundary.jsonl"
+
+BOUNDARY_FILES=""
+[ -f "$BOUNDARY1" ] && BOUNDARY_FILES="$BOUNDARY_FILES $BOUNDARY1"
+[ -f "$BOUNDARY2" ] && BOUNDARY_FILES="$BOUNDARY_FILES $BOUNDARY2"
+
+if [ -n "$BOUNDARY_FILES" ]; then
+    python -m guardlens.evaluation.eval_boundary_stress \
+        --boundary-files $BOUNDARY_FILES \
+        --checkpoint "$CKPT_DIR/guardlens/best.pt" \
+        --output "$OUT_DIR/boundary_stress.json" \
+        --device cuda \
+    && echo "2e: SUCCESS" || echo "2e: FAILED"
+else
+    echo "2e: SKIPPED (no boundary files found)"
+fi
+
+echo "2e end: $(date)"
+
 echo ""
 echo "========================================================"
 echo "  Stage 2 complete: $(date)"
 echo "  Outputs in: $OUT_DIR"
 for f in implicit_explicit_eval.json external_eval_full.json \
-          external_eval_implicit.json external_eval_explicit.json; do
+          external_eval_contextual.json external_eval_lexical.json \
+          boundary_stress.json; do
     [ -f "$OUT_DIR/$f" ] && echo "  OK: $f" || echo "  MISSING: $f"
 done
 echo "========================================================"

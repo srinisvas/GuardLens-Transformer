@@ -37,7 +37,7 @@ Metrics:
 
 Usage:
     python -m guardlens.evaluation.eval_paraphrase \\
-        --data ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
+        --data ~/work/results/dataset_gen/splits/test.jsonl \\
         --checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
         --output ~/work/results/dataset_gen/results/paraphrase_eval.json \\
         --paraphrase-model vllm \\
@@ -437,7 +437,10 @@ def compute_robustness_metrics(
 
 def main():
     parser = argparse.ArgumentParser(description="Paraphrase robustness evaluation")
-    parser.add_argument("--data", type=str, required=True)
+    parser.add_argument("--test-path", type=str, default="",
+                        help="Path to pre-split test.jsonl (preferred)")
+    parser.add_argument("--data", type=str, default="",
+                        help="Fallback: single JSONL file")
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--output", type=str,
                         default="./results/paraphrase_eval.json")
@@ -455,8 +458,8 @@ def main():
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--subset", type=str, default=None,
-                        choices=["implicit", "explicit", None],
-                        help="Evaluate only on implicit or explicit trigger subset")
+                        choices=["contextual_pivot", "lexical_pivot", None],
+                        help="v11: evaluate on contextual or lexical pivot subset")
     parser.add_argument("--save-examples", type=int, default=5,
                         help="Number of examples to save with full attribution scores")
     args = parser.parse_args()
@@ -483,32 +486,36 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
     collator = GuardLensCollator(tokenizer, config)
 
-    # Load data
-    print(f"\nLoading data from {args.data}...")
-    records = []
-    with open(args.data) as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line))
+    # Load data (pre-split or fallback)
+    if args.test_path and os.path.exists(args.test_path):
+        print(f"\nLoading test data from {args.test_path}...")
+        records = []
+        with open(args.test_path) as f:
+            for line in f:
+                if line.strip():
+                    records.append(json.loads(line))
+        test_records = records
+    else:
+        print(f"\nLoading data from {args.data}...")
+        records = []
+        with open(args.data) as f:
+            for line in f:
+                if line.strip():
+                    records.append(json.loads(line))
+        _, _, test_idx = pair_aware_split(records, seed=config.seed)
+        test_records = [records[i] for i in test_idx]
 
-    _, _, test_idx = pair_aware_split(records, seed=config.seed)
-    test_records = [records[i] for i in test_idx]
-
-    # Select adversarial samples only (attribution is on adversarial conversations)
+    # Select adversarial samples only
     adv_records = [r for r in test_records if r["label"] == 1]
 
-    if args.subset == "implicit":
-        adv_records = [
-            r for r in adv_records
-            if any(t.get("implicit_trigger") for t in r.get("turns", []))
-        ]
-        print(f"  Implicit trigger subset: {len(adv_records)} adversarial samples")
-    elif args.subset == "explicit":
-        adv_records = [
-            r for r in adv_records
-            if not any(t.get("implicit_trigger") for t in r.get("turns", []))
-        ]
-        print(f"  Explicit trigger subset: {len(adv_records)} adversarial samples")
+    if args.subset == "contextual_pivot":
+        adv_records = [r for r in adv_records
+                       if r.get("pivot_kind") == "contextual_pivot"]
+        print(f"  Contextual pivot subset: {len(adv_records)} adversarial samples")
+    elif args.subset == "lexical_pivot":
+        adv_records = [r for r in adv_records
+                       if r.get("pivot_kind") == "lexical_pivot"]
+        print(f"  Lexical pivot subset: {len(adv_records)} adversarial samples")
     else:
         print(f"  Full adversarial test set: {len(adv_records)} samples")
 
@@ -559,9 +566,7 @@ def main():
         )
         metrics["sample_idx"] = sample_idx
         metrics["family"] = record.get("family", "unknown")
-        metrics["has_implicit"] = any(
-            t.get("implicit_trigger") for t in record.get("turns", [])
-        )
+        metrics["has_implicit"] = record.get("pivot_kind") in ("contextual_pivot", "distributed")
         all_metrics.append(metrics)
 
         # Save examples with attribution scores

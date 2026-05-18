@@ -3,14 +3,14 @@ guardlens/evaluation/eval_cross_dataset.py
 
 Cross-dataset generalisation evaluation.
 
-Training: GuardLens trained entirely on synthetic GuardLens v10 data.
+Training: GuardLens trained entirely on synthetic GuardLens v11 data.
 Test:     AdvBench, HarmBench, JailbreakBench, ToxicChat -- real-world
           single-turn jailbreak prompts extended to multi-turn format.
 
 Extension protocol:
   Each single-turn seed becomes a 5-7 turn conversation by prepending
   3-4 benign context-building turns (reusing the same SeedLoader logic
-  from build_semantic_datasetv10.py). The seed becomes the final payload
+  from build_semantic_datasetv11.py). The seed becomes the final payload
   turn by construction -- so pivot_turn is always the last user turn.
 
 What we measure:
@@ -31,7 +31,7 @@ Expected outcome:
 Usage:
     python -m guardlens.evaluation.eval_cross_dataset \\
         --seeds ~/work/results/dataset_gen/eval_data/cross_dataset_combined.jsonl \\
-        --benign-pool ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
+        --benign-pool ~/work/results/dataset_gen/splits/test.jsonl \\
         --checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
         --output ~/work/results/dataset_gen/results/cross_dataset_eval.json \\
         --n-seeds 200 \\
@@ -65,7 +65,7 @@ from guardlens.models import MODEL_REGISTRY
 # Multi-turn extension of single-turn seeds
 #
 # Replicates the SeedLoader.extend_to_multiturn logic from
-# build_semantic_datasetv10.py WITHOUT calling an LLM -- uses
+# build_semantic_datasetv11.py WITHOUT calling an LLM -- uses
 # rule-based fallback turns instead, since we're on HPC and
 # the goal is evaluation, not dataset generation quality.
 # -------------------------------------------------------
@@ -353,8 +353,8 @@ def main():
     parser = argparse.ArgumentParser(description="Cross-dataset generalisation eval")
     parser.add_argument("--seeds", type=str, required=True,
                         help="Path to cross_dataset_combined.jsonl")
-    parser.add_argument("--benign-pool", type=str, required=True,
-                        help="Path to training data (for benign samples)")
+    parser.add_argument("--benign-pool", type=str, default="",
+                        help="Path to test.jsonl or benign pool (v11: use splits/test.jsonl)")
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--output", type=str,
                         default="./results/cross_dataset_eval.json")
@@ -415,21 +415,18 @@ def main():
     print(f"  Extended {len(adversarial_records)} adversarial records")
     print(f"  Source breakdown: {source_counts}")
 
-    # Load benign samples from training data (non-adversarial records from test split)
+    # Load benign samples — v11: load directly from test split
     print(f"\nLoading benign samples from {args.benign_pool}...")
-    train_records = []
+    benign_records = []
     with open(args.benign_pool) as f:
         for line in f:
             if line.strip():
-                train_records.append(json.loads(line))
+                r = json.loads(line)
+                if r.get("label") == 0:
+                    benign_records.append(r)
 
-    _, _, test_idx = pair_aware_split(train_records, seed=config.seed)
-    test_benign = [
-        train_records[i] for i in test_idx
-        if train_records[i]["label"] == 0
-    ]
-    sampled_benign = rng.sample(test_benign, min(args.n_benign, len(test_benign)))
-    print(f"  {len(sampled_benign)} benign samples")
+    sampled_benign = rng.sample(benign_records, min(args.n_benign, len(benign_records)))
+    print(f"  {len(sampled_benign)} benign samples (from {len(benign_records)} available)")
 
     # Combine
     all_records = adversarial_records + sampled_benign

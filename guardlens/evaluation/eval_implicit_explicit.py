@@ -1,54 +1,29 @@
 """
 guardlens/evaluation/eval_implicit_explicit.py
 
-Implicit vs explicit trigger subset analysis.
+Implicit vs explicit trigger subset analysis — v11 compatible.
 
-This is the key experiment for addressing the surface risk concern.
-
-The concern:
-  The surface_risk baseline achieves near-perfect Deviation Drop at 15-20%
-  (0.990/0.991) and Flip Rate of 1.0. This suggests that in the full test
-  set, keyword-level attribution is nearly sufficient. If that's the case,
-  GuardLens's attribution may not be meaningfully better than a lexical
-  baseline on conversations that HAVE explicit keywords.
-
-The counter-argument (what we want to demonstrate):
-  On IMPLICIT trigger conversations (zero keyword overlap, adversarial intent
-  comes entirely from conversation context), surface risk attribution should
-  collapse while GuardLens attribution should remain strong.
-
-Subsets:
-  1. Implicit: turns with implicit_trigger=True (IMPLICIT_ATTACK_PATHS family)
-     These conversations have no explicit safety keywords. Surface risk score
-     on these turns should be ~0.
-  2. Explicit: adversarial conversations with surface-level keywords
-     (MALICIOUS_TRIGGER / PAYLOAD_SPAN span labels with exact/semantic match)
-  3. Hard negatives: label=0 conversations with adversarial-sounding vocabulary
-     (the false positive trap) -- tests specificity
-
-Per-baseline metrics for each subset:
-  GuardLens, IG, Grad×Input, Surface Risk, Attention, Random
-  → Deviation Drop, Flip Rate, Necessity, Sufficiency
-
-Paper positioning:
-  "On explicit trigger conversations, surface-form baselines are competitive.
-   On implicit trigger conversations -- where adversarial intent is encoded
-   entirely in conversation context -- GuardLens maintains [X]% deviation drop
-   while the surface risk baseline drops to [Y]%."
+v11 changes:
+  - Uses pivot_kind for implicit/explicit partitioning:
+    contextual_pivot / distributed → implicit (context-dependent attacks)
+    lexical_pivot → explicit (keyword-based attacks)
+  - Uses benign_status for hard negative partitioning:
+    validated_benign_twin, hard_benign, false_lead_benign → hard negative
+    clean_benign → clean benign
+  - Loads pre-split test data instead of re-splitting
 
 Usage:
-    python -m guardlens.evaluation.eval_implicit_explicit \\
-        --data ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
-        --checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
-        --output ~/work/results/dataset_gen/results/implicit_explicit_eval.json \\
-        --device cuda
+    python -m guardlens.evaluation.eval_implicit_explicit \
+        --test-path splits/test.jsonl \
+        --checkpoint checkpoints/guardlens/best.pt \
+        --output results/implicit_explicit_eval.json
 """
 
 import argparse
 import json
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -59,162 +34,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
 
 from guardlens.config import GuardLensConfig
 from guardlens.data.dataset import GuardLensDataset, GuardLensCollator
-from guardlens.data.splits import pair_aware_split
 from guardlens.models import MODEL_REGISTRY
 from guardlens.evaluation.causal_eval import (
     run_causal_evaluation,
     print_comparison_table,
 )
-
-
-def partition_test_set(
-    test_records: List[Dict],
-    test_idx: List[int],
-) -> Dict[str, List[int]]:
-    """
-    Partition test records into subsets by trigger type.
-
-    Returns dict of subset_name -> list of GLOBAL indices into records.
-    """
-    implicit_global = []
-    explicit_global = []
-    hard_neg_global = []
-    benign_global = []
-
-    for local_i, global_i in enumerate(test_idx):
-        record = test_records[local_i]
-        label = record.get("label", 0)
-        family = record.get("family", "")
-        turns = record.get("turns", [])
-
-        # Implicit: has at least one implicit_trigger turn
-        has_implicit = any(t.get("implicit_trigger") for t in turns)
-
-        # Hard negative: explicitly constructed to look adversarial but benign
-        is_hard_neg = family in ("hard_negative", "borderline_benign", "false_positive_trap")
-
-        if label == 1 and has_implicit:
-            implicit_global.append(global_i)
-        elif label == 1 and not has_implicit:
-            explicit_global.append(global_i)
-        elif label == 0 and is_hard_neg:
-            hard_neg_global.append(global_i)
-        elif label == 0:
-            benign_global.append(global_i)
-
-    return {
-        "implicit": implicit_global,
-        "explicit": explicit_global,
-        "hard_negative": hard_neg_global,
-        "benign": benign_global,
-    }
-
-
-def compute_surface_risk_score(text: str) -> float:
-    """
-    Compute surface risk for a text string -- same logic as augment_dataset.py.
-    Used to verify that implicit trigger turns really have low surface risk.
-    """
-    _SR_HIGH = {
-        "improve success rate": 0.80, "less detectable": 0.75,
-        "blend in": 0.65, "more convincing": 0.55,
-        "pass casual scrutiny": 0.70, "reduce suspicion": 0.65,
-        "bypass": 0.60, "exploit": 0.55, "override": 0.55,
-        "credential harvesting": 0.60, "jailbreak": 0.65,
-        "prompt injection": 0.55, "payload": 0.50,
-    }
-    txt = text.lower()
-    scores = sorted([w for p, w in _SR_HIGH.items() if p in txt], reverse=True)
-    if not scores:
-        return 0.0
-    score = scores[0]
-    for w in scores[1:]:
-        score += w * 0.3
-    return round(min(1.0, score), 3)
-
-
-def verify_subset_properties(
-    test_records: List[Dict],
-    subsets: Dict[str, List[int]],
-    all_records: List[Dict],
-):
-    """
-    Print summary stats for each subset to verify they have the expected properties.
-    Implicit triggers should have low surface risk. Explicit should have high.
-    """
-    record_by_idx = {i: all_records[i] for subset in subsets.values() for i in subset}
-
-    print("\n  Subset verification:")
-    for subset_name, global_indices in subsets.items():
-        if not global_indices:
-            print(f"    {subset_name}: EMPTY")
-            continue
-
-        records_in_subset = [all_records[i] for i in global_indices]
-        avg_sr = []
-        for record in records_in_subset:
-            user_turns = [t for t in record.get("turns", []) if t["role"] == "user"]
-            for t in user_turns:
-                avg_sr.append(compute_surface_risk_score(t["text"]))
-
-        implicit_turns = sum(
-            1 for r in records_in_subset
-            for t in r.get("turns", [])
-            if t.get("implicit_trigger")
-        )
-
-        print(f"    {subset_name:<20}: n={len(global_indices):4d}  "
-              f"mean_SR={sum(avg_sr)/max(1,len(avg_sr)):.3f}  "
-              f"implicit_turns={implicit_turns}")
-
-
-def run_subset_eval(
-    model: torch.nn.Module,
-    global_indices: List[int],
-    all_records: List[Dict],
-    collator: GuardLensCollator,
-    config: GuardLensConfig,
-    device: torch.device,
-    top_k_fractions: List[float],
-    batch_size: int,
-    methods: List[str],
-    tokenizer,
-    subset_name: str,
-) -> Dict:
-    """Run full causal eval on a subset."""
-    if not global_indices:
-        return {"error": "empty subset"}
-
-    dataset = GuardLensDataset(all_records, config)
-    loader = DataLoader(
-        Subset(dataset, global_indices),
-        batch_size=batch_size,
-        collate_fn=collator,
-        num_workers=4,
-        pin_memory=True,
-    )
-
-    print(f"\n  Running {subset_name} subset ({len(global_indices)} samples)...")
-    results = run_causal_evaluation(
-        model, loader, device,
-        methods=methods,
-        top_k_fractions=top_k_fractions,
-        tokenizer=tokenizer,
-    )
-    return results
+from guardlens.evaluation.eval_utils import (
+    load_test_data, add_test_path_args,
+    partition_test_set_v11, print_subset_summary,
+    comparison_to_latex,
+)
 
 
 def print_subset_comparison(
     all_results: Dict[str, Dict],
-    top_k_fractions: List[float],
+    top_k_fractions,
     focus_k: float = 0.15,
 ):
-    """
-    Print a table comparing methods across subsets.
-    Focus on the implicit vs explicit vs hard_negative contrast.
-    """
+    """Print table comparing methods across subsets."""
     k_str = f"{int(focus_k*100)}%"
-    methods = list(next(iter(all_results.values())).keys()) if all_results else []
 
     print(f"\n{'='*80}")
     print(f"  Subset Analysis at top-{k_str} token removal")
@@ -232,15 +70,17 @@ def print_subset_comparison(
             suf = data.get("sufficiency", {}).get(k_str, 0)
             print(f"  {method:<25} {dd:>10.3f} {flip:>10.3f} {nec:>10.3f} {suf:>10.3f}")
 
-    # Key contrast: GuardLens vs Surface Risk on implicit vs explicit
-    if "implicit" in all_results and "explicit" in all_results:
+    # Key contrast: GuardLens vs Surface Risk on contextual vs lexical pivots
+    ctx_key = "contextual_pivot"
+    lex_key = "lexical_pivot"
+    if ctx_key in all_results and lex_key in all_results:
         print(f"\n  {'='*60}")
         print(f"  KEY CONTRAST: GuardLens vs Surface Risk")
         print(f"  {'='*60}")
-        print(f"  {'Subset':<20} {'GuardLens DD':>15} {'SurfRisk DD':>15} {'Delta':>10}")
-        print(f"  {'-'*20} {'-'*15} {'-'*15} {'-'*10}")
+        print(f"  {'Subset':<25} {'GuardLens DD':>15} {'SurfRisk DD':>15} {'Delta':>10}")
+        print(f"  {'-'*25} {'-'*15} {'-'*15} {'-'*10}")
 
-        for subset_name in ["implicit", "explicit", "hard_negative"]:
+        for subset_name in [ctx_key, lex_key, "hard_benign", "false_lead"]:
             if subset_name not in all_results:
                 continue
             sr = all_results[subset_name]
@@ -248,13 +88,13 @@ def print_subset_comparison(
             surf_dd = sr.get("surface_risk", {}).get("deviation_drops", {}).get(k_str, None)
             if gl_dd is not None and surf_dd is not None:
                 delta = gl_dd - surf_dd
-                flag = " ← KEY RESULT" if subset_name == "implicit" else ""
-                print(f"  {subset_name:<20} {gl_dd:>15.3f} {surf_dd:>15.3f} {delta:>+10.3f}{flag}")
+                flag = " <-- KEY RESULT" if subset_name == ctx_key else ""
+                print(f"  {subset_name:<25} {gl_dd:>15.3f} {surf_dd:>15.3f} {delta:>+10.3f}{flag}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Implicit vs explicit trigger analysis")
-    parser.add_argument("--data", type=str, required=True)
+    parser = add_test_path_args(parser)
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--output", type=str,
                         default="./results/implicit_explicit_eval.json")
@@ -289,56 +129,54 @@ def main():
     collator = GuardLensCollator(tokenizer, config)
 
     # Load data
-    print(f"\nLoading data from {args.data}...")
-    records = []
-    with open(args.data) as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line))
-    print(f"  {len(records)} records")
-
-    _, _, test_idx = pair_aware_split(records, seed=config.seed)
+    records, test_idx = load_test_data(
+        test_path=args.test_path, data_path=args.data, seed=config.seed,
+    )
     test_records = [records[i] for i in test_idx]
-    print(f"  Test set: {len(test_idx)} samples")
 
-    # Partition
-    subsets = partition_test_set(test_records, test_idx)
-    for name, indices in subsets.items():
-        print(f"  Subset '{name}': {len(indices)} samples")
-
-    # Verify subset properties
-    verify_subset_properties(test_records, subsets, records)
+    # Partition using v11 fields
+    subsets = partition_test_set_v11(test_records)
+    print_subset_summary(subsets, test_records)
 
     # Run evaluation on each subset
     all_results = {}
-    # Order: implicit first (the key result), then explicit, then others
-    eval_order = ["implicit", "explicit", "hard_negative", "benign"]
+    eval_order = ["contextual_pivot", "lexical_pivot", "distributed",
+                  "hard_benign", "false_lead", "clean_benign"]
+
     for subset_name in eval_order:
-        global_indices = subsets.get(subset_name, [])
-        if len(global_indices) < 5:
-            print(f"\n  Skipping '{subset_name}' (only {len(global_indices)} samples)")
+        indices = subsets.get(subset_name, [])
+        if len(indices) < 5:
+            print(f"\n  Skipping '{subset_name}' (only {len(indices)} samples)")
             continue
 
-        results = run_subset_eval(
-            model=model,
-            global_indices=global_indices,
-            all_records=records,
-            collator=collator,
-            config=config,
-            device=device,
-            top_k_fractions=args.top_k,
+        dataset = GuardLensDataset(test_records, config)
+        loader = DataLoader(
+            Subset(dataset, indices),
             batch_size=args.batch_size,
+            collate_fn=collator,
+            num_workers=4,
+            pin_memory=True,
+        )
+
+        print(f"\n  Running {subset_name} ({len(indices)} samples)...")
+        results = run_causal_evaluation(
+            model, loader, device,
             methods=args.methods,
+            top_k_fractions=args.top_k,
             tokenizer=tokenizer,
-            subset_name=subset_name,
         )
         all_results[subset_name] = results
-
-        # Print intermediate table
         print_comparison_table(results)
 
     # Print combined comparison
     print_subset_comparison(all_results, args.top_k, focus_k=0.15)
+
+    # Generate LaTeX
+    latex = comparison_to_latex(
+        all_results,
+        caption="Attribution Quality by Trigger Type",
+        label="tab:implicit_explicit",
+    )
 
     # Save
     def make_serializable(obj):
@@ -361,10 +199,17 @@ def main():
         "methods": args.methods,
         "top_k_fractions": args.top_k,
         "results": make_serializable(all_results),
+        "latex_table": latex,
     }
     with open(args.output, "w") as f:
         json.dump(output, f, indent=2)
+
+    latex_path = args.output.replace(".json", ".tex")
+    with open(latex_path, "w") as f:
+        f.write(latex)
+
     print(f"\nResults saved to {args.output}")
+    print(f"LaTeX saved to {latex_path}")
 
 
 if __name__ == "__main__":

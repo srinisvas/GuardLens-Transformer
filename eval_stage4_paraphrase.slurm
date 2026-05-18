@@ -18,9 +18,9 @@ set -uo pipefail
 
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
-RESULTS_DIR="$HOME/work/results/dataset_gen"
+RESULTS_DIR="$HOME/work/results/guardlens_v11"
 CKPT_DIR="$RESULTS_DIR/checkpoints"
-DATA="$RESULTS_DIR/semantic_multiturn_v10_augmented.jsonl"
+TEST_DATA="$HOME/staging/dataset_gen_output/splits/test.jsonl"
 OUT_DIR="$RESULTS_DIR/results"
 
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -50,7 +50,7 @@ echo ""
 echo "=== 4a. Full adversarial test set ==="
 echo "Start: $(date)"
 python -m guardlens.evaluation.eval_paraphrase \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/paraphrase_eval_full.json" \
     --n-samples 150 \
@@ -65,11 +65,11 @@ echo ""
 echo "=== 4b. Implicit trigger subset ==="
 echo "Start: $(date)"
 python -m guardlens.evaluation.eval_paraphrase \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/paraphrase_eval_implicit.json" \
     --n-samples 80 \
-    --subset implicit \
+    --subset contextual_pivot \
     --paraphrase-model hf \
     --vllm-model "$PARA_MODEL" \
     --top-k 0.15 \
@@ -81,11 +81,11 @@ echo ""
 echo "=== 4c. Explicit trigger subset ==="
 echo "Start: $(date)"
 python -m guardlens.evaluation.eval_paraphrase \
-    --data "$DATA" \
+    --test-path "$TEST_DATA" \
     --checkpoint "$CKPT_DIR/guardlens/best.pt" \
     --output "$OUT_DIR/paraphrase_eval_explicit.json" \
     --n-samples 80 \
-    --subset explicit \
+    --subset lexical_pivot \
     --paraphrase-model hf \
     --vllm-model "$PARA_MODEL" \
     --top-k 0.15 \

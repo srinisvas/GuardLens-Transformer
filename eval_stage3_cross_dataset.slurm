@@ -17,9 +17,9 @@ set -uo pipefail
 
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
-RESULTS_DIR="$HOME/work/results/dataset_gen"
+RESULTS_DIR="$HOME/work/results/guardlens_v11"
 CKPT_DIR="$RESULTS_DIR/checkpoints"
-DATA="$RESULTS_DIR/semantic_multiturn_v10_augmented.jsonl"
+DATA="$HOME/staging/dataset_gen_output/splits/test.jsonl"
 OUT_DIR="$RESULTS_DIR/results"
 SEEDS="$RESULTS_DIR/eval_data/cross_dataset_combined.jsonl"
 

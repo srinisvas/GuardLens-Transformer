@@ -32,7 +32,7 @@ than semantic causality.
 
 Usage:
     python -m guardlens.evaluation.eval_external \\
-        --data ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
+        --data ~/work/results/dataset_gen/splits/test.jsonl \\
         --attribution-checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
         --external-checkpoints \\
             ~/work/results/dataset_gen/checkpoints/conversation_deberta/best.pt \\
@@ -515,7 +515,10 @@ def print_comparison_table(
 
 def main():
     parser = argparse.ArgumentParser(description="Self-eval vs external-eval")
-    parser.add_argument("--data", type=str, required=True)
+    parser.add_argument("--test-path", type=str, default="",
+                        help="Path to pre-split test.jsonl (preferred)")
+    parser.add_argument("--data", type=str, default="",
+                        help="Fallback: single JSONL file")
     parser.add_argument("--attribution-checkpoint", type=str, required=True,
                         help="GuardLens checkpoint for attribution scoring")
     parser.add_argument("--external-checkpoints", nargs="+", required=True,
@@ -528,7 +531,7 @@ def main():
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--subset", type=str, default=None,
-                        choices=["implicit", "explicit", "clean_holdout", None],
+                        choices=["contextual_pivot", "lexical_pivot", "transfer_success", None],
                         help="Evaluate on a subset of the test set")
     args = parser.parse_args()
 
@@ -554,38 +557,46 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(gl_config.backbone_name)
     collator = GuardLensCollator(tokenizer, gl_config)
 
-    # Load data
-    print(f"\nLoading data from {args.data}...")
-    records = []
-    with open(args.data) as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line))
-    print(f"  {len(records)} total records")
+    # Load data (pre-split or fallback)
+    if args.test_path and os.path.exists(args.test_path):
+        print(f"\nLoading test data from {args.test_path}...")
+        records = []
+        with open(args.test_path) as f:
+            for line in f:
+                if line.strip():
+                    records.append(json.loads(line))
+        test_records = records
+        test_idx = list(range(len(records)))
+    else:
+        print(f"\nLoading data from {args.data}...")
+        records = []
+        with open(args.data) as f:
+            for line in f:
+                if line.strip():
+                    records.append(json.loads(line))
+        print(f"  {len(records)} total records")
+        _, _, test_idx = pair_aware_split(records, seed=gl_config.seed)
+        test_records = [records[i] for i in test_idx]
 
-    _, _, test_idx = pair_aware_split(records, seed=gl_config.seed)
-    test_records = [records[i] for i in test_idx]
-
-    # Optional subset filtering
-    if args.subset == "implicit":
+    # v11 subset filtering
+    if args.subset == "contextual_pivot":
         test_idx_filtered = [
             i for i, r in enumerate(test_records)
-            if any(t.get("implicit_trigger") for t in r.get("turns", []))
+            if r.get("pivot_kind") == "contextual_pivot"
         ]
-        print(f"  Implicit trigger subset: {len(test_idx_filtered)} samples")
-    elif args.subset == "explicit":
+        print(f"  Contextual pivot subset: {len(test_idx_filtered)} samples")
+    elif args.subset == "lexical_pivot":
         test_idx_filtered = [
             i for i, r in enumerate(test_records)
-            if r.get("label") == 1 and
-            not any(t.get("implicit_trigger") for t in r.get("turns", []))
+            if r.get("pivot_kind") == "lexical_pivot"
         ]
-        print(f"  Explicit trigger subset: {len(test_idx_filtered)} samples")
-    elif args.subset == "clean_holdout":
+        print(f"  Lexical pivot subset: {len(test_idx_filtered)} samples")
+    elif args.subset == "transfer_success":
         test_idx_filtered = [
             i for i, r in enumerate(test_records)
-            if r.get("metadata", {}).get("clean_holdout")
+            if r.get("transfer_tier") == "transfer_success"
         ]
-        print(f"  Clean holdout subset: {len(test_idx_filtered)} samples")
+        print(f"  Transfer success subset: {len(test_idx_filtered)} samples")
     else:
         test_idx_filtered = list(range(len(test_records)))
         print(f"  Using full test set: {len(test_idx_filtered)} samples")
