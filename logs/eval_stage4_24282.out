@@ -1,0 +1,137 @@
+========================================================
+  GuardLens Eval Stage 4: Paraphrase Robustness
+  Job: 24282  Node: g010
+  Start: Mon May 18 17:40:04 EDT 2026
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+
+=== 4a. Full adversarial test set ===
+Start: Mon May 18 17:40:04 EDT 2026
+Device: cuda
+
+Loading checkpoint from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best.pt...
+  Loaded guardlens
+
+Loading test data from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl...
+  Full adversarial test set: 87 samples
+  Sampled: 87 records for paraphrase evaluation
+
+Initialising paraphrase backend (hf)...
+  Using HuggingFace backend (model=Qwen/Qwen2.5-7B-Instruct)
+    Loading paraphrase model Qwen/Qwen2.5-7B-Instruct...
+
+Running paraphrase robustness evaluation...
+  10/87...
+  20/87...
+  30/87...
+  40/87...
+  50/87...
+  60/87...
+  70/87...
+  80/87...
+
+============================================================
+  Paraphrase Robustness Results
+============================================================
+  N samples evaluated: 87
+  Turn-level Spearman ρ:  0.9834 ± 0.0123
+  Token-level Spearman ρ: 0.9570 ± 0.0087
+  Top-15% token stability: 0.6883
+  Pivot turn stability:   0.5057
+
+  Implicit triggers (n=48):
+    Turn ρ: 0.9830
+    Tok  ρ: 0.9578
+
+  Explicit triggers (n=39):
+    Turn ρ: 0.9838
+    Tok  ρ: 0.9560
+
+  Interpretation: Strong: attribution tracks semantic content across paraphrase.
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/paraphrase_eval_full.json
+4a: SUCCESS
+
+=== 4b. Implicit trigger subset ===
+Start: Mon May 18 17:58:14 EDT 2026
+Device: cuda
+
+Loading checkpoint from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best.pt...
+  Loaded guardlens
+
+Loading test data from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl...
+  Contextual pivot subset: 48 adversarial samples
+  Sampled: 48 records for paraphrase evaluation
+
+Initialising paraphrase backend (hf)...
+  Using HuggingFace backend (model=Qwen/Qwen2.5-7B-Instruct)
+    Loading paraphrase model Qwen/Qwen2.5-7B-Instruct...
+
+Running paraphrase robustness evaluation...
+  10/48...
+  20/48...
+  30/48...
+  40/48...
+
+============================================================
+  Paraphrase Robustness Results
+============================================================
+  N samples evaluated: 48
+  Turn-level Spearman ρ:  0.9833 ± 0.0132
+  Token-level Spearman ρ: 0.9577 ± 0.0102
+  Top-15% token stability: 0.6920
+  Pivot turn stability:   0.5000
+
+  Implicit triggers (n=48):
+    Turn ρ: 0.9833
+    Tok  ρ: 0.9577
+
+  Interpretation: Strong: attribution tracks semantic content across paraphrase.
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/paraphrase_eval_implicit.json
+4b: SUCCESS
+
+=== 4c. Explicit trigger subset ===
+Start: Mon May 18 18:07:56 EDT 2026
+Device: cuda
+
+Loading checkpoint from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best.pt...
+  Loaded guardlens
+
+Loading test data from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl...
+  Lexical pivot subset: 36 adversarial samples
+  Sampled: 36 records for paraphrase evaluation
+
+Initialising paraphrase backend (hf)...
+  Using HuggingFace backend (model=Qwen/Qwen2.5-7B-Instruct)
+    Loading paraphrase model Qwen/Qwen2.5-7B-Instruct...
+
+Running paraphrase robustness evaluation...
+  10/36...
+  20/36...
+  30/36...
+
+============================================================
+  Paraphrase Robustness Results
+============================================================
+  N samples evaluated: 36
+  Turn-level Spearman ρ:  0.9824 ± 0.0122
+  Token-level Spearman ρ: 0.9566 ± 0.0084
+  Top-15% token stability: 0.6698
+  Pivot turn stability:   0.4444
+
+  Explicit triggers (n=36):
+    Turn ρ: 0.9824
+    Tok  ρ: 0.9566
+
+  Interpretation: Strong: attribution tracks semantic content across paraphrase.
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/paraphrase_eval_explicit.json
+4c: SUCCESS
+
+========================================================
+  Stage 4 complete: Mon May 18 18:16:15 EDT 2026
+  OK: paraphrase_eval_full.json
+  OK: paraphrase_eval_implicit.json
+  OK: paraphrase_eval_explicit.json
+========================================================

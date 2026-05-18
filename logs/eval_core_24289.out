@@ -1,0 +1,63 @@
+========================================================
+  GuardLens Core Evaluation
+  Job: 24289  Node: g008
+  Test data: /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl
+  Checkpoints: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints
+  Output: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+
+========================================================
+  Part 1: Causal Attribution Evaluation
+  Start: 17:57:01
+========================================================
+
+=== 1a. Full causal eval with all methods ===
+1a: FAILED (exit 1)
+1a end: 17:57:05
+
+========================================================
+  Part 2: Classification Evaluation (all models)
+  Start: 17:57:05
+========================================================
+
+=== Classification: guardlens ===
+  guardlens: SUCCESS
+
+=== Classification: guardlens_no_fusion ===
+  guardlens_no_fusion: SUCCESS
+
+=== Classification: guardlens_no_cf ===
+  guardlens_no_cf: SUCCESS
+
+=== Classification: turn_level ===
+  turn_level: SUCCESS
+
+=== Classification: conversation_deberta ===
+  conversation_deberta: FAILED (exit 1)
+
+Part 2 end: 17:58:50
+
+========================================================
+  Core Evaluation Complete: 17:58:50
+========================================================
+
+  Classification results:
+  Model                     | F1       Acc      AttrF1   Thresh  
+  --------------------------+------------------------------------
+  guardlens                 | parse error
+  guardlens_no_fusion       | parse error
+  guardlens_no_cf           | parse error
+  turn_level                | parse error
+  conversation_deberta      | parse error
+
+  Output files:
+    MISSING: causal_eval_results.json
+    MISSING: causal_eval_results.tex
+    OK: classification_conversation_deberta.json
+    OK: classification_guardlens.json
+    OK: classification_guardlens_no_cf.json
+    OK: classification_guardlens_no_fusion.json
+    OK: classification_turn_level.json
+
+========================================================

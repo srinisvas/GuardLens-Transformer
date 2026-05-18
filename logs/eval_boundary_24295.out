@@ -1,0 +1,25 @@
+========================================================
+  Boundary Stress Test
+  Job: 24295  Node: g007
+========================================================
+  /gpfs/home/s001/ssubram7/staging/dataset_gen_output/benign_boundary.jsonl: 279 records
+  Total boundary records: 279
+  Labels: Counter({0: 279})
+
+  Boundary Stress Test Results:
+  Accuracy:           0.9570
+  False positive rate: 0.0430
+  Total: 279, Correct: 267, FP: 12
+  Mean P(adv):        0.0440
+  P95 P(adv):         0.2815
+  Max P(adv):         0.9953
+
+  Per-source breakdown:
+    clean_everyday                 acc=1.000 fpr=0.000 n=5
+    false_lead_benign              acc=0.864 fpr=0.136 n=66
+    hard_benign                    acc=0.990 fpr=0.010 n=101
+    research_technical             acc=0.909 fpr=0.091 n=11
+    topic_matched_safe             acc=0.990 fpr=0.010 n=96
+
+  Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/boundary_stress.json
+Done: Mon May 18 18:50:00 EDT 2026

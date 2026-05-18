@@ -1,0 +1,155 @@
+========================================================
+  GuardLens Eval Stage 3: Cross-Dataset Generalisation
+  Job: 24285  Node: g011
+  Start: Mon May 18 17:43:12 EDT 2026
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+Seeds: 837 behaviors
+
+=== 3a. GuardLens ===
+Start: Mon May 18 17:43:12 EDT 2026
+Device: cuda
+
+Loading checkpoint from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best.pt...
+  Loaded guardlens (epoch 13)
+
+Loading seeds from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/eval_data/cross_dataset_combined.jsonl...
+  837 seeds available
+  Extended 300 adversarial records
+  Source breakdown: {'harmbench': 127, 'advbench': 173}
+
+Loading benign samples from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl...
+  189 benign samples (from 189 available)
+  Total: 489 records (300 adv, 189 benign)
+
+Running evaluation on 489 records...
+  20/123...
+  40/123...
+  60/123...
+  80/123...
+  100/123...
+  120/123...
+
+============================================================
+  Cross-Dataset Results (guardlens)
+============================================================
+  N: 489 (300 adv, 189 benign)
+  Accuracy:  0.6524
+  Precision: 0.9924
+  Recall:    0.4367
+  F1:        0.6065
+
+  Per-source breakdown:
+    advbench                  n= 173  F1=0.540  P=1.000  R=0.370
+    harmbench                 n= 127  F1=0.691  P=1.000  R=0.528
+    synthetic                 n= 189  F1=0.000  P=0.000  R=0.000
+
+  Causal attribution metrics:
+    5%: DD=0.220  Flip=0.237  Suf=0.977  (n=131)
+    10%: DD=0.263  Flip=0.275  Suf=0.977  (n=131)
+    15%: DD=0.296  Flip=0.321  Suf=0.992  (n=131)
+    20%: DD=0.348  Flip=0.382  Suf=1.000  (n=131)
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/cross_dataset_guardlens.json
+3a: SUCCESS
+
+=== 3b. GuardLens-NoCF ===
+Start: Mon May 18 17:44:35 EDT 2026
+Device: cuda
+
+Loading checkpoint from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens_no_cf/best.pt...
+  Loaded guardlens_no_cf (epoch 10)
+
+Loading seeds from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/eval_data/cross_dataset_combined.jsonl...
+  837 seeds available
+  Extended 300 adversarial records
+  Source breakdown: {'harmbench': 127, 'advbench': 173}
+
+Loading benign samples from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl...
+  189 benign samples (from 189 available)
+  Total: 489 records (300 adv, 189 benign)
+
+Running evaluation on 489 records...
+  20/123...
+  40/123...
+  60/123...
+  80/123...
+  100/123...
+  120/123...
+
+============================================================
+  Cross-Dataset Results (guardlens_no_cf)
+============================================================
+  N: 489 (300 adv, 189 benign)
+  Accuracy:  0.6217
+  Precision: 0.9915
+  Recall:    0.3867
+  F1:        0.5564
+
+  Per-source breakdown:
+    advbench                  n= 173  F1=0.496  P=1.000  R=0.329
+    harmbench                 n= 127  F1=0.634  P=1.000  R=0.465
+    synthetic                 n= 189  F1=0.000  P=0.000  R=0.000
+
+  Causal attribution metrics:
+    5%: DD=0.242  Flip=0.250  Suf=1.000  (n=116)
+    10%: DD=0.366  Flip=0.371  Suf=1.000  (n=116)
+    15%: DD=0.419  Flip=0.431  Suf=1.000  (n=116)
+    20%: DD=0.444  Flip=0.431  Suf=1.000  (n=116)
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/cross_dataset_guardlens_no_cf.json
+3b: SUCCESS
+
+=== 3c. ConversationDeBERTa ===
+Start: Mon May 18 17:45:51 EDT 2026
+Device: cuda
+
+Loading checkpoint from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/conversation_deberta/best.pt...
+  Loaded conversation_deberta (epoch 12)
+
+Loading seeds from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/eval_data/cross_dataset_combined.jsonl...
+  837 seeds available
+  Extended 300 adversarial records
+  Source breakdown: {'harmbench': 127, 'advbench': 173}
+
+Loading benign samples from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl...
+  189 benign samples (from 189 available)
+  Total: 489 records (300 adv, 189 benign)
+
+Running evaluation on 489 records...
+  20/123...
+  40/123...
+  60/123...
+  80/123...
+  100/123...
+  120/123...
+
+============================================================
+  Cross-Dataset Results (conversation_deberta)
+============================================================
+  N: 489 (300 adv, 189 benign)
+  Accuracy:  0.1738
+  Precision: 0.1286
+  Recall:    0.0600
+  F1:        0.0818
+
+  Per-source breakdown:
+    advbench                  n= 173  F1=0.011  P=1.000  R=0.006
+    harmbench                 n= 127  F1=0.236  P=1.000  R=0.134
+    synthetic                 n= 189  F1=0.000  P=0.000  R=0.000
+
+  Causal attribution metrics:
+    5%: DD=0.000  Flip=0.000  Suf=0.000  (n=0)
+    10%: DD=0.000  Flip=0.000  Suf=0.000  (n=0)
+    15%: DD=0.000  Flip=0.000  Suf=0.000  (n=0)
+    20%: DD=0.000  Flip=0.000  Suf=0.000  (n=0)
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/cross_dataset_conversation_deberta.json
+3c: SUCCESS
+
+========================================================
+  Stage 3 complete: Mon May 18 17:46:21 EDT 2026
+  OK: cross_dataset_guardlens.json
+  OK: cross_dataset_guardlens_no_cf.json
+  OK: cross_dataset_conversation_deberta.json
+========================================================

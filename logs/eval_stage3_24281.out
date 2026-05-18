@@ -1,0 +1,7 @@
+========================================================
+  GuardLens Eval Stage 3: Cross-Dataset Generalisation
+  Job: 24281  Node: g010
+  Start: Mon May 18 17:39:57 EDT 2026
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+ERROR: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/eval_data/cross_dataset_combined.jsonl not found. Run Stage 1 first.

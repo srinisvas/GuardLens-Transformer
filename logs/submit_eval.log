@@ -1,0 +1,7 @@
+========================================================
+  GuardLens Evaluation Pipeline Submission
+  Script dir: /gpfs/home/s001/ssubram7/projects/GuardLens-Transformer
+========================================================
+
+Submitting Stage 1 (data setup)...
+submit_eval_pipeline.sh: line 49: sbatch: command not found
