@@ -1,0 +1,76 @@
+{
+  "self_eval": {
+    "5%": {
+      "deviation_drop": 0.2967196072737958,
+      "flip_rate": 0.3055555555555556,
+      "necessity": 0.3055555555555556,
+      "sufficiency": 1.0,
+      "n_adversarial": 36
+    },
+    "10%": {
+      "deviation_drop": 0.6264528248935777,
+      "flip_rate": 0.6388888888888888,
+      "necessity": 0.6388888888888888,
+      "sufficiency": 1.0,
+      "n_adversarial": 36
+    },
+    "15%": {
+      "deviation_drop": 0.7530501007519584,
+      "flip_rate": 0.75,
+      "necessity": 0.75,
+      "sufficiency": 1.0,
+      "n_adversarial": 36
+    },
+    "20%": {
+      "deviation_drop": 0.9379458744756448,
+      "flip_rate": 0.9444444444444444,
+      "necessity": 0.9444444444444444,
+      "sufficiency": 1.0,
+      "n_adversarial": 36
+    }
+  },
+  "external_eval": {
+    "conversation_deberta (ext.)": {
+      "5%": {
+        "deviation_drop": 0.04435714653560093,
+        "flip_rate": 0.0,
+        "necessity": 0.0,
+        "sufficiency": 1.0,
+        "n_adversarial": 28
+      },
+      "10%": {
+        "deviation_drop": 0.11176224478653499,
+        "flip_rate": 0.17857142857142858,
+        "necessity": 0.17857142857142858,
+        "sufficiency": 0.9285714285714286,
+        "n_adversarial": 28
+      },
+      "15%": {
+        "deviation_drop": 0.18590320753199713,
+        "flip_rate": 0.39285714285714285,
+        "necessity": 0.39285714285714285,
+        "sufficiency": 0.9642857142857143,
+        "n_adversarial": 28
+      },
+      "20%": {
+        "deviation_drop": 0.29503429787499563,
+        "flip_rate": 0.5357142857142857,
+        "necessity": 0.5357142857142857,
+        "sufficiency": 0.8571428571428571,
+        "n_adversarial": 28
+      }
+    }
+  },
+  "subset": "lexical_pivot",
+  "n_test_samples": 36,
+  "top_k_fractions": [
+    0.05,
+    0.1,
+    0.15,
+    0.2
+  ],
+  "attribution_checkpoint": "/gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best.pt",
+  "external_checkpoints": [
+    "/gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/conversation_deberta/best.pt"
+  ]
+}

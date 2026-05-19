@@ -1,0 +1,20 @@
+========================================================
+  GuardLens Eval Stage 5: Result Collation
+  Job: 24376  Node: g010
+  Start: Tue May 19 08:05:53 EDT 2026
+========================================================
+Checking result files...
+  OK:      causal_eval_results.json
+  OK:      implicit_explicit_eval.json
+  OK:      external_eval_full.json
+  OK:      cross_dataset_guardlens.json
+  OK:      paraphrase_eval_full.json
+  OK:      attribution_precision.json
+  OK:      cross_model_transfer_full.json
+Written: /gpfs/home/s001/ssubram7/work/results/dataset_gen/results/paper_tables.md
+Written: /gpfs/home/s001/ssubram7/work/results/dataset_gen/results/paper_tables.tex
+
+========================================================
+  Stage 5 complete: Tue May 19 08:05:53 EDT 2026
+  Paper tables: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/paper_tables.md
+========================================================

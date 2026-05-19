@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\small
+\caption{Causal Attribution Evaluation}
+\label{tab:causal_eval}
+\begin{tabular}{lcccc}
+\toprule
+Method & DD@15% & Flip@15% & Nec@15% & Suf@15% \\
+\midrule
+\textbf{GuardLens} & 0.511 & 0.494 & 0.537 & 1.000 \\
+Attention & 0.058 & 0.046 & 0.059 & 1.000 \\
+Int. Gradients & 0.297 & 0.276 & 0.292 & 1.000 \\
+Grad$\times$Input & 0.361 & 0.333 & 0.358 & 1.000 \\
+Surface Risk & 0.568 & 0.563 & 0.591 & 1.000 \\
+Random & -0.003 & 0.011 & 0.000 & 1.000 \\
+\bottomrule
+\end{tabular}
+\end{table}

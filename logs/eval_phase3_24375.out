@@ -1,0 +1,115 @@
+========================================================
+  Phase 3 Checkpoint Evaluation
+  Job: 24375  Node: g010
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+Checkpoint: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best_phase3.pt
+Test data: 276 records
+
+=== 1. Classification ===
+  Loaded 276 test records from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl
+1: SUCCESS
+
+=== 2. Causal Attribution ===
+Device: cuda
+Model: guardlens, epoch 21, phase 3
+  Loaded 276 test records from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl
+
+Running causal evaluation with methods: ['guardlens', 'surface_risk', 'integrated_gradients', 'random']
+Top-k fractions: [0.05, 0.1, 0.15, 0.2]
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8815
+    Pivot turn:  exact=0.0805  within1=0.0805
+    Dev drop:    {'5%': 0.05129100683552678, '10%': 0.22690410482776796, '15%': 0.43946256760974906, '20%': 0.6376137568208877}
+    Necessity:   {'5%': 0.04411764705882353, '10%': 0.2156862745098039, '15%': 0.4117647058823529, '20%': 0.659313725490196}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.03488372093023256, 'flip@10%': 0.19767441860465115, 'flip@15%': 0.37209302325581395, 'flip@20%': 0.6162790697674418, 'n_adversarial': 86}
+    Trigger:     mean=364.9  median=349.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0583
+    Pivot turn:  exact=0.0805  within1=0.2069
+    Dev drop:    {'5%': 0.21920491642983025, '10%': 0.7518903943537493, '15%': 0.7518903943537493, '20%': 0.7518903943537493}
+    Necessity:   {'5%': 0.2230392156862745, '10%': 0.7720588235294118, '15%': 0.7720588235294118, '20%': 0.7720588235294118}
+    Sufficiency: {'5%': 0.9411764705882353, '10%': 0.9852941176470589, '15%': 0.9852941176470589, '20%': 0.9852941176470589}
+    Flip rates:  {'flip@5%': 0.7441860465116279, 'flip@10%': 0.7441860465116279, 'flip@15%': 0.7441860465116279, 'flip@20%': 0.7441860465116279, 'n_adversarial': 86}
+    Trigger:     mean=499.9  median=115.0
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0027
+    Pivot turn:  exact=0.0230  within1=0.0230
+    Dev drop:    {'5%': 0.4236736216434931, '10%': 0.5672436188693949, '15%': 0.6224704818438095, '20%': 0.6952475014737127}
+    Necessity:   {'5%': 0.428921568627451, '10%': 0.571078431372549, '15%': 0.6299019607843137, '20%': 0.7107843137254901}
+    Sufficiency: {'5%': 0.9852941176470589, '10%': 0.9852941176470589, '15%': 0.9852941176470589, '20%': 0.9852941176470589}
+    Flip rates:  {'flip@5%': 0.3953488372093023, 'flip@10%': 0.5465116279069767, 'flip@15%': 0.5930232558139535, 'flip@20%': 0.6744186046511628, 'n_adversarial': 86}
+    Trigger:     mean=490.7  median=141.5
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.5913
+    Pivot turn:  exact=0.0460  within1=0.0690
+    Dev drop:    {'5%': -0.0006378849639612086, '10%': -0.0007203959074674867, '15%': -0.0015540006113987344, '20%': -0.0018010853844530443}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.8848039215686274, '10%': 1.0, '15%': 0.9852941176470589, '20%': 0.9852941176470589}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 86}
+    Trigger:     mean=1726.6  median=1759.5
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+guardlens                   0.4395    0.1977    0.4118    1.0000     349.0    0.0805
+surface_risk                0.7519    0.7442    0.7721    0.9853     115.0    0.0805
+integrated_gradients        0.6225    0.5465    0.6299    0.9853     141.5    0.0230
+random                     -0.0016    0.0000    0.0000    0.9853    1759.5    0.0460
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  guardlens              F1=0.8815  P=0.8023  R=0.9780
+  surface_risk           F1=0.0583  P=0.8462  R=0.0302
+  integrated_gradients   F1=0.0027  P=0.5556  R=0.0014
+  random                 F1=0.5913  P=0.7579  R=0.4848
+====================================================================================================
+
+============================================================
+  Per-supervision-tier attribution evaluation
+============================================================
+
+  Subset summary:
+    benign_validated          n= 113  mal=  0  ben=113
+    construction              n= 105  mal= 29  ben= 76
+    llm_confirmed             n=  52  mal= 52  ben=  0
+    cf_weak                   n=   4  mal=  4  ben=  0
+    cf_strong                 n=   2  mal=  2  ben=  0
+
+  tier:llm_confirmed (52 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.9040
+    Pivot turn:  exact=0.0577  within1=0.0577
+    Dev drop:    {'5%': 0.028821889524876427, '10%': 0.1357905882326192, '15%': 0.32181829093832887, '20%': 0.5198909515276262}
+    Necessity:   {'5%': 0.019230769230769232, '10%': 0.11538461538461539, '15%': 0.28846153846153844, '20%': 0.5192307692307693}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.019230769230769232, 'flip@10%': 0.11538461538461539, 'flip@15%': 0.28846153846153844, 'flip@20%': 0.5192307692307693, 'n_adversarial': 52}
+    Trigger:     mean=405.0  median=383.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0596
+    Pivot turn:  exact=0.0769  within1=0.1923
+    Dev drop:    {'5%': 0.13460600045066082, '10%': 0.6877527094074349, '15%': 0.6877527094074349, '20%': 0.6877527094074349}
+    Necessity:   {'5%': 0.1346153846153846, '10%': 0.7115384615384616, '15%': 0.7115384615384616, '20%': 0.7115384615384616}
+    Sufficiency: {'5%': 0.9807692307692307, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.7115384615384616, 'flip@10%': 0.7115384615384616, 'flip@15%': 0.7115384615384616, 'flip@20%': 0.7115384615384616, 'n_adversarial': 52}
+    Trigger:     mean=554.3  median=125.0
+
+  === integrated_gradients ===
+    Computing flip rates...

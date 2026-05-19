@@ -1,0 +1,48 @@
+{
+  "loss": 0.5362655878863365,
+  "accuracy": 0.9963768115942029,
+  "precision": 1.0,
+  "recall": 0.9885057471264368,
+  "f1": 0.9942196531791908,
+  "tp": 86,
+  "fp": 0,
+  "fn": 1,
+  "tn": 189,
+  "threshold": 0.2,
+  "difficulty_accuracy": {
+    "easy": 1.0,
+    "medium": 0.9914529914529915,
+    "hard": 1.0
+  },
+  "family_accuracy": {
+    "interactive_benign_twin": 1.0,
+    "research_technical": 1.0,
+    "hard_benign": 1.0,
+    "interactive_adversarial": 0.989,
+    "false_lead_benign": 1.0,
+    "topic_matched_safe": 1.0,
+    "clean_everyday": 1.0
+  },
+  "transfer_tier_accuracy": {
+    "transfer_success": 1.0,
+    "target_only": 0.857,
+    "cross_only": 1.0,
+    "benign": 1.0
+  },
+  "benign_accuracy": {
+    "clean_benign": 1.0,
+    "validated_benign_twin": 1.0
+  },
+  "supervision_tier_accuracy": {
+    "cf_strong": 1.0,
+    "cf_weak": 1.0,
+    "llm_confirmed": 1.0,
+    "construction": 0.99,
+    "benign_validated": 1.0
+  },
+  "attr_precision": 0.7889704247275962,
+  "attr_recall": 0.9739225912709305,
+  "attr_f1": 0.8717444717444718,
+  "pivot_accuracy": 0.7282608695652174,
+  "pivot_accuracy_malicious": 0.13793103448275862
+}

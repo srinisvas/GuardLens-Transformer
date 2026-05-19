@@ -1,0 +1,26 @@
+{
+  "loss": 9.096927757616397,
+  "accuracy": 0.03165735567970205,
+  "precision": 1.0,
+  "recall": 0.03165735567970205,
+  "f1": 0.06137184115523466,
+  "tp": 17,
+  "fp": 0,
+  "fn": 520,
+  "tn": 0,
+  "threshold": 0.2,
+  "difficulty_accuracy": {},
+  "family_accuracy": {
+    "mhj_external": 0.032
+  },
+  "transfer_tier_accuracy": {},
+  "benign_accuracy": {},
+  "supervision_tier_accuracy": {
+    "construction": 0.032
+  },
+  "attr_precision": 0.0,
+  "attr_recall": 0.0,
+  "attr_f1": 0.0,
+  "pivot_accuracy": 0.9813780260707635,
+  "pivot_accuracy_malicious": 0.9813780260707635
+}

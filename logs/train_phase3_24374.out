@@ -1,0 +1,33 @@
+========================================================
+  Phase 3 CF Training (resume from Phase 2)
+  Job: 24374  Node: g010
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+Phase 2 checkpoint: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best_attribution.pt
+Train data: /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/train.jsonl (1220 records)
+Dev data: /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/dev.jsonl (266 records)
+Loaded checkpoint: epoch 13, phase 2
+Config: phase1=5, phase2=15, phase3=5
+Forced phase3_epochs=5, max_epochs=25
+Train: 1220, Dev: 266
+
+Running Phase 3: epochs 20-24
+  LR: 0.000020 (0.1x base)
+  CF oversampling: cf_strong/weak 3x, llm_confirmed 1.5x
+  Phase 2 best attr F1: 0.0000
+Ep  20 P3 | loss 0.5503 cf_loss 0.0007 | val F1 1.000 attr F1 0.886 | thr 0.05
+  saved best_phase3.pt (composite=0.9203, F1=1.0000, attrF1=0.8862)
+Ep  21 P3 | loss 0.5802 cf_loss 0.0000 | val F1 1.000 attr F1 0.890 | thr 0.05
+  saved best_phase3.pt (composite=0.9228, F1=1.0000, attrF1=0.8897)
+Ep  22 P3 | loss 0.5625 cf_loss 0.0006 | val F1 1.000 attr F1 0.886 | thr 0.05
+Ep  23 P3 | loss 0.5425 cf_loss 0.0014 | val F1 1.000 attr F1 0.881 | thr 0.05
+Ep  24 P3 | loss 0.4993 cf_loss 0.0023 | val F1 1.000 attr F1 0.882 | thr 0.05
+
+Phase 3 complete. Saved final_phase3.pt
+Best composite: 0.9228
+
+========================================================
+  Phase 3 Training Complete: Tue May 19 07:39:11 EDT 2026
+========================================================
+  OK: best_phase3.pt (360M)
+  OK: final_phase3.pt (360M)
