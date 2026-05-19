@@ -201,3 +201,565 @@ random                      0.0015    0.0000    0.0000    0.9853    1798.0    0.
     Trigger:     mean=1597.1  median=1767.0
 
   === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0016
+    Pivot turn:  exact=0.0690  within1=0.0690
+    Dev drop:    {'5%': 0.06416923462817674, '10%': 0.19841901559433003, '15%': 0.2935738122194683, '20%': 0.46422299974483394}
+    Necessity:   {'5%': 0.0625, '10%': 0.21875, '15%': 0.28125, '20%': 0.5}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.06896551724137931, 'flip@10%': 0.20689655172413793, 'flip@15%': 0.2413793103448276, 'flip@20%': 0.4482758620689655, 'n_adversarial': 29}
+    Trigger:     mean=758.7  median=470.0
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0016
+    Pivot turn:  exact=0.1034  within1=0.1034
+    Dev drop:    {'5%': 0.09527633467511502, '10%': 0.21761446870292883, '15%': 0.4211361554303039, '20%': 0.4993154745235794}
+    Necessity:   {'5%': 0.09375, '10%': 0.25, '15%': 0.46875, '20%': 0.5208333333333333}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.10344827586206896, 'flip@10%': 0.2413793103448276, 'flip@15%': 0.41379310344827586, 'flip@20%': 0.4827586206896552, 'n_adversarial': 29}
+    Trigger:     mean=732.9  median=368.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0528
+    Pivot turn:  exact=0.0345  within1=0.1724
+    Dev drop:    {'5%': 0.31261751758862977, '10%': 0.5940800595143021, '15%': 0.5940800595143021, '20%': 0.5940800595143021}
+    Necessity:   {'5%': 0.34375, '10%': 0.6458333333333333, '15%': 0.6458333333333333, '20%': 0.6458333333333333}
+    Sufficiency: {'5%': 0.96875, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.6206896551724138, 'flip@10%': 0.6206896551724138, 'flip@15%': 0.6206896551724138, 'flip@20%': 0.6206896551724138, 'n_adversarial': 29}
+    Trigger:     mean=715.2  median=115.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.5860
+    Pivot turn:  exact=0.0000  within1=0.0690
+    Dev drop:    {'5%': -0.005292409410079321, '10%': -0.009249863525231678, '15%': -0.002473467340071996, '20%': -0.009160888691743216}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.90625, '10%': 0.90625, '15%': 0.96875, '20%': 0.96875}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 29}
+    Trigger:     mean=1764.7  median=1815.0
+
+  tier:cf_weak (4 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8571
+    Pivot turn:  exact=0.2500  within1=0.2500
+    Dev drop:    {'5%': 0.31262717046774924, '10%': 0.7047689860337414, '15%': 0.7443278016680779, '20%': 0.7473704203030138}
+    Necessity:   {'5%': 0.25, '10%': 0.75, '15%': 0.75, '20%': 0.75}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.25, 'flip@10%': 0.75, 'flip@15%': 0.75, 'flip@20%': 0.75, 'n_adversarial': 4}
+    Trigger:     mean=198.2  median=109.5
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.7563
+    Pivot turn:  exact=0.2500  within1=0.2500
+    Dev drop:    {'5%': 0.0007140636444091797, '10%': 0.03619733452796936, '15%': 0.2501673363149166, '20%': 0.2367215622216463}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.25, '20%': 0.25}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.25, 'flip@20%': 0.25, 'n_adversarial': 4}
+    Trigger:     mean=997.2  median=1023.5
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0112
+    Pivot turn:  exact=0.2500  within1=0.2500
+    Dev drop:    {'5%': 0.24697942452257848, '10%': 0.24817133860415197, '15%': 0.5225990878207085, '20%': 0.7400737768293766}
+    Necessity:   {'5%': 0.25, '10%': 0.25, '15%': 0.5, '20%': 0.75}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.25, 'flip@10%': 0.25, 'flip@15%': 0.5, 'flip@20%': 0.75, 'n_adversarial': 4}
+    Trigger:     mean=271.8  median=262.5
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.2500  within1=0.2500
+    Dev drop:    {'5%': 0.24705428795641637, '10%': 0.24875734166926122, '15%': 0.5044791864020226, '20%': 0.7401606207968143}
+    Necessity:   {'5%': 0.25, '10%': 0.25, '15%': 0.5, '20%': 0.75}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.25, 'flip@10%': 0.25, 'flip@15%': 0.5, 'flip@20%': 0.75, 'n_adversarial': 4}
+    Trigger:     mean=247.2  median=223.5
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0753
+    Pivot turn:  exact=0.2500  within1=0.2500
+    Dev drop:    {'5%': 0.008604541420936584, '10%': 0.7496487116695789, '15%': 0.7496487116695789, '20%': 0.7496487116695789}
+    Necessity:   {'5%': 0.0, '10%': 0.75, '15%': 0.75, '20%': 0.75}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.75, 'flip@10%': 0.75, 'flip@15%': 0.75, 'flip@20%': 0.75, 'n_adversarial': 4}
+    Trigger:     mean=526.2  median=111.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.5980
+    Pivot turn:  exact=0.2500  within1=0.2500
+    Dev drop:    {'5%': 0.0006246715784072876, '10%': -0.00011183321475982666, '15%': -0.0006043314933776855, '20%': -0.0010105371475219727}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 4}
+    Trigger:     mean=1546.5  median=1629.0
+  Skipping tier:cf_strong (only 2 records)
+
+  tier:benign_validated (113 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 0}
+
+============================================================
+  Per-transfer-tier attribution evaluation
+============================================================
+
+  Subset summary:
+    clean_benign              n= 113  mal=  0  ben=113
+    hard_benign               n= 109  mal=  0  ben=109
+    contextual_pivot          n=  48  mal= 48  ben=  0
+    transfer_success          n=  42  mal= 42  ben=  0
+    cross_only                n=  38  mal= 38  ben=  0
+    lexical_pivot             n=  36  mal= 36  ben=  0
+    target_only               n=   7  mal=  7  ben=  0
+    false_lead                n=   6  mal=  0  ben=  6
+    distributed               n=   2  mal=  2  ben=  0
+
+  transfer:transfer_success (42 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8971
+    Pivot turn:  exact=0.0238  within1=0.0238
+    Dev drop:    {'5%': 0.03725220022434686, '10%': 0.23716312753524768, '15%': 0.4487755960199138, '20%': 0.5616673949197403}
+    Necessity:   {'5%': 0.022727272727272728, '10%': 0.20454545454545456, '15%': 0.4772727272727273, '20%': 0.5681818181818182}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.023809523809523808, 'flip@10%': 0.21428571428571427, 'flip@15%': 0.5, 'flip@20%': 0.5714285714285714, 'n_adversarial': 42}
+    Trigger:     mean=377.7  median=310.5
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.7401
+    Pivot turn:  exact=0.0952  within1=0.0952
+    Dev drop:    {'5%': 0.0007306879216974431, '10%': 0.0059561011466113005, '15%': 0.02370609100167216, '20%': 0.025832869556986472}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.022727272727272728, '20%': 0.022727272727272728}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.023809523809523808, 'flip@20%': 0.023809523809523808, 'n_adversarial': 42}
+    Trigger:     mean=1710.9  median=1773.5
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0029
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.11223996758979576, '10%': 0.2516530082655002, '15%': 0.31176639349525265, '20%': 0.36892369422275806}
+    Necessity:   {'5%': 0.11363636363636363, '10%': 0.25, '15%': 0.3181818181818182, '20%': 0.36363636363636365}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.11904761904761904, 'flip@10%': 0.2619047619047619, 'flip@15%': 0.3333333333333333, 'flip@20%': 0.38095238095238093, 'n_adversarial': 42}
+    Trigger:     mean=785.9  median=498.5
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0029
+    Pivot turn:  exact=0.0238  within1=0.0238
+    Dev drop:    {'5%': 0.179937307253898, '10%': 0.25214766856714216, '15%': 0.33763797715801047, '20%': 0.37036922014919005}
+    Necessity:   {'5%': 0.18181818181818182, '10%': 0.25, '15%': 0.3409090909090909, '20%': 0.36363636363636365}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.19047619047619047, 'flip@10%': 0.2619047619047619, 'flip@15%': 0.35714285714285715, 'flip@20%': 0.38095238095238093, 'n_adversarial': 42}
+    Trigger:     mean=794.4  median=532.5
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0612
+    Pivot turn:  exact=0.0952  within1=0.2381
+    Dev drop:    {'5%': 0.1362049450293522, '10%': 0.5323118833125178, '15%': 0.5323118833125178, '20%': 0.5323118833125178}
+    Necessity:   {'5%': 0.13636363636363635, '10%': 0.5227272727272727, '15%': 0.5227272727272727, '20%': 0.5227272727272727}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.5476190476190477, 'flip@10%': 0.5476190476190477, 'flip@15%': 0.5476190476190477, 'flip@20%': 0.5476190476190477, 'n_adversarial': 42}
+    Trigger:     mean=855.0  median=150.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.6153
+    Pivot turn:  exact=0.0238  within1=0.0238
+    Dev drop:    {'5%': -0.000369831919670105, '10%': -0.0006559870459816673, '15%': -0.0008495558391917835, '20%': -0.0010654465718702836}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.9545454545454546, '10%': 0.9772727272727273, '15%': 0.9772727272727273, '20%': 0.9772727272727273}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 42}
+    Trigger:     mean=1771.3  median=1786.5
+
+  transfer:target_only (7 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8730
+    Pivot turn:  exact=0.1429  within1=0.1429
+    Dev drop:    {'5%': 0.12969525282581648, '10%': 0.2699894265181986, '15%': 0.5687037454699748, '20%': 0.7132898243880845}
+    Necessity:   {'5%': 0.25, '10%': 0.25, '15%': 0.5833333333333333, '20%': 0.75}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.2857142857142857, 'flip@10%': 0.2857142857142857, 'flip@15%': 0.5714285714285714, 'flip@20%': 0.7142857142857143, 'n_adversarial': 7}
+    Trigger:     mean=243.4  median=276.0
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.7650
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.09176226519048214, '10%': 0.22475428087636828, '15%': 0.26241986341968493, '20%': 0.26902827439092414}
+    Necessity:   {'5%': 0.125, '10%': 0.29166666666666663, '15%': 0.29166666666666663, '20%': 0.29166666666666663}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.14285714285714285, 'flip@10%': 0.2857142857142857, 'flip@15%': 0.2857142857142857, 'flip@20%': 0.2857142857142857, 'n_adversarial': 7}
+    Trigger:     mean=1214.7  median=1704.0
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0064
+    Pivot turn:  exact=0.1429  within1=0.1429
+    Dev drop:    {'5%': 0.16982760732692745, '10%': 0.5395771011462784, '15%': 0.5521511691385967, '20%': 0.5521234994012048}
+    Necessity:   {'5%': 0.16666666666666666, '10%': 0.5833333333333333, '15%': 0.5833333333333333, '20%': 0.5833333333333333}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.14285714285714285, 'flip@10%': 0.5714285714285714, 'flip@15%': 0.5714285714285714, 'flip@20%': 0.5714285714285714, 'n_adversarial': 7}
+    Trigger:     mean=482.6  median=125.0
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0064
+    Pivot turn:  exact=0.2857  within1=0.2857
+    Dev drop:    {'5%': 0.3644907240741304, '10%': 0.5328097186114367, '15%': 0.5519500498849084, '20%': 0.5520738238968381}
+    Necessity:   {'5%': 0.41666666666666663, '10%': 0.5833333333333333, '15%': 0.5833333333333333, '20%': 0.5833333333333333}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.42857142857142855, 'flip@10%': 0.5714285714285714, 'flip@15%': 0.5714285714285714, 'flip@20%': 0.5714285714285714, 'n_adversarial': 7}
+    Trigger:     mean=469.6  median=112.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0314
+    Pivot turn:  exact=0.1429  within1=0.1429
+    Dev drop:    {'5%': 0.5520183965442509, '10%': 0.5596919953701824, '15%': 0.5596919953701824, '20%': 0.5596919953701824}
+    Necessity:   {'5%': 0.5833333333333333, '10%': 0.5833333333333333, '15%': 0.5833333333333333, '20%': 0.5833333333333333}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.5714285714285714, 'flip@10%': 0.5714285714285714, 'flip@15%': 0.5714285714285714, 'flip@20%': 0.5714285714285714, 'n_adversarial': 7}
+    Trigger:     mean=785.3  median=67.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.5582
+    Pivot turn:  exact=0.0000  within1=0.1429
+    Dev drop:    {'5%': -0.0041642213861147566, '10%': 0.024728926519552868, '15%': 0.0033859635392824807, '20%': -0.008747210105260214}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.8333333333333333, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 7}
+    Trigger:     mean=1560.4  median=1704.0
+
+  transfer:cross_only (38 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8500
+    Pivot turn:  exact=0.0789  within1=0.0789
+    Dev drop:    {'5%': 0.11832838922273367, '10%': 0.31176668963817067, '15%': 0.472805836254247, '20%': 0.5645039338210154}
+    Necessity:   {'5%': 0.075, '10%': 0.325, '15%': 0.475, '20%': 0.55}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.07894736842105263, 'flip@10%': 0.3157894736842105, 'flip@15%': 0.47368421052631576, 'flip@20%': 0.5263157894736842, 'n_adversarial': 38}
+    Trigger:     mean=473.8  median=400.5
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.7131
+    Pivot turn:  exact=0.1579  within1=0.1579
+    Dev drop:    {'5%': 0.00043305903673171995, '10%': 0.004363828897476196, '15%': 0.03134746216237545, '20%': 0.06907700191077311}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.025, '20%': 0.075}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.02631578947368421, 'flip@20%': 0.07894736842105263, 'n_adversarial': 38}
+    Trigger:     mean=1634.5  median=1768.5
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0016
+    Pivot turn:  exact=0.0789  within1=0.0789
+    Dev drop:    {'5%': 0.04959404630899371, '10%': 0.07809705975778343, '15%': 0.18098060553274992, '20%': 0.35728894817984835}
+    Necessity:   {'5%': 0.05, '10%': 0.075, '15%': 0.175, '20%': 0.375}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.05263157894736842, 'flip@10%': 0.07894736842105263, 'flip@15%': 0.18421052631578946, 'flip@20%': 0.34210526315789475, 'n_adversarial': 38}
+    Trigger:     mean=854.1  median=615.0
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0016
+    Pivot turn:  exact=0.0789  within1=0.0789
+    Dev drop:    {'5%': 0.04969493164062442, '10%': 0.0781670177293563, '15%': 0.2948918878635595, '20%': 0.3772201649448107}
+    Necessity:   {'5%': 0.05, '10%': 0.075, '15%': 0.275, '20%': 0.375}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.05263157894736842, 'flip@10%': 0.07894736842105263, 'flip@15%': 0.2631578947368421, 'flip@20%': 0.3684210526315789, 'n_adversarial': 38}
+    Trigger:     mean=834.5  median=594.5
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0601
+    Pivot turn:  exact=0.0526  within1=0.1842
+    Dev drop:    {'5%': 0.1357862399891019, '10%': 0.5454150321496855, '15%': 0.5454150321496855, '20%': 0.5454150321496855}
+    Necessity:   {'5%': 0.15, '10%': 0.6, '15%': 0.6, '20%': 0.6}
+    Sufficiency: {'5%': 0.975, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.5789473684210527, 'flip@10%': 0.5789473684210527, 'flip@15%': 0.5789473684210527, 'flip@20%': 0.5789473684210527, 'n_adversarial': 38}
+    Trigger:     mean=794.1  median=131.5
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.6112
+    Pivot turn:  exact=0.0000  within1=0.0789
+    Dev drop:    {'5%': -0.0002991974353790283, '10%': -0.0005547076463699341, '15%': -0.0008054181933403015, '20%': -0.0011133477091789246}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 38}
+    Trigger:     mean=1771.4  median=1806.5
+
+  transfer:contextual_pivot (48 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8688
+    Pivot turn:  exact=0.0625  within1=0.0625
+    Dev drop:    {'5%': 0.11486433390806876, '10%': 0.33175975413754105, '15%': 0.5388308685383739, '20%': 0.6107205861957633}
+    Necessity:   {'5%': 0.10416666666666667, '10%': 0.3333333333333333, '15%': 0.5625, '20%': 0.6041666666666666}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.10416666666666667, 'flip@10%': 0.3333333333333333, 'flip@15%': 0.5625, 'flip@20%': 0.6041666666666666, 'n_adversarial': 48}
+    Trigger:     mean=394.9  median=286.0
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.7307
+    Pivot turn:  exact=0.1042  within1=0.1042
+    Dev drop:    {'5%': 0.015853843030830223, '10%': 0.025107602200781304, '15%': 0.06374467465017612, '20%': 0.09803921903464168}
+    Necessity:   {'5%': 0.020833333333333332, '10%': 0.020833333333333332, '15%': 0.0625, '20%': 0.10416666666666667}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.020833333333333332, 'flip@10%': 0.020833333333333332, 'flip@15%': 0.0625, 'flip@20%': 0.10416666666666667, 'n_adversarial': 48}
+    Trigger:     mean=1534.3  median=1681.5
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0020
+    Pivot turn:  exact=0.0625  within1=0.0625
+    Dev drop:    {'5%': 0.12422829187971729, '10%': 0.26632810712650706, '15%': 0.38579668412618656, '20%': 0.48802267836299507}
+    Necessity:   {'5%': 0.125, '10%': 0.2708333333333333, '15%': 0.375, '20%': 0.5}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.125, 'flip@10%': 0.2708333333333333, 'flip@15%': 0.375, 'flip@20%': 0.5, 'n_adversarial': 48}
+    Trigger:     mean=642.3  median=362.0
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0020
+    Pivot turn:  exact=0.1042  within1=0.1042
+    Dev drop:    {'5%': 0.1980562767395592, '10%': 0.2830795441088109, '15%': 0.4608293161277288, '20%': 0.5024425556850171}
+    Necessity:   {'5%': 0.20833333333333334, '10%': 0.2916666666666667, '15%': 0.4583333333333333, '20%': 0.5208333333333334}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.20833333333333334, 'flip@10%': 0.2916666666666667, 'flip@15%': 0.4583333333333333, 'flip@20%': 0.5208333333333334, 'n_adversarial': 48}
+    Trigger:     mean=610.5  median=365.5
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0564
+    Pivot turn:  exact=0.0833  within1=0.1875
+    Dev drop:    {'5%': 0.212085845033774, '10%': 0.6537895975087243, '15%': 0.6537895975087243, '20%': 0.6537895975087243}
+    Necessity:   {'5%': 0.22916666666666666, '10%': 0.6875, '15%': 0.6875, '20%': 0.6875}
+    Sufficiency: {'5%': 0.9791666666666666, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.6875, 'flip@10%': 0.6875, 'flip@15%': 0.6875, 'flip@20%': 0.6875, 'n_adversarial': 48}
+    Trigger:     mean=613.4  median=112.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.6012
+    Pivot turn:  exact=0.1250  within1=0.1250
+    Dev drop:    {'5%': -0.0019365275899569194, '10%': -0.003249506155649821, '15%': -0.0036072718600432077, '20%': -0.004419700553019841}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.9583333333333334, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 48}
+    Trigger:     mean=1731.2  median=1710.5
+
+  transfer:lexical_pivot (36 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8930
+    Pivot turn:  exact=0.0278  within1=0.0278
+    Dev drop:    {'5%': 0.039662509173568755, '10%': 0.21573264789589708, '15%': 0.3650406974823757, '20%': 0.4982219630296135}
+    Necessity:   {'5%': 0.027777777777777776, '10%': 0.19444444444444445, '15%': 0.3888888888888889, '20%': 0.5}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.027777777777777776, 'flip@10%': 0.19444444444444445, 'flip@15%': 0.3888888888888889, 'flip@20%': 0.5, 'n_adversarial': 36}
+    Trigger:     mean=424.9  median=410.0
+
+  === attention ===
+    Computing flip rates...
+    Token F1 (secondary): 0.7353
+    Pivot turn:  exact=0.1389  within1=0.1389
+    Dev drop:    {'5%': -4.41256496641371e-05, '10%': 3.49597798453437e-05, '15%': 0.0001753899786207411, '20%': 0.0003221101231045193}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 36}
+    Trigger:     mean=1798.9  median=1798.0
+
+  === integrated_gradients ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0025
+    Pivot turn:  exact=0.0556  within1=0.0556
+    Dev drop:    {'5%': 0.027513708469794236, '10%': 0.08412989990352394, '15%': 0.11068432090784579, '20%': 0.19774981286253832}
+    Necessity:   {'5%': 0.027777777777777776, '10%': 0.08333333333333333, '15%': 0.1111111111111111, '20%': 0.19444444444444445}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.027777777777777776, 'flip@10%': 0.08333333333333333, 'flip@15%': 0.1111111111111111, 'flip@20%': 0.19444444444444445, 'n_adversarial': 36}
+    Trigger:     mean=996.0  median=946.5
+
+  === grad_x_input ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0025
+    Pivot turn:  exact=0.0278  within1=0.0278
+    Dev drop:    {'5%': 0.05523018244841498, '10%': 0.08347730189335481, '15%': 0.14801207648674286, '20%': 0.21931091409674586}
+    Necessity:   {'5%': 0.05555555555555555, '10%': 0.08333333333333333, '15%': 0.1388888888888889, '20%': 0.2222222222222222}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.05555555555555555, 'flip@10%': 0.08333333333333333, 'flip@15%': 0.1388888888888889, 'flip@20%': 0.2222222222222222, 'n_adversarial': 36}
+    Trigger:     mean=1038.3  median=1135.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0623
+    Pivot turn:  exact=0.0833  within1=0.2500
+    Dev drop:    {'5%': 0.05850610975176096, '10%': 0.38302287519683076, '15%': 0.38302287519683076, '20%': 0.38302287519683076}
+    Necessity:   {'5%': 0.05555555555555555, '10%': 0.3888888888888889, '15%': 0.3888888888888889, '20%': 0.3888888888888889}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.3888888888888889, 'flip@10%': 0.3888888888888889, 'flip@15%': 0.3888888888888889, 'flip@20%': 0.3888888888888889, 'n_adversarial': 36}
+    Trigger:     mean=1110.2  median=1512.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.6104
+    Pivot turn:  exact=0.0278  within1=0.0556
+    Dev drop:    {'5%': -0.0002753602133856879, '10%': -0.0005319184727138943, '15%': -0.0007510847515530057, '20%': -0.0009318672948413425}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.9722222222222222, '10%': 0.9722222222222222, '15%': 0.9722222222222222, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 36}
+    Trigger:     mean=1811.0  median=1798.0
+  Skipping transfer:distributed (only 2 records)
+
+LaTeX table saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/causal_eval_results.tex
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/causal_eval_results.json
+1a: SUCCESS
+1a end: 19:52:13
+
+========================================================
+  Part 2: Classification Evaluation (all models)
+  Start: 19:52:13
+========================================================
+
+=== Classification: guardlens ===
+  guardlens: SUCCESS
+
+=== Classification: guardlens_no_fusion ===
+  guardlens_no_fusion: SUCCESS
+
+=== Classification: guardlens_no_cf ===
+  guardlens_no_cf: SUCCESS
+
+=== Classification: turn_level ===
+  turn_level: SUCCESS
+
+=== Classification: conversation_deberta ===
+  conversation_deberta: FAILED (exit 1)
+
+Part 2 end: 19:54:02
+
+========================================================
+  Core Evaluation Complete: 19:54:02
+========================================================
+
+  Causal eval results:
+    guardlens                 DD@15%=0.511  Flip@15%=0.494
+    attention                 DD@15%=0.058  Flip@15%=0.046
+    integrated_gradients      DD@15%=0.297  Flip@15%=0.276
+    grad_x_input              DD@15%=0.361  Flip@15%=0.333
+    surface_risk              DD@15%=0.568  Flip@15%=0.563
+    random                    DD@15%=0.001  Flip@15%=0.000
+
+  Classification results:
+  Model                     | F1       Acc      AttrF1   Thresh  
+  --------------------------+------------------------------------
+  guardlens                 | parse error
+  guardlens_no_fusion       | parse error
+  guardlens_no_cf           | parse error
+  turn_level                | parse error
+  conversation_deberta      | parse error
+
+  Per-transfer-tier attribution (GuardLens):
+    transfer_success          DD@15%=0.449  Flip@15%=0.500
+    target_only               DD@15%=0.569  Flip@15%=0.571
+    cross_only                DD@15%=0.473  Flip@15%=0.474
+    contextual_pivot          DD@15%=0.539  Flip@15%=0.562
+    lexical_pivot             DD@15%=0.365  Flip@15%=0.389
+
+  Per-supervision-tier attribution (GuardLens):
+    llm_confirmed             DD@15%=0.378  Flip@15%=0.404
+    construction              DD@15%=0.583  Flip@15%=0.586
+    cf_weak                   DD@15%=0.744  Flip@15%=0.750
+    benign_validated          DD@15%=0.000  Flip@15%=0.000
+
+  Output files:
+    OK: causal_eval_results.json
+    OK: causal_eval_results.tex
+    OK: classification_conversation_deberta.json
+    OK: classification_guardlens.json
+    OK: classification_guardlens_no_cf.json
+    OK: classification_guardlens_no_fusion.json
+    OK: classification_turn_level.json
+
+========================================================
