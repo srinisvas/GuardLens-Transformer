@@ -33,7 +33,7 @@ Quantisation:
 
 Usage:
     python -m guardlens.evaluation.eval_cross_model_transfer \\
-        --data ~/work/results/dataset_gen/splits/test.jsonl \\
+        --data ~/work/results/dataset_gen/semantic_multiturn_v10_augmented.jsonl \\
         --checkpoint ~/work/results/dataset_gen/checkpoints/guardlens/best.pt \\
         --output ~/work/results/dataset_gen/results/cross_model_transfer.json \\
         --external-model google/shieldgemma-9b \\
@@ -335,7 +335,9 @@ def phase1_extract_and_build(
                 "sample_idx": idx,
                 "family": record.get("family"),
                 "subtype": record.get("subtype"),
-                "has_implicit": record.get("pivot_kind") in ("contextual_pivot", "distributed"),
+                "has_implicit": any(
+                    t.get("implicit_trigger") for t in record.get("turns", [])
+                ),
                 "variants": {
                     "original":             _turns_to_api(record),
                     "guardlens_ablated":    ablate_by_importance(record, word_imp, k_frac),
@@ -668,6 +670,8 @@ def main():
     parser.add_argument("--k-frac", type=float, default=0.15)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--threshold", type=float, default=0.5,
+                        help="ShieldGemma unsafe threshold (default 0.5)")
     parser.add_argument("--subset", default=None,
                         choices=["contextual_pivot", "lexical_pivot", "transfer_success", None],
                         help="v11 subset filter")
@@ -797,7 +801,7 @@ def main():
         sg_tokenizer=sg_tokenizer,
         yes_token_id=yes_token_id,
         no_token_id=no_token_id,
-        threshold=0.5,
+        threshold=args.threshold,
     )
 
     print_results(transfer_flip_rates, scored_entries, args.k_frac, args.external_model)
@@ -810,7 +814,7 @@ def main():
         "n_samples": n_processed,
         "shieldgemma_model": args.external_model,
         "quantization": args.quantization,
-        "threshold": 0.5,
+        "threshold": args.threshold,
         "policy": "dangerous_content",
         "subset": args.subset or "full",
         "llm_provider": "shieldgemma",

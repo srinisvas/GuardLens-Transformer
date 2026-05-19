@@ -4,14 +4,13 @@ Evaluation entry point — v11 compatible.
 Usage:
     python -m guardlens.evaluate \
         --test-path splits/test.jsonl \
-        --checkpoint ./checkpoints/best.pt
-
-    # Fallback single file:
-    python -m guardlens.evaluate --data data.jsonl --checkpoint ./checkpoints/best.pt
+        --checkpoint ./checkpoints/best.pt \
+        --output results/classification.json
 """
 
 import argparse
 import json
+import sys
 
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -28,6 +27,8 @@ def main():
     parser = argparse.ArgumentParser(description="Evaluate GuardLens")
     parser = add_test_path_args(parser)
     parser.add_argument("--checkpoint", type=str, required=True)
+    parser.add_argument("--output", type=str, default="",
+                        help="Output JSON path (if empty, prints to stdout)")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--workers", type=int, default=4)
@@ -40,7 +41,11 @@ def main():
     config = ckpt["config"]
     model_name = ckpt.get("model_name", "guardlens")
     threshold = ckpt.get("threshold", 0.5)
-    print(f"Model: {model_name}, threshold: {threshold:.2f}")
+    print(f"Model: {model_name}, threshold: {threshold:.2f}", file=sys.stderr)
+
+    # Disable features for baselines
+    if model_name in ("turn_level", "conversation_deberta"):
+        config.use_pivot_head = False
 
     # Load data
     records, test_idx = load_test_data(
@@ -49,7 +54,12 @@ def main():
 
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
-    collator = GuardLensCollator(tokenizer, config)
+
+    if model_name == "conversation_deberta":
+        from guardlens.data.dataset import FlatConversationCollator
+        collator = FlatConversationCollator(tokenizer, config)
+    else:
+        collator = GuardLensCollator(tokenizer, config)
 
     dataset = GuardLensDataset(records, config)
     test_loader = DataLoader(
@@ -69,10 +79,16 @@ def main():
     loss_fn = GuardLensLoss(config)
     results = evaluate(model, test_loader, loss_fn, config, device, threshold=threshold)
 
-    print(json.dumps(
-        {k: v for k, v in results.items() if not isinstance(v, torch.Tensor)},
-        indent=2,
-    ))
+    payload = {k: v for k, v in results.items() if not isinstance(v, torch.Tensor)}
+
+    if args.output:
+        import os
+        os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+        with open(args.output, "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Results saved to {args.output}", file=sys.stderr)
+    else:
+        print(json.dumps(payload, indent=2))
 
 
 if __name__ == "__main__":
