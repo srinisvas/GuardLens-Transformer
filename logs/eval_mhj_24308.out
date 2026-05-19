@@ -1,0 +1,178 @@
+========================================================
+  MHJ External Evaluation
+  Job: 24308  Node: g008
+========================================================
+  Processing MHJ from /gpfs/home/s001/ssubram7/projects/GuardLens-Transformer/mhj_conversations.jsonl...
+Loaded 537 raw MHJ records from /gpfs/home/s001/ssubram7/projects/GuardLens-Transformer/mhj_conversations.jsonl
+After min-turns filter (2): 537 records
+  Processed 50/537 (50 converted, 0 skipped)
+  Processed 100/537 (100 converted, 0 skipped)
+  Processed 150/537 (150 converted, 0 skipped)
+  Processed 200/537 (200 converted, 0 skipped)
+  Processed 250/537 (250 converted, 0 skipped)
+  Processed 300/537 (300 converted, 0 skipped)
+  Processed 350/537 (350 converted, 0 skipped)
+  Processed 400/537 (400 converted, 0 skipped)
+  Processed 450/537 (450 converted, 0 skipped)
+  Processed 500/537 (500 converted, 0 skipped)
+
+Wrote 537 MHJ records to /gpfs/home/s001/ssubram7/staging/dataset_gen_output/mhj_external_test.jsonl
+  Skipped: 0
+  All records: is_external_test=True, training_eligible=False
+  Step 1: SUCCESS (537 records)
+  MHJ records: 537
+
+=== MHJ Classification ===
+  Loaded 537 test records from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/mhj_external_test.jsonl
+MHJ Classification: F1=0.0614 Acc=0.0317 R=0.0317
+
+=== MHJ Causal Attribution ===
+Device: cuda
+Model: guardlens, epoch 13, phase 2
+  Loaded 537 test records from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/mhj_external_test.jsonl
+
+Running causal evaluation with methods: ['guardlens', 'surface_risk', 'random']
+Top-k fractions: [0.05, 0.1, 0.15, 0.2]
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.3011685747816955, '10%': 0.4120833301496532, '15%': 0.49490893616011816, '20%': 0.5668909514781262}
+    Necessity:   {'5%': 0.35, '10%': 0.525, '15%': 0.6, '20%': 0.6875}
+    Sufficiency: {'5%': 0.34814814814814815, '10%': 0.37407407407407406, '15%': 0.40370370370370373, '20%': 0.4185185185185185}
+    Flip rates:  {'flip@5%': 0.40816326530612246, 'flip@10%': 0.5714285714285714, 'flip@15%': 0.6326530612244898, 'flip@20%': 0.7142857142857143, 'n_adversarial': 49}
+    Trigger:     mean=91.7  median=50.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.1822404645732604, '10%': 0.20378156531369312, '15%': 0.20378156531369312, '20%': 0.20378156531369312}
+    Necessity:   {'5%': 0.2375, '10%': 0.2375, '15%': 0.2375, '20%': 0.2375}
+    Sufficiency: {'5%': 0.09259259259259259, '10%': 0.09074074074074075, '15%': 0.09074074074074075, '20%': 0.09074074074074075}
+    Flip rates:  {'flip@5%': 0.2857142857142857, 'flip@10%': 0.2857142857142857, 'flip@15%': 0.2857142857142857, 'flip@20%': 0.2857142857142857, 'n_adversarial': 49}
+    Trigger:     mean=364.3  median=236.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.002388652041554451, '10%': 0.016439423710107804, '15%': 0.011136076040565967, '20%': 0.049111664202064274}
+    Necessity:   {'5%': 0.025, '10%': 0.0625, '15%': 0.06875, '20%': 0.075}
+    Sufficiency: {'5%': 0.12407407407407407, '10%': 0.12777777777777777, '15%': 0.11851851851851852, '20%': 0.11481481481481481}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.02040816326530612, 'flip@15%': 0.02040816326530612, 'flip@20%': 0.04081632653061224, 'n_adversarial': 49}
+    Trigger:     mean=423.8  median=242.0
+
+====================================================================================================
+  PRIMARY: Causal Attribution Comparison (model-grounded metrics)
+====================================================================================================
+Method                 DevDrop@15%  Flip@10%   Nec@15%   Suf@15%  TrigSize  PivotAcc
+----------------------------------------------------------------------------------------------------
+guardlens                   0.4949    0.5714    0.6000    0.4037      50.0    0.0000
+surface_risk                0.2038    0.2857    0.2375    0.0907     236.0    0.0000
+random                      0.0111    0.0204    0.0688    0.1185     242.0    0.0000
+
+  SECONDARY: Token F1 (synthetic label overlap, de-emphasized)
+--------------------------------------------------
+  guardlens              F1=0.0000  P=0.0000  R=0.0000
+  surface_risk           F1=0.0000  P=0.0000  R=0.0000
+  random                 F1=0.0000  P=0.0000  R=0.0000
+====================================================================================================
+
+============================================================
+  Per-supervision-tier attribution evaluation
+============================================================
+
+  Subset summary:
+    construction              n= 537  mal=537  ben=  0
+
+  tier:construction (537 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.3011685747816955, '10%': 0.4120833301496532, '15%': 0.49490893616011816, '20%': 0.5668909514781262}
+    Necessity:   {'5%': 0.35, '10%': 0.525, '15%': 0.6, '20%': 0.6875}
+    Sufficiency: {'5%': 0.34814814814814815, '10%': 0.37407407407407406, '15%': 0.40370370370370373, '20%': 0.4185185185185185}
+    Flip rates:  {'flip@5%': 0.40816326530612246, 'flip@10%': 0.5714285714285714, 'flip@15%': 0.6326530612244898, 'flip@20%': 0.7142857142857143, 'n_adversarial': 49}
+    Trigger:     mean=91.7  median=50.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.1822404645732604, '10%': 0.20378156531369312, '15%': 0.20378156531369312, '20%': 0.20378156531369312}
+    Necessity:   {'5%': 0.2375, '10%': 0.2375, '15%': 0.2375, '20%': 0.2375}
+    Sufficiency: {'5%': 0.09259259259259259, '10%': 0.09074074074074075, '15%': 0.09074074074074075, '20%': 0.09074074074074075}
+    Flip rates:  {'flip@5%': 0.2857142857142857, 'flip@10%': 0.2857142857142857, 'flip@15%': 0.2857142857142857, 'flip@20%': 0.2857142857142857, 'n_adversarial': 49}
+    Trigger:     mean=364.3  median=236.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': -0.012534233555197716, '10%': -0.022101539000868798, '15%': -0.02484281323850155, '20%': -0.00556368940815446}
+    Necessity:   {'5%': 0.025, '10%': 0.0125, '15%': 0.0, '20%': 0.0375}
+    Sufficiency: {'5%': 0.1537037037037037, '10%': 0.12037037037037036, '15%': 0.11666666666666667, '20%': 0.10925925925925926}
+    Flip rates:  {'flip@5%': 0.04081632653061224, 'flip@10%': 0.04081632653061224, 'flip@15%': 0.02040816326530612, 'flip@20%': 0.061224489795918366, 'n_adversarial': 49}
+    Trigger:     mean=453.4  median=268.0
+
+============================================================
+  Per-transfer-tier attribution evaluation
+============================================================
+
+  Subset summary:
+    distributed               n= 537  mal=537  ben=  0
+  Skipping transfer:transfer_success (only 0 records)
+  Skipping transfer:target_only (only 0 records)
+  Skipping transfer:cross_only (only 0 records)
+  Skipping transfer:contextual_pivot (only 0 records)
+  Skipping transfer:lexical_pivot (only 0 records)
+
+  transfer:distributed (537 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.3011685747816955, '10%': 0.4120833301496532, '15%': 0.49490893616011816, '20%': 0.5668909514781262}
+    Necessity:   {'5%': 0.35, '10%': 0.525, '15%': 0.6, '20%': 0.6875}
+    Sufficiency: {'5%': 0.34814814814814815, '10%': 0.37407407407407406, '15%': 0.40370370370370373, '20%': 0.4185185185185185}
+    Flip rates:  {'flip@5%': 0.40816326530612246, 'flip@10%': 0.5714285714285714, 'flip@15%': 0.6326530612244898, 'flip@20%': 0.7142857142857143, 'n_adversarial': 49}
+    Trigger:     mean=91.7  median=50.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': 0.1822404645732604, '10%': 0.20378156531369312, '15%': 0.20378156531369312, '20%': 0.20378156531369312}
+    Necessity:   {'5%': 0.2375, '10%': 0.2375, '15%': 0.2375, '20%': 0.2375}
+    Sufficiency: {'5%': 0.09259259259259259, '10%': 0.09074074074074075, '15%': 0.09074074074074075, '20%': 0.09074074074074075}
+    Flip rates:  {'flip@5%': 0.2857142857142857, 'flip@10%': 0.2857142857142857, 'flip@15%': 0.2857142857142857, 'flip@20%': 0.2857142857142857, 'n_adversarial': 49}
+    Trigger:     mean=364.3  median=236.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0000
+    Pivot turn:  exact=0.0000  within1=0.0000
+    Dev drop:    {'5%': -0.0146365225315094, '10%': 0.022509104385972024, '15%': 0.02721932310378179, '20%': 0.024234033869288397}
+    Necessity:   {'5%': 0.0, '10%': 0.0625, '15%': 0.0875, '20%': 0.0625}
+    Sufficiency: {'5%': 0.11851851851851852, '10%': 0.12222222222222222, '15%': 0.11481481481481481, '20%': 0.10740740740740741}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.04081632653061224, 'flip@15%': 0.02040816326530612, 'flip@20%': 0.02040816326530612, 'n_adversarial': 49}
+    Trigger:     mean=426.9  median=239.0
+
+LaTeX table saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/mhj_causal_eval.tex
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/mhj_causal_eval.json
+Step 3: SUCCESS
+
+========================================================
+  MHJ Eval Complete: Mon May 18 23:24:22 EDT 2026
+  Results:
+    OK: mhj_classification.json
+    OK: mhj_causal_eval.json
+========================================================
