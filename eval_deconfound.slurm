@@ -22,7 +22,7 @@
 #      D. Combined (A+B)
 # ============================================================
 
-set -uo pipefail
+set -euo pipefail
 
 RESULTS_DIR="$HOME/work/results/guardlens_v11"
 CKPT="$RESULTS_DIR/checkpoints/guardlens/best_attribution.pt"
@@ -117,7 +117,7 @@ print(f'  {\"Method\":<25} {\"DD@15%\":>8} {\"FPR\":>8} {\"Utility\":>10}')
 print(f'  {\"-\"*25} {\"-\"*8} {\"-\"*8} {\"-\"*10}')
 for m, v in sorted(ut.items(), key=lambda x: -x[1]['utility']):
     print(f'  {m:<25} {v[\"dd\"]:>8.3f} {v[\"fpr\"]:>8.3f} {v[\"utility\"]:>10.3f}')
-" 2>/dev/null
+" 2>/dev/null || true
 
     echo ""
     echo "  Causal Turn Mass:"
@@ -130,7 +130,7 @@ print(f'  Mean: {cm.get(\"mean\", 0):.3f}, Median: {cm.get(\"median\", 0):.3f}')
 prm = ctm.get('per_role_mass', {})
 for role, stats in sorted(prm.items(), key=lambda x: -x[1]['mean']):
     print(f'    {role:<20} mean={stats[\"mean\"]:.4f} n={stats[\"n_turns\"]}')
-" 2>/dev/null
+" 2>/dev/null || true
 
     echo ""
     echo "  Pivot Window Accuracy:"
@@ -143,7 +143,7 @@ for w, d in pw.get('window_accuracy', {}).items():
 ds = pw.get('distance_stats', {})
 if ds:
     print(f'  Distance: mean={ds[\"mean\"]:.1f} median={ds[\"median\"]:.1f} p90={ds[\"p90\"]:.1f}')
-" 2>/dev/null
+" 2>/dev/null || true
 fi
 
 # Print deconfounded comparison
@@ -168,7 +168,7 @@ if inj:
     print(f'  SR-Injected Benign FPR:')
     print(f'    GuardLens:    {inj.get(\"guardlens_fpr\", 0):.3f} ({inj.get(\"guardlens_fp\", 0)}/{inj.get(\"total\", 0)})')
     print(f'    Surface Risk: {inj.get(\"surface_risk_fpr\", 0):.3f} ({inj.get(\"surface_risk_fp\", 0)}/{inj.get(\"total\", 0)})')
-" 2>/dev/null
+" 2>/dev/null || true
 fi
 
 echo ""

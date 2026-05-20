@@ -146,11 +146,16 @@ def compute_causal_turn_mass(
     Compute attribution mass distribution across turn semantic roles.
 
     Causal Turn Mass = mass on (pivot + escalation + payload) / total mass
-
-    Also computes mass on each role category.
     """
     from torch.utils.data import DataLoader
     from guardlens.data.dataset import GuardLensDataset
+
+    # Build lookup from conversation_id to record
+    record_by_id = {}
+    for r in records:
+        cid = r.get("conversation_id", "")
+        if cid:
+            record_by_id[cid] = r
 
     dataset = GuardLensDataset(records, config)
     loader = DataLoader(dataset, batch_size=4, collate_fn=collator)
@@ -158,6 +163,7 @@ def compute_causal_turn_mass(
     role_masses = defaultdict(list)
     causal_masses = []
     total_records = 0
+    skipped_batches = 0
 
     model.eval()
     with torch.no_grad():
@@ -170,10 +176,16 @@ def compute_causal_turn_mass(
                 compute_attribution=True,
             )
 
-            if "attribution" not in outputs:
+            if "attr_probs" not in outputs and "attr_logits" not in outputs:
+                skipped_batches += 1
+                if skipped_batches == 1:
+                    print(f"  WARNING: Model output missing attr keys: {list(outputs.keys())}")
                 continue
 
-            attr = outputs["attribution"]  # [B, T, S]
+            # Use attr_probs (sigmoid of attr_logits)
+            attr = outputs.get("attr_probs")
+            if attr is None:
+                attr = torch.sigmoid(outputs["attr_logits"])
             turn_mask = batch["turn_mask"]  # [B, T]
 
             for i in range(len(batch["metadata"])):
@@ -182,7 +194,10 @@ def compute_causal_turn_mass(
                 if label != 1:
                     continue
 
-                turns = meta.get("turns", [])
+                # Look up turns from original records
+                cid = meta.get("conversation_id", "")
+                record = record_by_id.get(cid, {})
+                turns = record.get("turns", [])
                 total_records += 1
 
                 # Get per-turn attribution mass
@@ -221,8 +236,11 @@ def compute_causal_turn_mass(
                 causal_masses.append(min(1.0, causal_mass / total_mass))
 
     # Aggregate
+    if skipped_batches > 0:
+        print(f"  WARNING: {skipped_batches} batches skipped (missing attribution output)")
     result = {
         "n_records": total_records,
+        "skipped_batches": skipped_batches,
         "causal_turn_mass": {
             "mean": float(np.mean(causal_masses)) if causal_masses else 0.0,
             "median": float(np.median(causal_masses)) if causal_masses else 0.0,
@@ -250,12 +268,12 @@ def compute_pivot_window_accuracy(
 ) -> Dict:
     """
     Compute pivot accuracy at multiple window sizes.
-
-    For each adversarial record with a known pivot turn,
-    check if the highest-attributed turn is within ±W of the true pivot.
     """
     from torch.utils.data import DataLoader
     from guardlens.data.dataset import GuardLensDataset
+
+    # Build lookup
+    record_by_id = {r.get("conversation_id", ""): r for r in records}
 
     dataset = GuardLensDataset(records, config)
     loader = DataLoader(dataset, batch_size=4, collate_fn=collator)
@@ -263,6 +281,7 @@ def compute_pivot_window_accuracy(
     correct_at_window = {w: 0 for w in windows}
     total = 0
     pred_positions = []
+    skipped_pw = 0
 
     model.eval()
     with torch.no_grad():
@@ -275,10 +294,15 @@ def compute_pivot_window_accuracy(
                 compute_attribution=True,
             )
 
-            if "attribution" not in outputs:
+            if "attr_probs" not in outputs and "attr_logits" not in outputs:
+                skipped_pw += 1
+                if skipped_pw == 1:
+                    print(f"  WARNING (pivot): Model output missing attr keys: {list(outputs.keys())}")
                 continue
 
-            attr = outputs["attribution"]
+            attr = outputs.get("attr_probs")
+            if attr is None:
+                attr = torch.sigmoid(outputs["attr_logits"])
 
             for i in range(len(batch["metadata"])):
                 meta = batch["metadata"][i]
@@ -299,7 +323,9 @@ def compute_pivot_window_accuracy(
                     continue
 
                 # Only consider user turns — map to user-turn indices
-                turns = meta.get("turns", [])
+                cid = meta.get("conversation_id", "")
+                record = record_by_id.get(cid, {})
+                turns = record.get("turns", [])
                 user_turns_with_idx = [
                     (user_idx, raw_idx)
                     for user_idx, (raw_idx, t) in enumerate(
@@ -320,8 +346,6 @@ def compute_pivot_window_accuracy(
                 pred_user_idx = best[0]
 
                 # pivot_turn_id may be raw index or user-turn index
-                # Check if pivot_id maps to a user turn at that raw index
-                # If pivot_id > number of user turns, treat as raw index
                 n_user = len(user_turns_with_idx)
                 if pivot_id < n_user:
                     # Treat as user-turn index
@@ -334,11 +358,8 @@ def compute_pivot_window_accuracy(
                             true_user_idx = uid
                             break
                     if true_user_idx is None:
-                        # Approximate: find nearest user turn
-                        true_user_idx = min(
-                            user_turns_with_idx,
-                            key=lambda x: abs(x[1] - pivot_id)
-                        )[0]
+                        # Pivot maps to a non-user turn — skip rather than approximate
+                        continue
 
                 total += 1
                 distance = abs(pred_user_idx - true_user_idx)
