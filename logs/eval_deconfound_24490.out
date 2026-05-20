@@ -1,0 +1,338 @@
+========================================================
+  Deconfounded Evaluation + Attribution Utility
+  Job: 24490  Node: g008
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+  Prerequisites OK
+
+========================================================
+  1. Attribution Utility + Turn Mass + Pivot Window
+  Start: 23:29:33
+========================================================
+============================================================
+  1. Attribution Utility Score
+============================================================
+
+  GuardLens boundary FPR: 0.0072
+  Surface risk benign FPR@0.5: 0.14285714285714285
+  Surface risk boundary FPR@0.5: 0.3728
+
+  HEADLINE UTILITY (boundary FPR, λ=1.0):
+  Method                      DD@15%   BndFPR    Utility
+  ------------------------- -------- -------- ----------
+  guardlens                    0.511    0.007      0.504
+  surface_risk                 0.568    0.373      0.195
+
+  lambda_0.5:
+  Method                      DD@15%      FPR    Utility
+  ------------------------- -------- -------- ----------
+  guardlens                    0.511    0.007      0.507
+  surface_risk                 0.568    0.143      0.496
+  grad_x_input                 0.361    0.000      0.361
+  integrated_gradients         0.297    0.000      0.297
+  attention                    0.058    0.000      0.058
+  random                      -0.003    0.000     -0.003
+
+  lambda_1.0:
+  Method                      DD@15%      FPR    Utility
+  ------------------------- -------- -------- ----------
+  guardlens                    0.511    0.007      0.504
+  surface_risk                 0.568    0.143      0.425
+  grad_x_input                 0.361    0.000      0.361
+  integrated_gradients         0.297    0.000      0.297
+  attention                    0.058    0.000      0.058
+  random                      -0.003    0.000     -0.003
+
+  lambda_2.0:
+  Method                      DD@15%      FPR    Utility
+  ------------------------- -------- -------- ----------
+  guardlens                    0.511    0.007      0.496
+  grad_x_input                 0.361    0.000      0.361
+  integrated_gradients         0.297    0.000      0.297
+  surface_risk                 0.568    0.143      0.282
+  attention                    0.058    0.000      0.058
+  random                      -0.003    0.000     -0.003
+
+============================================================
+  2. Causal Turn Mass
+============================================================
+  Records: 0
+  Causal turn mass: mean=0.000, median=0.000
+
+  Per-role attribution mass:
+
+============================================================
+  3. Pivot Window Accuracy
+============================================================
+  Records with pivot: 0
+    within_0: 0.000 (0/0)
+    within_1: 0.000 (0/0)
+    within_2: 0.000 (0/0)
+    within_3: 0.000 (0/0)
+    within_5: 0.000 (0/0)
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/attribution_utility.json
+1: SUCCESS
+1 end: 23:30:06
+
+========================================================
+  2. Deconfounded Test Variants
+  Start: 23:30:06
+========================================================
+Test: 276 total, 87 adversarial, 189 benign
+Original adversarial SR: mean=0.576, max=1.000, >0.3: 76/87
+
+============================================================
+  Variant: ORIGINAL
+============================================================
+
+  Evaluating original (87 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8778
+    Pivot turn:  exact=0.0575  within1=0.0575
+    Dev drop:    {'5%': 0.0789154538970527, '10%': 0.27331084316188714, '15%': 0.47299830697516937, '20%': 0.5670904626010104}
+    Necessity:   {'5%': 0.06818181818181818, '10%': 0.26136363636363635, '15%': 0.49621212121212116, '20%': 0.5643939393939393}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.06896551724137931, 'flip@10%': 0.26436781609195403, 'flip@15%': 0.4942528735632184, 'flip@20%': 0.5632183908045977, 'n_adversarial': 87}
+    Trigger:     mean=408.8  median=310.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0583
+    Pivot turn:  exact=0.0805  within1=0.2069
+    Dev drop:    {'5%': 0.16973676904572957, '10%': 0.5434471285077852, '15%': 0.5434471285077852, '20%': 0.5434471285077852}
+    Necessity:   {'5%': 0.178030303030303, '10%': 0.5643939393939393, '15%': 0.5643939393939393, '20%': 0.5643939393939393}
+    Sufficiency: {'5%': 0.9886363636363636, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.5632183908045977, 'flip@10%': 0.5632183908045977, 'flip@15%': 0.5632183908045977, 'flip@20%': 0.5632183908045977, 'n_adversarial': 87}
+    Trigger:     mean=822.8  median=136.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.6244
+    Pivot turn:  exact=0.0115  within1=0.0345
+    Dev drop:    {'5%': -0.00117976421659643, '10%': -0.0018839669046979964, '15%': -2.7881201469536986e-05, '20%': -0.0015504021536220205}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.9659090909090909, '10%': 0.9772727272727273, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 87}
+    Trigger:     mean=1761.8  median=1793.0
+
+============================================================
+  Variant A: SR-NEUTRALIZED
+============================================================
+  76/87 records had SR phrases replaced
+  Neutralized SR: mean=0.000, >0.3: 0/87
+
+  Evaluating sr_neutralized (87 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8788
+    Pivot turn:  exact=0.0690  within1=0.0690
+    Dev drop:    {'5%': 0.08723676031480533, '10%': 0.2760117283883808, '15%': 0.44782612966338836, '20%': 0.5707985805361067}
+    Necessity:   {'5%': 0.07954545454545454, '10%': 0.2727272727272727, '15%': 0.45833333333333337, '20%': 0.5643939393939393}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.08045977011494253, 'flip@10%': 0.27586206896551724, 'flip@15%': 0.45977011494252873, 'flip@20%': 0.5632183908045977, 'n_adversarial': 87}
+    Trigger:     mean=412.2  median=309.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0379
+    Pivot turn:  exact=0.0690  within1=0.2299
+    Dev drop:    {'5%': 0.18149712149082034, '10%': 0.5362422265327977, '15%': 0.5362422265327977, '20%': 0.5362422265327977}
+    Necessity:   {'5%': 0.18939393939393942, '10%': 0.5643939393939393, '15%': 0.5643939393939393, '20%': 0.5643939393939393}
+    Sufficiency: {'5%': 0.9659090909090909, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.5632183908045977, 'flip@10%': 0.5632183908045977, 'flip@15%': 0.5632183908045977, 'flip@20%': 0.5632183908045977, 'n_adversarial': 87}
+    Trigger:     mean=826.6  median=131.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.6132
+    Pivot turn:  exact=0.1034  within1=0.1839
+    Dev drop:    {'5%': -0.0010624403754870098, '10%': -0.001831506012064038, '15%': -0.0026878958398645573, '20%': -0.0033581534569913692}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.9659090909090909, '10%': 0.9886363636363636, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 87}
+    Trigger:     mean=1775.8  median=1802.0
+
+  SR-neutralized (changed only): 76 records
+
+  Evaluating sr_neutralized_changed (76 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8786
+    Pivot turn:  exact=0.0658  within1=0.0658
+    Dev drop:    {'5%': 0.0613441936377632, '10%': 0.2486865046033161, '15%': 0.4076515478773217, '20%': 0.5224199851301435}
+    Necessity:   {'5%': 0.05263157894736842, '10%': 0.25, '15%': 0.42105263157894735, '20%': 0.5131578947368421}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.05263157894736842, 'flip@10%': 0.25, 'flip@15%': 0.42105263157894735, 'flip@20%': 0.5131578947368421, 'n_adversarial': 76}
+    Trigger:     mean=443.2  median=402.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0406
+    Pivot turn:  exact=0.0658  within1=0.2500
+    Dev drop:    {'5%': 0.1517010788654596, '10%': 0.5073462881946876, '15%': 0.5073462881946876, '20%': 0.5073462881946876}
+    Necessity:   {'5%': 0.15789473684210525, '10%': 0.5263157894736842, '15%': 0.5263157894736842, '20%': 0.5263157894736842}
+    Sufficiency: {'5%': 0.9605263157894737, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.5263157894736842, 'flip@10%': 0.5263157894736842, 'flip@15%': 0.5263157894736842, 'flip@20%': 0.5263157894736842, 'n_adversarial': 76}
+    Trigger:     mean=888.1  median=142.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.6151
+    Pivot turn:  exact=0.0789  within1=0.0921
+    Dev drop:    {'5%': -0.00022583415633753727, '10%': -0.0007452509905162611, '15%': -0.0009810799046566611, '20%': -0.0011885017156600952}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.9736842105263158, '10%': 0.9868421052631579, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 76}
+    Trigger:     mean=1781.5  median=1805.0
+  Sanity: 87/87 neutralized records still detected adversarial
+
+============================================================
+  Variant B: NOISE-EQUALIZED
+============================================================
+
+  Evaluating noise_equalized (87 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8757
+    Pivot turn:  exact=0.0805  within1=0.0805
+    Dev drop:    {'5%': 0.09602012583347846, '10%': 0.2806857120036291, '15%': 0.463427017839973, '20%': 0.5974895506943182}
+    Necessity:   {'5%': 0.09090909090909091, '10%': 0.2727272727272727, '15%': 0.4696969696969697, '20%': 0.6098484848484849}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.09195402298850575, 'flip@10%': 0.27586206896551724, 'flip@15%': 0.47126436781609193, 'flip@20%': 0.6091954022988506, 'n_adversarial': 87}
+    Trigger:     mean=410.3  median=317.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0631
+    Pivot turn:  exact=0.0690  within1=0.1494
+    Dev drop:    {'5%': 0.16391865963570043, '10%': 0.5112646894335326, '15%': 0.5112646894335326, '20%': 0.5112646894335326}
+    Necessity:   {'5%': 0.178030303030303, '10%': 0.5416666666666666, '15%': 0.5416666666666666, '20%': 0.5416666666666666}
+    Sufficiency: {'5%': 0.9886363636363636, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.5402298850574713, 'flip@10%': 0.5402298850574713, 'flip@15%': 0.5402298850574713, 'flip@20%': 0.5402298850574713, 'n_adversarial': 87}
+    Trigger:     mean=884.8  median=138.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.6090
+    Pivot turn:  exact=0.0460  within1=0.1149
+    Dev drop:    {'5%': -0.0006798756393519315, '10%': -0.0015250832745523164, '15%': -0.002318386101361477, '20%': -0.0027050102750460305}
+    Necessity:   {'5%': 0.0, '10%': 0.0, '15%': 0.0, '20%': 0.0}
+    Sufficiency: {'5%': 0.9053030303030304, '10%': 0.9659090909090909, '15%': 0.9772727272727273, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 87}
+    Trigger:     mean=1791.8  median=1821.0
+
+============================================================
+  Variant C: SR-INJECTED BENIGN
+============================================================
+  Injected benign SR: mean=0.659, >0.3: 189/189
+  SR-injected benign FPR:
+    GuardLens:    0.005 (1/189)
+    Surface Risk: 0.847 (160/189)
+
+============================================================
+  Variant D: COMBINED (neutralized + noisy)
+============================================================
+
+  Evaluating combined (87 records)...
+  Evaluator: same model (self-eval)
+
+  === guardlens ===
+    Computing flip rates...
+    Token F1 (secondary): 0.8788
+    Pivot turn:  exact=0.0690  within1=0.0690
+    Dev drop:    {'5%': 0.08723676031480533, '10%': 0.2760117283883808, '15%': 0.44782612966338836, '20%': 0.5707985805361067}
+    Necessity:   {'5%': 0.07954545454545454, '10%': 0.2727272727272727, '15%': 0.45833333333333337, '20%': 0.5643939393939393}
+    Sufficiency: {'5%': 1.0, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.08045977011494253, 'flip@10%': 0.27586206896551724, 'flip@15%': 0.45977011494252873, 'flip@20%': 0.5632183908045977, 'n_adversarial': 87}
+    Trigger:     mean=412.2  median=309.0
+
+  === surface_risk ===
+    Computing flip rates...
+    Token F1 (secondary): 0.0379
+    Pivot turn:  exact=0.0690  within1=0.2299
+    Dev drop:    {'5%': 0.18149712149082034, '10%': 0.5362422265327977, '15%': 0.5362422265327977, '20%': 0.5362422265327977}
+    Necessity:   {'5%': 0.18939393939393942, '10%': 0.5643939393939393, '15%': 0.5643939393939393, '20%': 0.5643939393939393}
+    Sufficiency: {'5%': 0.9659090909090909, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.5632183908045977, 'flip@10%': 0.5632183908045977, 'flip@15%': 0.5632183908045977, 'flip@20%': 0.5632183908045977, 'n_adversarial': 87}
+    Trigger:     mean=826.6  median=131.0
+
+  === random ===
+    Computing flip rates...
+    Token F1 (secondary): 0.6229
+    Pivot turn:  exact=0.0575  within1=0.1264
+    Dev drop:    {'5%': 0.0010676467508980722, '10%': 0.005872658199884675, '15%': 0.0035874562507325954, '20%': 0.002732583519184228}
+    Necessity:   {'5%': 0.0, '10%': 0.011363636363636364, '15%': 0.011363636363636364, '20%': 0.011363636363636364}
+    Sufficiency: {'5%': 0.9848484848484849, '10%': 1.0, '15%': 1.0, '20%': 1.0}
+    Flip rates:  {'flip@5%': 0.0, 'flip@10%': 0.0, 'flip@15%': 0.0, 'flip@20%': 0.0, 'n_adversarial': 87}
+    Trigger:     mean=1769.3  median=1789.0
+
+================================================================================
+  Deconfounded Evaluation Comparison @ 15%
+================================================================================
+
+  Variant                      guardlens       random surface_risk
+  ------------------------- ------------ ------------ ------------
+  original                         0.473       -0.000        0.543
+  sr_neutralized                   0.448       -0.003        0.536
+  sr_neutralized_changed           0.408       -0.001        0.507
+  noise_equalized                  0.463       -0.002        0.511
+  combined                         0.448        0.004        0.536
+
+  KEY: Surface risk DD change after neutralization:
+    Surface risk: 0.543 → 0.536 (Δ=-0.007)
+    GuardLens:    0.473 → 0.448 (Δ=-0.025)
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/deconfounded/deconfounded_results.json
+2: SUCCESS
+2 end: 00:14:12
+
+========================================================
+  Summary
+========================================================
+
+  Attribution Utility (λ=1.0):
+  Method                      DD@15%      FPR    Utility
+  ------------------------- -------- -------- ----------
+  guardlens                    0.511    0.007      0.504
+  surface_risk                 0.568    0.143      0.425
+  grad_x_input                 0.361    0.000      0.361
+  integrated_gradients         0.297    0.000      0.297
+  attention                    0.058    0.000      0.058
+  random                      -0.003    0.000     -0.003
+
+  Causal Turn Mass:
+  Mean: 0.000, Median: 0.000
+
+  Pivot Window Accuracy:
+    within_0: 0.000 (0/0)
+    within_1: 0.000 (0/0)
+    within_2: 0.000 (0/0)
+    within_3: 0.000 (0/0)
+    within_5: 0.000 (0/0)
+
+  Deconfounded Comparison (DD@15%):
+  Variant                      GuardLens     SurfRisk       Random
+  ------------------------- ------------ ------------ ------------
+  original                         0.473        0.543       -0.000
+  sr_neutralized                   0.448        0.536       -0.003
+  sr_neutralized_changed           0.408        0.507       -0.001
+  noise_equalized                  0.463        0.511       -0.002
+  combined                         0.448        0.536        0.004
+
+  SR-Injected Benign FPR:
+    GuardLens:    0.005 (1/189)
+    Surface Risk: 0.847 (160/189)
+
+========================================================
+  Done: 00:14:12
+========================================================
