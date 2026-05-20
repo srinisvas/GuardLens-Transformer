@@ -112,7 +112,7 @@ if [ -f "$OUT_DIR/attribution_utility.json" ]; then
     python3 -c "
 import json
 r = json.load(open('$OUT_DIR/attribution_utility.json'))
-ut = r.get('utility_table', {}).get('lambda_1.0', {})
+ut = r.get('utility_all_benign', {}).get('lambda_1.0', {})
 print(f'  {\"Method\":<25} {\"DD@15%\":>8} {\"FPR\":>8} {\"Utility\":>10}')
 print(f'  {\"-\"*25} {\"-\"*8} {\"-\"*8} {\"-\"*10}')
 for m, v in sorted(ut.items(), key=lambda x: -x[1]['utility']):

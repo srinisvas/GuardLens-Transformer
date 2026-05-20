@@ -428,6 +428,7 @@ def main():
     results["utility_all_benign"] = utility_table
 
     # Boundary-specific utility (the hard specificity setting)
+    focus_k = "15%"
     sr_boundary_fpr = sr_fpr_thresholds.get("0.5", {}).get(
         "boundary_rejected", {}).get("fpr", 0.373)
     boundary_utility = {}
