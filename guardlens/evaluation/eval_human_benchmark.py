@@ -2,24 +2,15 @@
 """
 GuardLens Human Benchmark Evaluation: Multi-Turn Causal Hit Metrics
 
-Runs GuardLens inference on the 100 human-annotated benchmark conversations
-and computes multi-turn causal hit metrics against human annotations.
-
-Metrics:
-  1. Top-1/3/5 turn hit rate against human-marked causal turns
-  2. Top-3/5 coverage of human causal turns
-  3. Causal turn mass ratio (attribution on human turns / total)
-  4. First causal region distance
-  5. Human turn coverage (above-median attribution)
-  6. Classification agreement (F1, kappa)
-  7. All metrics also computed for surface-risk baseline
+Runs GuardLens on 100 human-annotated benchmark conversations and computes
+multi-turn causal hit metrics against human multi-pivot annotations.
 
 Usage:
-  python eval_human_benchmark.py \
-    --checkpoint checkpoints/guardlens/best_attribution.pt \
-    --dataset /path/to/final_dataset.jsonl \
-    --human-annotations /path/to/human_benchmark_annotated.jsonl \
-    --output results/human_benchmark_eval.json
+    python eval_human_benchmark.py \
+        --checkpoint checkpoints/guardlens/best_attribution.pt \
+        --dataset final_dataset.jsonl \
+        --human-annotations human_benchmark_annotated.jsonl \
+        --output results/human_benchmark_eval.json
 """
 
 import argparse
@@ -28,18 +19,15 @@ import sys
 import os
 import numpy as np
 from collections import Counter
-from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader
 
-# ─── project imports (PYTHONPATH must include GuardLens-Transformer root) ───
-from guardlens.config import GuardLensConfig
+# ─── project imports ───
 from guardlens.data.dataset import GuardLensDataset, GuardLensCollator
-from guardlens.models.guardlens import GuardLens
+from guardlens.models import MODEL_REGISTRY
 from transformers import AutoTokenizer
 
-# ─── surface-risk keywords (try canonical import, fallback to inline) ───
+# ─── surface-risk keywords ───
 try:
     from guardlens.evaluation.causal_eval import RISK_KEYWORDS
 except ImportError:
@@ -62,7 +50,6 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════════════
 
 def load_human_annotations(path):
-    """Load human benchmark annotations → {conversation_id: annotation_dict}."""
     annotations = {}
     with open(path) as f:
         for line in f:
@@ -77,7 +64,6 @@ def load_human_annotations(path):
 
 
 def load_dataset_records(dataset_path, target_ids):
-    """Load full conversation records from final_dataset.jsonl for target IDs."""
     records = {}
     with open(dataset_path) as f:
         for line in f:
@@ -94,24 +80,14 @@ def load_dataset_records(dataset_path, target_ids):
 
 def extract_turn_attribution(model, record, config, tokenizer, collator, device):
     """
-    Run GuardLens on a single record, return turn-level attribution scores.
+    Run GuardLens on one record → turn-level attribution scores.
 
-    Goes through GuardLensDataset → GuardLensCollator → model forward,
-    matching the exact pipeline used in training and evaluation.
-
-    Returns dict:
-        cls_prob:    float — P(adversarial)
-        turn_scores: {user_turn_index: mean_token_attribution}  (only user turns)
-        pivot_pred:  int or None
+    Pipeline: record → GuardLensDataset.__getitem__ → GuardLensCollator → model.forward
     """
-    # Wrap in dataset to get the __getitem__ preprocessing
     ds = GuardLensDataset([record], config)
     item = ds[0]
-
-    # Collate single item → batch tensors
     batch = collator([item])
 
-    # Move tensors to device
     for k, v in batch.items():
         if isinstance(v, torch.Tensor):
             batch[k] = v.to(device)
@@ -124,13 +100,11 @@ def extract_turn_attribution(model, record, config, tokenizer, collator, device)
             compute_attribution=True,
         )
 
-    # ── Classification probability ──
     cls_prob = torch.sigmoid(outputs["cls_logits"]).item()
 
-    # ── Token attribution → turn-level aggregation ──
-    # attr_probs: [1, T, S] — per-token attribution probability
-    attr_probs = outputs["attr_probs"][0]   # [T, S]
-    attn_mask = batch["attention_mask"][0]   # [T, S]
+    # attr_probs: [1, T, S] → [T, S]
+    attr_probs = outputs["attr_probs"][0]
+    attn_mask = batch["attention_mask"][0]
 
     turns = record.get("turns", [])
     n_turns = min(attr_probs.shape[0], len(turns), config.max_turns)
@@ -141,45 +115,30 @@ def extract_turn_attribution(model, record, config, tokenizer, collator, device)
         if role != "user":
             continue
 
-        # Only score valid (non-padding) tokens
         mask = attn_mask[t_idx].bool()
         scores = attr_probs[t_idx][mask].cpu().numpy()
+        turn_scores[t_idx] = float(np.mean(scores)) if len(scores) > 0 else 0.0
 
-        if len(scores) == 0:
-            turn_scores[t_idx] = 0.0
-        else:
-            turn_scores[t_idx] = float(np.mean(scores))
-
-    # ── Pivot prediction ──
     pivot_pred = None
     if "pivot_logits" in outputs:
-        pivot_logits = outputs["pivot_logits"][0]  # [T+1]
-        pred = torch.argmax(pivot_logits).item()
+        pred = torch.argmax(outputs["pivot_logits"][0]).item()
         if pred < n_turns:
             pivot_pred = pred
 
-    return {
-        "cls_prob": cls_prob,
-        "turn_scores": turn_scores,
-        "pivot_pred": pivot_pred,
-    }
+    return {"cls_prob": cls_prob, "turn_scores": turn_scores, "pivot_pred": pivot_pred}
 
 
 def compute_surface_risk_turn_scores(record):
-    """Keyword-based surface-risk score per user turn."""
     turns = record.get("turns", [])
     turn_scores = {}
-
     for i, turn in enumerate(turns):
         role = turn.get("role", turn.get("speaker", ""))
         if role != "user":
             continue
-
         text = turn.get("text", "").lower()
         hits = sum(1 for kw in RISK_KEYWORDS if kw in text)
         n_words = max(len(text.split()), 1)
         turn_scores[i] = hits / n_words
-
     return turn_scores
 
 
@@ -188,45 +147,29 @@ def compute_surface_risk_turn_scores(record):
 # ═══════════════════════════════════════════════════════════════════
 
 def compute_multiturn_metrics(turn_scores, human_causal_turns):
-    """
-    Compute multi-turn causal hit metrics for a single adversarial conversation.
-
-    Args:
-        turn_scores:        {user_turn_index: score}
-        human_causal_turns: [turn_index, ...] from human annotation
-
-    Returns dict of per-record metrics, or None if inputs are empty.
-    """
     if not human_causal_turns or not turn_scores:
         return None
 
     human_set = set(human_causal_turns)
-
-    # Rank user turns by attribution (descending)
     ranked = sorted(turn_scores.items(), key=lambda x: x[1], reverse=True)
     ranked_indices = [idx for idx, _ in ranked]
 
-    # ── Top-k hit: does any top-k predicted turn match any human turn? ──
     top1_hit = int(ranked_indices[0] in human_set) if ranked_indices else 0
     top3_hit = int(any(idx in human_set for idx in ranked_indices[:3]))
     top5_hit = int(any(idx in human_set for idx in ranked_indices[:5]))
 
-    # ── Top-k coverage: fraction of human turns captured in top-k ──
     top3_coverage = len(set(ranked_indices[:3]) & human_set) / len(human_set)
     top5_coverage = len(set(ranked_indices[:5]) & human_set) / len(human_set)
 
-    # ── Causal mass ratio ──
     total_mass = sum(turn_scores.values())
     causal_mass = sum(turn_scores.get(t, 0) for t in human_causal_turns)
     mass_ratio = causal_mass / total_mass if total_mass > 0 else 0.0
 
-    # ── First causal region distance ──
     if ranked_indices:
         min_dist = min(abs(ranked_indices[0] - ht) for ht in human_causal_turns)
     else:
         min_dist = float("inf")
 
-    # ── Human turn coverage: fraction with above-median attribution ──
     if turn_scores:
         median_score = float(np.median(list(turn_scores.values())))
         above_median = sum(
@@ -251,11 +194,10 @@ def compute_multiturn_metrics(turn_scores, human_causal_turns):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Aggregation and reporting
+#  Aggregation
 # ═══════════════════════════════════════════════════════════════════
 
 def aggregate_metrics(metrics_list, name, file=sys.stderr):
-    """Aggregate per-record metrics into means, print summary."""
     if not metrics_list:
         print(f"\n  {name}: No valid records", file=file)
         return {}
@@ -268,11 +210,8 @@ def aggregate_metrics(metrics_list, name, file=sys.stderr):
         "causal_mass_ratio", "first_causal_distance", "human_coverage",
     ]:
         vals = [m[key] for m in metrics_list]
-        agg[key] = {
-            "mean": float(np.mean(vals)),
-            "std": float(np.std(vals)),
-            "median": float(np.median(vals)),
-        }
+        agg[key] = {"mean": float(np.mean(vals)), "std": float(np.std(vals)),
+                     "median": float(np.median(vals))}
 
     agg["n"] = n
     agg["mean_human_causal_turns"] = float(
@@ -286,52 +225,11 @@ def aggregate_metrics(metrics_list, name, file=sys.stderr):
     print(f"    Top-3 coverage:         {agg['top3_coverage']['mean']:.3f}", file=file)
     print(f"    Top-5 coverage:         {agg['top5_coverage']['mean']:.3f}", file=file)
     print(f"    Causal mass ratio:      {agg['causal_mass_ratio']['mean']:.3f}", file=file)
-    print(
-        f"    First causal distance:  {agg['first_causal_distance']['mean']:.1f} "
-        f"(median {agg['first_causal_distance']['median']:.1f})",
-        file=file,
-    )
+    print(f"    First causal distance:  {agg['first_causal_distance']['mean']:.1f} "
+          f"(median {agg['first_causal_distance']['median']:.1f})", file=file)
     print(f"    Human turn coverage:    {agg['human_coverage']['mean']:.3f}", file=file)
-    print(
-        f"    Mean human causal turns: {agg['mean_human_causal_turns']:.1f}",
-        file=file,
-    )
+    print(f"    Mean human causal turns: {agg['mean_human_causal_turns']:.1f}", file=file)
     return agg
-
-
-def compute_classification_agreement(classification_results, file=sys.stderr):
-    """Compute F1, kappa, confusion matrix from classification predictions."""
-    tp = sum(1 for r in classification_results.values() if r["pred"] and r["human"])
-    tn = sum(1 for r in classification_results.values() if not r["pred"] and not r["human"])
-    fp = sum(1 for r in classification_results.values() if r["pred"] and not r["human"])
-    fn = sum(1 for r in classification_results.values() if not r["pred"] and r["human"])
-    n = len(classification_results)
-
-    acc = (tp + tn) / n if n else 0
-    prec = tp / (tp + fp) if (tp + fp) else 0
-    rec = tp / (tp + fn) if (tp + fn) else 0
-    f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0
-
-    # Cohen's kappa
-    p_pred = (tp + fp) / n if n else 0
-    p_human = (tp + fn) / n if n else 0
-    pe = p_pred * p_human + (1 - p_pred) * (1 - p_human)
-    kappa = (acc - pe) / (1 - pe) if pe < 1 else 1.0
-
-    results = {
-        "accuracy": acc, "precision": prec, "recall": rec, "f1": f1,
-        "kappa": kappa,
-        "tp": tp, "tn": tn, "fp": fp, "fn": fn, "n": n,
-    }
-
-    print(f"\n  Classification Agreement:", file=file)
-    print(f"    Accuracy:  {acc:.3f}", file=file)
-    print(f"    Precision: {prec:.3f}", file=file)
-    print(f"    Recall:    {rec:.3f}", file=file)
-    print(f"    F1:        {f1:.3f}", file=file)
-    print(f"    Kappa:     {kappa:.3f}", file=file)
-    print(f"    TP={tp} TN={tn} FP={fp} FN={fn}", file=file)
-    return results
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -342,98 +240,88 @@ def main():
     parser = argparse.ArgumentParser(description="Human Benchmark Multi-Turn Evaluation")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--dataset", required=True, help="final_dataset.jsonl")
-    parser.add_argument("--human-annotations", required=True,
-                        help="human_benchmark_annotated.jsonl")
+    parser.add_argument("--human-annotations", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--threshold", type=float, default=None,
-                        help="Override classification threshold (default: from checkpoint)")
+    parser.add_argument("--threshold", type=float, default=None)
     args = parser.parse_args()
 
-    P = sys.stderr  # all progress to stderr, stdout stays clean
+    P = sys.stderr
 
     print("=" * 60, file=P)
     print("  GuardLens Human Benchmark Evaluation", file=P)
     print("=" * 60, file=P)
 
     # ── 1. Load human annotations ──
-    print(f"\nLoading annotations from {args.human_annotations}...", file=P)
     annotations = load_human_annotations(args.human_annotations)
     adv_ann = {k: v for k, v in annotations.items() if v["is_adversarial"]}
     ben_ann = {k: v for k, v in annotations.items() if not v["is_adversarial"]}
-    print(f"  {len(annotations)} total: {len(adv_ann)} adversarial, {len(ben_ann)} benign", file=P)
+    print(f"  Annotations: {len(annotations)} ({len(adv_ann)} adv, {len(ben_ann)} ben)", file=P)
 
-    # ── 2. Load matching records from dataset ──
-    print(f"Loading records from {args.dataset}...", file=P)
+    # ── 2. Load dataset records ──
     records = load_dataset_records(args.dataset, set(annotations.keys()))
-    print(f"  Matched {len(records)}/{len(annotations)} conversations", file=P)
+    print(f"  Matched: {len(records)}/{len(annotations)} conversations", file=P)
 
     missing = set(annotations.keys()) - set(records.keys())
     if missing:
-        print(f"  WARNING: {len(missing)} IDs not found in dataset:", file=P)
-        for mid in sorted(missing)[:10]:
+        print(f"  WARNING: {len(missing)} IDs not found in dataset", file=P)
+        for mid in sorted(missing)[:5]:
             print(f"    {mid}", file=P)
 
-    # ── 3. Load model ──
-    print(f"\nLoading checkpoint {args.checkpoint}...", file=P)
-    device = torch.device(args.device)
-    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    # ── 3. Load model (same pattern as guardlens.evaluate) ──
+    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    ckpt = torch.load(args.checkpoint, weights_only=False, map_location=device)
 
+    config = ckpt["config"]
+    model_name = ckpt.get("model_name", "guardlens")
     threshold = args.threshold or ckpt.get("threshold", 0.5)
     epoch = ckpt.get("epoch", "?")
     phase = ckpt.get("phase", "?")
-    print(f"  Epoch {epoch}, phase {phase}, threshold {threshold}", file=P)
 
-    config = GuardLensConfig()
-    # Restore any saved config overrides
-    saved_config = ckpt.get("config", {})
-    for k, v in saved_config.items():
-        if hasattr(config, k):
-            setattr(config, k, v)
+    print(f"  Model: {model_name}, epoch {epoch}, phase {phase}, threshold {threshold:.2f}", file=P)
 
-    model = GuardLens(config)
+    tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
+    collator = GuardLensCollator(tokenizer, config)
+
+    model_cls = MODEL_REGISTRY.get(model_name, MODEL_REGISTRY["guardlens"])
+    model = model_cls(config)
+    model.setup_backbone()
     model.load_state_dict(ckpt["model_state_dict"])
     model = model.to(device)
     model.eval()
 
-    backbone = getattr(config, "backbone", "microsoft/deberta-v3-base")
-    tokenizer = AutoTokenizer.from_pretrained(backbone)
-    collator = GuardLensCollator(tokenizer=tokenizer, config=config)
-    print(f"  Model loaded on {device}", file=P)
+    print(f"  Loaded on {device}", file=P)
 
     # ── 4. Run inference ──
-    print(f"\nRunning inference on {len(records)} conversations...", file=P)
+    print(f"\n  Running inference on {len(records)} conversations...", file=P)
 
-    gl_results = {}      # cid → {cls_prob, turn_scores, pivot_pred}
-    sr_results = {}      # cid → {turn_idx: score}
-    cls_results = {}     # cid → {pred, human, prob}
+    gl_results = {}
+    sr_results = {}
+    cls_results = {}
 
     for i, (cid, record) in enumerate(sorted(records.items())):
         if (i + 1) % 10 == 0:
-            print(f"  {i+1}/{len(records)}...", file=P)
+            print(f"    {i+1}/{len(records)}...", file=P)
 
         try:
-            # GuardLens
             gl = extract_turn_attribution(model, record, config, tokenizer, collator, device)
             gl_results[cid] = gl
 
-            # Classification
             cls_results[cid] = {
                 "pred": gl["cls_prob"] >= threshold,
                 "human": annotations[cid]["is_adversarial"],
                 "prob": gl["cls_prob"],
             }
 
-            # Surface-risk
             sr_results[cid] = compute_surface_risk_turn_scores(record)
 
         except Exception as e:
-            print(f"  ERROR {cid[:12]}: {e}", file=P)
+            print(f"    ERROR {cid[:12]}: {e}", file=P)
             import traceback; traceback.print_exc(file=P)
 
     print(f"  Done: {len(gl_results)} successful", file=P)
 
-    # ── 5. Compute multi-turn metrics (adversarial only) ──
+    # ── 5. Multi-turn metrics ──
     print(f"\n{'='*60}", file=P)
     print(f"  RESULTS", file=P)
     print(f"{'='*60}", file=P)
@@ -444,7 +332,6 @@ def main():
     for cid in sorted(adv_ann.keys()):
         if cid not in gl_results:
             continue
-
         human_turns = annotations[cid]["human_pivot_turns"]
         if not human_turns:
             continue
@@ -463,10 +350,37 @@ def main():
     sr_agg = aggregate_metrics(sr_metrics, "Surface-Risk", file=P)
 
     # ── 6. Classification agreement ──
-    cls_agg = compute_classification_agreement(cls_results, file=P)
-    cls_agg["threshold"] = threshold
+    tp = sum(1 for r in cls_results.values() if r["pred"] and r["human"])
+    tn = sum(1 for r in cls_results.values() if not r["pred"] and not r["human"])
+    fp = sum(1 for r in cls_results.values() if r["pred"] and not r["human"])
+    fn = sum(1 for r in cls_results.values() if not r["pred"] and r["human"])
+    n = len(cls_results)
 
-    # ── 7. Human annotation stats ──
+    acc = (tp + tn) / n if n else 0
+    prec = tp / (tp + fp) if (tp + fp) else 0
+    rec = tp / (tp + fn) if (tp + fn) else 0
+    f1 = 2 * prec * rec / (prec + rec) if (prec + rec) else 0
+
+    p_pred = (tp + fp) / n if n else 0
+    p_human = (tp + fn) / n if n else 0
+    pe = p_pred * p_human + (1 - p_pred) * (1 - p_human)
+    kappa = (acc - pe) / (1 - pe) if pe < 1 else 1.0
+
+    cls_agg = {
+        "accuracy": acc, "precision": prec, "recall": rec, "f1": f1,
+        "kappa": kappa, "tp": tp, "tn": tn, "fp": fp, "fn": fn,
+        "n": n, "threshold": threshold,
+    }
+
+    print(f"\n  Classification Agreement (model vs human):", file=P)
+    print(f"    Accuracy:  {acc:.3f}", file=P)
+    print(f"    Precision: {prec:.3f}", file=P)
+    print(f"    Recall:    {rec:.3f}", file=P)
+    print(f"    F1:        {f1:.3f}", file=P)
+    print(f"    Kappa:     {kappa:.3f}", file=P)
+    print(f"    TP={tp} TN={tn} FP={fp} FN={fn}", file=P)
+
+    # ── 7. Human stats ──
     pivot_counts = [len(a["human_pivot_turns"]) for a in adv_ann.values()]
     multi_pivot = sum(1 for c in pivot_counts if c > 1)
     human_stats = {
@@ -480,9 +394,9 @@ def main():
     }
 
     print(f"\n  Human Annotation Stats:", file=P)
-    print(f"    Multi-pivot rate:  {human_stats['multi_pivot_rate']:.1%}", file=P)
+    print(f"    Multi-pivot: {human_stats['multi_pivot_rate']:.1%}", file=P)
     print(f"    Mean causal turns: {human_stats['mean_causal_turns']:.1f}", file=P)
-    print(f"    Distribution:      {human_stats['pivot_count_distribution']}", file=P)
+    print(f"    Distribution: {human_stats['pivot_count_distribution']}", file=P)
 
     # ── 8. Save ──
     output = {
@@ -495,11 +409,11 @@ def main():
         "per_record_classification": {k: v for k, v in cls_results.items()},
     }
 
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)) or ".", exist_ok=True)
     with open(args.output, "w") as f:
         json.dump(output, f, indent=2, default=str)
 
-    print(f"\nSaved → {args.output}", file=P)
+    print(f"\n  Saved → {args.output}", file=P)
     print("=" * 60, file=P)
 
 
