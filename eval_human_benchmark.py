@@ -92,6 +92,8 @@ def extract_turn_attribution(model, record, config, tokenizer, collator, device)
         outputs = model(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
+            turn_mask=batch["turn_mask"],
+            role_ids=batch["role_ids"],
             compute_attribution=True,
         )
 
