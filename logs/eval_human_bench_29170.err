@@ -1,0 +1,114 @@
+============================================================
+  GuardLens Human Benchmark Evaluation
+============================================================
+  Ann_A: 100 records (43 adv, 57 ben)
+  Ann_B: 100 records (34 adv, 66 ben)
+  Matched: 100/100 conversations
+  Model: guardlens, threshold: 0.56
+[transformers] The tokenizer you are loading from 'microsoft/deberta-v3-base' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+/gpfs/home/s001/ssubram7/work/conda_envs/guardlens_train/lib/python3.11/site-packages/torch/nn/modules/transformer.py:385: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+Loading weights:   0%|          | 0/198 [00:00<?, ?it/s]Loading weights: 100%|██████████| 198/198 [00:00<00:00, 38200.19it/s]
+[transformers] [1mDebertaV2Model LOAD REPORT[0m from: microsoft/deberta-v3-base
+Key                                     | Status     |  | 
+----------------------------------------+------------+--+-
+lm_predictions.lm_head.dense.weight     | UNEXPECTED |  | 
+mask_predictions.dense.weight           | UNEXPECTED |  | 
+mask_predictions.LayerNorm.bias         | UNEXPECTED |  | 
+lm_predictions.lm_head.bias             | UNEXPECTED |  | 
+mask_predictions.LayerNorm.weight       | UNEXPECTED |  | 
+lm_predictions.lm_head.LayerNorm.weight | UNEXPECTED |  | 
+mask_predictions.classifier.bias        | UNEXPECTED |  | 
+lm_predictions.lm_head.dense.bias       | UNEXPECTED |  | 
+lm_predictions.lm_head.LayerNorm.bias   | UNEXPECTED |  | 
+mask_predictions.classifier.weight      | UNEXPECTED |  | 
+mask_predictions.dense.bias             | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+  Loaded on cuda
+
+  Inference on 100 conversations...
+    10/100...
+    20/100...
+    30/100...
+    40/100...
+    50/100...
+    60/100...
+    70/100...
+    80/100...
+    90/100...
+    100/100...
+  Done: 100 successful
+
+============================================================
+  RESULTS vs Ann_A
+============================================================
+
+  GuardLens vs Ann_A (n=43):
+    Top-1 turn hit:         0.233
+    Top-3 turn hit:         0.605
+    Top-5 turn hit:         0.837
+    Top-3 coverage:         0.312
+    Top-5 coverage:         0.524
+    Causal mass ratio:      0.189
+    First causal distance:  3.5 (median 2.0)
+    Human turn coverage:    0.625
+    Mean human causal turns: 2.7
+
+  Surface-Risk vs Ann_A (n=43):
+    Top-1 turn hit:         0.512
+    Top-3 turn hit:         0.674
+    Top-5 turn hit:         0.884
+    Top-3 coverage:         0.355
+    Top-5 coverage:         0.522
+    Causal mass ratio:      0.381
+    First causal distance:  3.0 (median 0.0)
+    Human turn coverage:    0.579
+    Mean human causal turns: 2.7
+
+  Classification vs Ann_A:
+    F1=0.903 Acc=0.910 Kappa=0.820 TP=42 TN=49 FP=8 FN=1
+
+============================================================
+  RESULTS vs Ann_B
+============================================================
+
+  GuardLens vs Ann_B (n=34):
+    Top-1 turn hit:         0.412
+    Top-3 turn hit:         0.676
+    Top-5 turn hit:         0.853
+    Top-3 coverage:         0.322
+    Top-5 coverage:         0.537
+    Causal mass ratio:      0.265
+    First causal distance:  2.5 (median 2.0)
+    Human turn coverage:    0.650
+    Mean human causal turns: 4.0
+
+  Surface-Risk vs Ann_B (n=34):
+    Top-1 turn hit:         0.618
+    Top-3 turn hit:         0.824
+    Top-5 turn hit:         0.941
+    Top-3 coverage:         0.425
+    Top-5 coverage:         0.590
+    Causal mass ratio:      0.508
+    First causal distance:  2.2 (median 0.0)
+    Human turn coverage:    0.659
+    Mean human causal turns: 4.0
+
+  Classification vs Ann_B:
+    F1=0.762 Acc=0.800 Kappa=0.600 TP=32 TN=48 FP=18 FN=2
+
+============================================================
+  INTER-ANNOTATOR AGREEMENT
+============================================================
+
+  Inter-Annotator: Ann_A vs Ann_B (n=100):
+    Classification: agreement=0.890 kappa=0.770
+    Ann_A adv: 43, Ann_B adv: 34, agreed adv: 33
+    Pivot Jaccard:  mean=0.590 median=0.500
+    Recall of Ann_A pivots in Ann_B: 0.858
+    Recall of Ann_B pivots in Ann_A: 0.688
+
+  Saved → /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/human_benchmark_eval.json
+============================================================

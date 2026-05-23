@@ -1,0 +1,42 @@
+========================================================
+  GuardLens Human Benchmark (Multi-Annotator)
+  Job: 29170  Node: g007
+  Start: Fri May 22 14:08:05 EDT 2026
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+  OK: final_dataset.jsonl
+  OK: best_attribution.pt
+  OK: human_benchmark_annotated.jsonl
+  OK: adversarial_annotation_completed-user1.jsonl
+
+
+========================================================
+  SUCCESS
+
+  === Ann_A: 43 adv, multi-pivot=86%, mean_turns=2.7 ===
+  Classification: F1=0.903 Kappa=0.820
+  Metric                        GuardLens   SurfRisk      Delta
+  ---------------------------- ---------- ---------- ----------
+  top1_hit                          0.233      0.512     -0.279
+  top3_hit                          0.605      0.674     -0.070
+  top5_hit                          0.837      0.884     -0.047
+  top3_coverage                     0.312      0.355     -0.043
+  top5_coverage                     0.524      0.522     +0.002
+  causal_mass_ratio                 0.189      0.381     -0.192
+  human_coverage                    0.625      0.579     +0.045
+
+  === Ann_B: 34 adv, multi-pivot=82%, mean_turns=4.0 ===
+  Classification: F1=0.762 Kappa=0.600
+  Metric                        GuardLens   SurfRisk      Delta
+  ---------------------------- ---------- ---------- ----------
+  top1_hit                          0.412      0.618     -0.206
+  top3_hit                          0.676      0.824     -0.147
+  top5_hit                          0.853      0.941     -0.088
+  top3_coverage                     0.322      0.425     -0.103
+  top5_coverage                     0.537      0.590     -0.053
+  causal_mass_ratio                 0.265      0.508     -0.242
+  human_coverage                    0.650      0.659     -0.010
+
+  Inter-annotator (Ann_A_vs_Ann_B): kappa=0.770 pivot_jaccard=0.590
+  Done: Fri May 22 14:08:32 EDT 2026
+========================================================
