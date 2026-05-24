@@ -1,0 +1,72 @@
+{
+  "model": "guardlens",
+  "checkpoint": "/gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best.pt",
+  "n_adversarial": 300,
+  "n_benign": 189,
+  "source_counts": {
+    "harmbench": 127,
+    "advbench": 173
+  },
+  "classification": {
+    "accuracy": 0.6523517382413088,
+    "precision": 0.9924242424242424,
+    "recall": 0.43666666666666665,
+    "f1": 0.6064814814814814,
+    "tp": 131,
+    "fp": 1,
+    "fn": 169,
+    "tn": 188
+  },
+  "per_source": {
+    "advbench": {
+      "n": 173,
+      "f1": 0.540084388185654,
+      "precision": 1.0,
+      "recall": 0.3699421965317919
+    },
+    "harmbench": {
+      "n": 127,
+      "f1": 0.6907216494845361,
+      "precision": 1.0,
+      "recall": 0.5275590551181102
+    },
+    "synthetic": {
+      "n": 189,
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0
+    }
+  },
+  "causal": {
+    "5%": {
+      "deviation_drop": 0.22019266289079434,
+      "flip_rate": 0.2366412213740458,
+      "sufficiency": 0.9770992366412213,
+      "n_adversarial": 131
+    },
+    "10%": {
+      "deviation_drop": 0.26261996518987596,
+      "flip_rate": 0.2748091603053435,
+      "sufficiency": 0.9770992366412213,
+      "n_adversarial": 131
+    },
+    "15%": {
+      "deviation_drop": 0.2957984737006375,
+      "flip_rate": 0.32061068702290074,
+      "sufficiency": 0.9923664122137404,
+      "n_adversarial": 131
+    },
+    "20%": {
+      "deviation_drop": 0.3482813340178975,
+      "flip_rate": 0.3816793893129771,
+      "sufficiency": 1.0,
+      "n_adversarial": 131
+    }
+  },
+  "top_k_fractions": [
+    0.05,
+    0.1,
+    0.15,
+    0.2
+  ]
+}

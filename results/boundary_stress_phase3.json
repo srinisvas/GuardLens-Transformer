@@ -1,0 +1,39 @@
+{
+  "model": "guardlens",
+  "threshold": 0.05,
+  "accuracy": 0.956989247311828,
+  "false_positive_rate": 0.043010752688172046,
+  "total": 279,
+  "correct": 267,
+  "false_positives": 12,
+  "mean_p_adv": 0.0223230599239479,
+  "p95_p_adv": 0.006671123672276735,
+  "max_p_adv": 0.9940127730369568,
+  "per_source": {
+    "false_lead_benign": {
+      "correct": 59,
+      "total": 66,
+      "fp": 7
+    },
+    "topic_matched_safe": {
+      "correct": 94,
+      "total": 96,
+      "fp": 2
+    },
+    "hard_benign": {
+      "correct": 99,
+      "total": 101,
+      "fp": 2
+    },
+    "research_technical": {
+      "correct": 10,
+      "total": 11,
+      "fp": 1
+    },
+    "clean_everyday": {
+      "correct": 5,
+      "total": 5,
+      "fp": 0
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "model": "guardlens_no_cf",
+  "checkpoint": "/gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens_no_cf/best.pt",
+  "n_adversarial": 300,
+  "n_benign": 189,
+  "source_counts": {
+    "harmbench": 127,
+    "advbench": 173
+  },
+  "classification": {
+    "accuracy": 0.621676891615542,
+    "precision": 0.9914529914529915,
+    "recall": 0.38666666666666666,
+    "f1": 0.5563549160671463,
+    "tp": 116,
+    "fp": 1,
+    "fn": 184,
+    "tn": 188
+  },
+  "per_source": {
+    "advbench": {
+      "n": 173,
+      "f1": 0.49565217391304345,
+      "precision": 1.0,
+      "recall": 0.32947976878612717
+    },
+    "harmbench": {
+      "n": 127,
+      "f1": 0.6344086021505376,
+      "precision": 1.0,
+      "recall": 0.4645669291338583
+    },
+    "synthetic": {
+      "n": 189,
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0
+    }
+  },
+  "causal": {
+    "5%": {
+      "deviation_drop": 0.2422796098195751,
+      "flip_rate": 0.25,
+      "sufficiency": 1.0,
+      "n_adversarial": 116
+    },
+    "10%": {
+      "deviation_drop": 0.3656697814056252,
+      "flip_rate": 0.3706896551724138,
+      "sufficiency": 1.0,
+      "n_adversarial": 116
+    },
+    "15%": {
+      "deviation_drop": 0.4194833261072149,
+      "flip_rate": 0.43103448275862066,
+      "sufficiency": 1.0,
+      "n_adversarial": 116
+    },
+    "20%": {
+      "deviation_drop": 0.4438438122029326,
+      "flip_rate": 0.43103448275862066,
+      "sufficiency": 1.0,
+      "n_adversarial": 116
+    }
+  },
+  "top_k_fractions": [
+    0.05,
+    0.1,
+    0.15,
+    0.2
+  ]
+}
