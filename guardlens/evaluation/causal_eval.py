@@ -159,12 +159,14 @@ def deviation_drop(
         drops.append(orig_prob - masked_prob)
 
     if not drops:
-        return {"absolute_drop": 0.0, "relative_drop": 0.0, "n_tested": 0}
+        return {"absolute_drop": 0.0, "relative_drop": 0.0, "n_tested": 0,
+                "per_record_drops": []}
 
     return {
         "absolute_drop": float(np.mean(drops)),
         "relative_drop": float(np.mean(drops)) / max(1e-8, float(np.mean([d + 0.5 for d in drops]))),
         "n_tested": len(drops),
+        "per_record_drops": [float(d) for d in drops],
     }
 
 
@@ -184,6 +186,8 @@ def flip_rate(
 
     # FIX #7: Use additive counting, not max
     flip_counts = {f"flip@{int(k*100)}%": 0 for k in top_k_fractions}
+    # Per-record flip indicators for bootstrap CIs
+    per_record_flips = {f"flip@{int(k*100)}%": [] for k in top_k_fractions}
     total_adversarial = 0
 
     model.eval()
@@ -212,13 +216,15 @@ def flip_rate(
                     attribution_mask=mask.unsqueeze(0),
                 )[0].item()
 
-                if masked_prob < 0.5:
-                    flip_counts[f"flip@{int(k_frac*100)}%"] += 1
+                flipped = int(masked_prob < 0.5)
+                flip_counts[f"flip@{int(k_frac*100)}%"] += flipped
+                per_record_flips[f"flip@{int(k_frac*100)}%"].append(flipped)
 
     for k in flip_counts:
         flip_counts[k] = flip_counts[k] / max(1, total_adversarial)
 
     flip_counts["n_adversarial"] = total_adversarial
+    flip_counts["per_record_flips"] = per_record_flips
     return flip_counts
 
 
@@ -867,17 +873,24 @@ def run_causal_evaluation(
             pt["within_1"] /= pt["total"]
 
         # Aggregate per-k
+        per_record_dd = {}
         for k_frac in top_k_fractions:
             key = f"{int(k_frac*100)}%"
-            # Deviation drop
-            drops = [d["absolute_drop"] for d in all_dev_drop[k_frac]]
-            method_results["deviation_drops"][key] = float(np.mean(drops)) if drops else 0.0
+            # Deviation drop — collect per-record values across batches
+            all_drops_flat = []
+            for d in all_dev_drop[k_frac]:
+                all_drops_flat.extend(d.get("per_record_drops", [d["absolute_drop"]]))
+            method_results["deviation_drops"][key] = float(np.mean(all_drops_flat)) if all_drops_flat else 0.0
+            per_record_dd[key] = all_drops_flat
             # Necessity
             rates = [n["necessity_rate"] for n in all_necessity[k_frac]]
             method_results["necessity"][key] = float(np.mean(rates)) if rates else 0.0
             # Sufficiency
             rates = [s["sufficiency_rate"] for s in all_sufficiency[k_frac]]
             method_results["sufficiency"][key] = float(np.mean(rates)) if rates else 0.0
+
+        # Save per-record DD for bootstrap CI computation
+        method_results["per_record_dd"] = per_record_dd
 
         # Trigger size
         sizes = method_results["trigger_sizes"]

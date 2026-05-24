@@ -81,6 +81,7 @@ def main():
     total = 0
     fp = 0  # False positives (benign classified as adversarial)
     all_probs = []
+    per_record_fp = []  # Per-record FP indicators for bootstrap CIs
     per_source = {}
 
     with torch.no_grad():
@@ -104,6 +105,9 @@ def main():
                 source = batch["metadata"][i].get("family", "unknown")
 
                 all_probs.append(prob)
+
+                is_fp = int(pred == 1 and label == 0)
+                per_record_fp.append(is_fp)
 
                 if pred == label:
                     correct += 1
@@ -152,6 +156,8 @@ def main():
         "p95_p_adv": p95_prob,
         "max_p_adv": max_prob,
         "per_source": per_source,
+        "per_record_fp": per_record_fp,  # list of 0/1 per boundary record
+        "per_record_prob": all_probs,     # list of P(adv) per record
     }
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)

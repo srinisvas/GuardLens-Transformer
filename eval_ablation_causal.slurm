@@ -34,6 +34,8 @@ TEST_DATA="$HOME/staging/dataset_gen_output/splits/test.jsonl"
 BOUNDARY_DATA="$HOME/staging/dataset_gen_output/benign_boundary.jsonl"
 OUT_DIR="$RESULTS_DIR/results/ablation_causal"
 
+export RESULTS_DIR OUT_DIR
+
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
 CONDA_BASE=$(conda info --base 2>/dev/null)
 source "$CONDA_BASE/etc/profile.d/conda.sh"
@@ -200,7 +202,7 @@ python3 << 'SUMMARY_EOF'
 import json, os, sys
 
 results_dir = os.environ.get("RESULTS_DIR", "")
-out_dir = os.path.join(results_dir, "results", "ablation_causal")
+out_dir = os.environ.get("OUT_DIR", os.path.join(results_dir, "results", "ablation_causal"))
 cls_dir = os.path.join(results_dir, "results")
 
 models = ["guardlens", "guardlens_no_fusion", "guardlens_no_cf"]
@@ -237,16 +239,22 @@ for model in models:
     causal_path = os.path.join(out_dir, f"causal_{model}.json")
     try:
         r = json.load(open(causal_path))
-        ft = r.get("full_test", r)
-        gl = ft.get("guardlens", {})
+        # eval_causal saves as r["guardlens"]["deviation_drops"]["15%"]
+        # (top-level, no "full_test" wrapper)
+        gl = r.get("full_test", r).get("guardlens", r.get("guardlens", {}))
         dd_val = gl.get("deviation_drops", {}).get("15%", None)
-        flip_val = gl.get("flip_rates", {}).get("flip@15%", None)
-        tf1_val = gl.get("token_f1", None)
+        fr = gl.get("flip_rates", {})
+        flip_val = fr.get("flip@15%", None)
+        tf1_raw = gl.get("token_f1", None)
+        if isinstance(tf1_raw, dict):
+            tf1_val = tf1_raw.get("f1", None)
+        elif isinstance(tf1_raw, (int, float)):
+            tf1_val = tf1_raw
         if dd_val is not None: dd = f"{dd_val:.3f}"
         if flip_val is not None: flip = f"{flip_val:.3f}"
         if tf1_val is not None: tf1 = f"{tf1_val:.3f}"
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  WARNING: Could not parse {causal_path}: {e}", file=sys.stderr)
 
     # --- Boundary FPR from this job ---
     bfpr_val = None
@@ -297,9 +305,9 @@ import json
 b = json.load(open('$BOUNDARY'))
 pf = b.get('per_family', b.get('per_source', {}))
 for src, data in sorted(pf.items()):
-    n = data.get('n', data.get('total', 0))
+    n = data.get('total', 0)
     fp = data.get('fp', data.get('false_positives', 0))
-    fpr = data.get('fpr', data.get('false_positive_rate', 0))
+    fpr = fp / max(1, n)
     print(f'    {src:<25} FPR={fpr:.3f} ({fp}/{n})')
 " 2>/dev/null || echo "    parse error"
     fi
