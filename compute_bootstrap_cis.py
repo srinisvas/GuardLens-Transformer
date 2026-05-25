@@ -4,8 +4,8 @@ Bootstrap confidence intervals for GuardLens paper metrics.
 
 Computes 95% bootstrap CIs for:
   - DD@15 (GuardLens and surface-risk)
-  - Boundary FPR (GuardLens and surface-risk)
-  - SR-injected FPR (GuardLens and surface-risk)
+  - Flip@15 (GuardLens and surface-risk)
+  - Boundary FPR
   - Attribution Utility = DD@15 - Boundary FPR
   - Human top-5 turn hit rate (both annotators)
 
@@ -40,11 +40,6 @@ def bootstrap_ci(
     ci: float = 0.95,
     seed: int = 42,
 ) -> dict:
-    """
-    Compute a bootstrap confidence interval for stat_fn(values).
-
-    Returns dict with keys: mean, ci_low, ci_high, se, n
-    """
     rng = np.random.default_rng(seed)
     n = len(values)
     point_est = float(stat_fn(values))
@@ -77,13 +72,6 @@ def bootstrap_paired_ci(
     ci: float = 0.95,
     seed: int = 42,
 ) -> dict:
-    """
-    Bootstrap CI for a statistic that combines two independent samples.
-    E.g. Utility = DD@15(adversarial) - FPR(benign).
-
-    values_a and values_b are bootstrapped independently since they come
-    from different subsets (adversarial vs benign conversations).
-    """
     rng = np.random.default_rng(seed)
     na, nb = len(values_a), len(values_b)
     point_est = float(combine_fn(stat_fn_a(values_a), stat_fn_b(values_b)))
@@ -111,106 +99,130 @@ def bootstrap_paired_ci(
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  DD@15 from causal eval results
+#  DD@15 extraction
 # ═══════════════════════════════════════════════════════════════════
 
 def extract_dd15_per_record(causal_json: dict, method: str) -> np.ndarray:
     """
     Extract per-record deviation drop at 15% for a given method.
 
-    The causal eval JSON stores per-record results under:
-      causal_json["per_record"][method] → list of dicts with "deviation_drop_15"
-    or
-      causal_json["full_test"][method]["per_record_dd"] → list of floats
+    The causal eval JSON has structure:
+      Top-level keys are method names: "guardlens", "surface_risk", etc.
+      Each method has "per_record_dd" which is a dict keyed by k-level:
+        {"5%": [0.1, 0.2, ...], "10%": [...], "15%": [...], "20%": [...]}
 
-    Falls back to reconstructing from aggregate if per-record not available.
+    Also handles full_test wrapper if present.
     """
-    # Try per_record path first
-    if "per_record" in causal_json:
-        records = causal_json["per_record"].get(method, [])
-        if records:
-            return np.array([r.get("deviation_drop_15", r.get("dd_15", 0.0))
-                             for r in records], dtype=float)
+    # Locate the method block (may be at top level or under full_test)
+    method_data = None
+    for root in [causal_json, causal_json.get("full_test", {})]:
+        if method in root:
+            method_data = root[method]
+            break
 
-    # Try full_test per_record path
-    full = causal_json.get("full_test", {})
-    if method in full:
-        method_data = full[method]
-        if "per_record_dd" in method_data:
-            return np.array(method_data["per_record_dd"], dtype=float)
-        if "per_record" in method_data:
-            records = method_data["per_record"]
-            return np.array([r.get("dd_15", r.get("deviation_drop", 0.0))
-                             for r in records], dtype=float)
+    if method_data is None:
+        raise KeyError(
+            f"Method '{method}' not found. "
+            f"Available keys: {list(causal_json.keys())}"
+        )
 
-    # Last resort: try top-level per_record_results
-    if "per_record_results" in causal_json:
-        records = causal_json["per_record_results"].get(method, [])
-        if records:
-            return np.array([r.get("dd_15", 0.0) for r in records], dtype=float)
+    # per_record_dd is a dict keyed by k-level: {"5%": [...], "15%": [...]}
+    if "per_record_dd" in method_data:
+        prd = method_data["per_record_dd"]
+        if isinstance(prd, dict):
+            # Normal case: pick the 15% key
+            arr = prd.get("15%", prd.get("0.15", []))
+            if arr:
+                return np.array(arr, dtype=float)
+            raise KeyError(
+                f"per_record_dd for '{method}' has no '15%' key. "
+                f"Available: {list(prd.keys())}"
+            )
+        elif isinstance(prd, list):
+            # Legacy: flat list assumed to be 15%
+            return np.array(prd, dtype=float)
+
+    # Fallback: per_record list of dicts
+    if "per_record" in method_data:
+        records = method_data["per_record"]
+        if isinstance(records, list) and records:
+            return np.array([
+                r.get("deviation_drop_15", r.get("dd_15", r.get("absolute_drop", 0.0)))
+                for r in records
+            ], dtype=float)
 
     raise KeyError(
         f"Cannot find per-record DD@15 for method '{method}'. "
-        f"Available keys: {list(causal_json.keys())}"
+        f"Method keys: {list(method_data.keys())}"
     )
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  FPR from boundary stress results
+#  Flip@15 extraction
 # ═══════════════════════════════════════════════════════════════════
 
-def extract_fpr_per_record(boundary_json: dict, method: str, subset: str) -> np.ndarray:
+def extract_flip15_per_record(causal_json: dict, method: str) -> np.ndarray:
     """
-    Extract per-record binary FP indicators for a method on a benign subset.
+    Extract per-record flip indicators at 15% for a given method.
 
-    Returns array of 0/1 values (1 = false positive, 0 = true negative).
-
-    Expected JSON structure:
-      boundary_json["per_record"][subset][method] → list of {"pred": bool, "label": 0}
-    or
-      boundary_json[subset]["per_record"][method] → list of {"pred": bool}
+    Structure: method_data["flip_rates"]["per_record_flips"]["flip@15%"] → [0,1,0,1,...]
     """
-    # Path 1: per_record → subset → method
-    if "per_record" in boundary_json:
-        subset_data = boundary_json["per_record"].get(subset, {})
-        records = subset_data.get(method, [])
-        if records:
-            return np.array([int(r.get("pred", r.get("predicted_adversarial", 0)))
-                             for r in records], dtype=float)
+    method_data = None
+    for root in [causal_json, causal_json.get("full_test", {})]:
+        if method in root:
+            method_data = root[method]
+            break
 
-    # Path 2: subset → per_record → method
-    if subset in boundary_json:
-        subset_block = boundary_json[subset]
-        if "per_record" in subset_block:
-            records = subset_block["per_record"].get(method, [])
-            if records:
-                return np.array([int(r.get("pred", 0)) for r in records], dtype=float)
+    if method_data is None:
+        raise KeyError(f"Method '{method}' not found.")
 
-    # Path 3: flat per_record list with method and subset fields
-    if "records" in boundary_json:
-        records = [
-            r for r in boundary_json["records"]
-            if r.get("method") == method and r.get("subset") == subset
-        ]
-        if records:
-            return np.array([int(r.get("pred", 0)) for r in records], dtype=float)
+    fr = method_data.get("flip_rates", {})
+    prf = fr.get("per_record_flips", {})
+    if isinstance(prf, dict):
+        arr = prf.get("flip@15%", [])
+        if arr:
+            return np.array(arr, dtype=float)
 
     raise KeyError(
-        f"Cannot find per-record FPR for method='{method}', subset='{subset}'. "
-        f"Top-level keys: {list(boundary_json.keys())}"
+        f"Cannot find per-record Flip@15 for method '{method}'. "
+        f"flip_rates keys: {list(fr.keys())}"
     )
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Human top-5 hit from human benchmark results
+#  Boundary FPR extraction
+# ═══════════════════════════════════════════════════════════════════
+
+def extract_boundary_fpr_per_record(boundary_json: dict) -> np.ndarray:
+    """
+    Extract per-record FP indicators from boundary stress JSON.
+
+    Structure: boundary_json["per_record_fp"] → [0, 0, 1, 0, ...]
+    """
+    if "per_record_fp" in boundary_json:
+        return np.array(boundary_json["per_record_fp"], dtype=float)
+
+    # Fallback: reconstruct from per_record_prob and threshold
+    if "per_record_prob" in boundary_json:
+        threshold = boundary_json.get("threshold", 0.5)
+        probs = np.array(boundary_json["per_record_prob"], dtype=float)
+        return (probs > threshold).astype(float)
+
+    raise KeyError(
+        f"Cannot find per_record_fp in boundary stress JSON. "
+        f"Available keys: {list(boundary_json.keys())}"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Human top-5 hit extraction
 # ═══════════════════════════════════════════════════════════════════
 
 def extract_top5_hit_per_record(human_json: dict, annotator: str) -> np.ndarray:
     """
     Extract per-record top-5 turn hit (0/1) for a given annotator.
 
-    Expected structure:
-      human_json[annotator]["per_record_guardlens"] → list of {"top5_hit": int}
+    Structure: human_json[annotator]["per_record_guardlens"] → [{"top5_hit": 1}, ...]
     """
     ann_data = human_json.get(annotator, {})
     records = ann_data.get("per_record_guardlens", [])
@@ -227,7 +239,6 @@ def extract_top5_hit_per_record(human_json: dict, annotator: str) -> np.ndarray:
 # ═══════════════════════════════════════════════════════════════════
 
 def fmt(ci_dict: dict, decimals: int = 3) -> str:
-    """Format as 'mean [ci_low, ci_high]' for printing."""
     m  = round(ci_dict["mean"],    decimals)
     lo = round(ci_dict["ci_low"],  decimals)
     hi = round(ci_dict["ci_high"], decimals)
@@ -254,8 +265,8 @@ def main():
                         help="causal_eval_results.json")
     parser.add_argument("--boundary",  required=True,
                         help="boundary_stress.json")
-    parser.add_argument("--human",     required=True,
-                        help="human_benchmark_eval.json")
+    parser.add_argument("--human",     default=None,
+                        help="human_benchmark_eval.json (optional)")
     parser.add_argument("--output",    required=True,
                         help="Output JSON path for CIs")
     parser.add_argument("--n-bootstrap", type=int, default=10000)
@@ -270,132 +281,136 @@ def main():
 
     print(f"Bootstrap CIs ({int(C*100)}%, B={B}, seed={S})", file=P)
 
-    # Load JSON files
     with open(args.causal)   as f: causal_json   = json.load(f)
     with open(args.boundary) as f: boundary_json = json.load(f)
-    with open(args.human)    as f: human_json    = json.load(f)
+
+    human_json = None
+    if args.human and os.path.exists(args.human):
+        with open(args.human) as f: human_json = json.load(f)
 
     results = {}
 
-    # ── 1. DD@15 ────────────────────────────────────────────────────────────
+    # ── 1. DD@15 ──────────────────────────────────────────────────
     print_section("DD@15")
 
     for method in ["guardlens", "surface_risk"]:
         try:
             vals = extract_dd15_per_record(causal_json, method)
-            ci   = bootstrap_ci(vals, np.mean, n_bootstrap=B, ci=C, seed=S)
-            label = "Proposed" if method == "guardlens" else "Surface-risk"
-            print(f"  {label:<20} {fmt(ci)}")
-            results[f"dd15_{method}"] = ci
+            ci_result = bootstrap_ci(vals, np.mean, n_bootstrap=B, ci=C, seed=S)
+            label = "GuardLens" if method == "guardlens" else "Surface-risk"
+            print(f"  {label:<20} {fmt(ci_result)}")
+            results[f"dd15_{method}"] = ci_result
         except KeyError as e:
-            print(f"  SKIP {method}: {e}", file=P)
+            print(f"  SKIP DD@15 {method}: {e}", file=P)
 
-    # ── 2. Boundary FPR ─────────────────────────────────────────────────────
-    print_section("Boundary FPR (boundary_benign subset)")
+    # ── 2. Flip@15 ────────────────────────────────────────────────
+    print_section("Flip@15")
 
-    for method, label in [("guardlens", "Proposed"), ("surface_risk", "Surface-risk")]:
-        for subset in ["boundary_benign", "all_boundary"]:
-            try:
-                vals = extract_fpr_per_record(boundary_json, method, subset)
-                ci   = bootstrap_ci(vals, np.mean, n_bootstrap=B, ci=C, seed=S)
-                print(f"  {label:<20} subset={subset:<20} {fmt(ci)}")
-                results[f"boundary_fpr_{method}"] = ci
-                break  # use first subset that works
-            except KeyError:
-                continue
+    for method in ["guardlens", "surface_risk"]:
+        try:
+            vals = extract_flip15_per_record(causal_json, method)
+            ci_result = bootstrap_ci(vals, np.mean, n_bootstrap=B, ci=C, seed=S)
+            label = "GuardLens" if method == "guardlens" else "Surface-risk"
+            print(f"  {label:<20} {fmt(ci_result)}")
+            results[f"flip15_{method}"] = ci_result
+        except KeyError as e:
+            print(f"  SKIP Flip@15 {method}: {e}", file=P)
 
-    # ── 3. SR-injected FPR ──────────────────────────────────────────────────
-    print_section("SR-injected FPR (high-risk vocab benign)")
+    # ── 3. Boundary FPR ──────────────────────────────────────────
+    print_section("Boundary FPR")
 
-    for method, label in [("guardlens", "Proposed"), ("surface_risk", "Surface-risk")]:
-        for subset in ["sr_injected", "high_risk_benign", "sr_injected_benign"]:
-            try:
-                vals = extract_fpr_per_record(boundary_json, method, subset)
-                ci   = bootstrap_ci(vals, np.mean, n_bootstrap=B, ci=C, seed=S)
-                print(f"  {label:<20} subset={subset:<20} {fmt(ci)}")
-                results[f"sr_injected_fpr_{method}"] = ci
-                break
-            except KeyError:
-                continue
+    try:
+        vals = extract_boundary_fpr_per_record(boundary_json)
+        ci_result = bootstrap_ci(vals, np.mean, n_bootstrap=B, ci=C, seed=S)
+        print(f"  {'GuardLens':<20} {fmt(ci_result)}")
+        results["boundary_fpr"] = ci_result
+    except KeyError as e:
+        print(f"  SKIP Boundary FPR: {e}", file=P)
 
-    # ── 4. Attribution Utility = DD@15 - Boundary FPR ───────────────────────
+    # ── 4. Utility = DD@15 - Boundary FPR ────────────────────────
     print_section("Attribution Utility = DD@15 − Boundary FPR")
 
-    for method, label in [("guardlens", "Proposed"), ("surface_risk", "Surface-risk")]:
-        if f"dd15_{method}" in results and f"boundary_fpr_{method}" in results:
-            # Need per-record arrays for both to bootstrap jointly
-            try:
-                dd_vals  = extract_dd15_per_record(causal_json, method)
-                fpr_vals = extract_fpr_per_record(
-                    boundary_json, method,
-                    "boundary_benign" if method == "guardlens" else "boundary_benign"
-                )
-                ci = bootstrap_paired_ci(
-                    values_a=dd_vals,
-                    values_b=fpr_vals,
-                    stat_fn_a=np.mean,
-                    stat_fn_b=np.mean,
-                    combine_fn=lambda a, b: a - b,
-                    n_bootstrap=B, ci=C, seed=S,
-                )
-                print(f"  {label:<20} {fmt(ci)}")
-                results[f"utility_{method}"] = ci
-            except KeyError as e:
-                # Fall back to delta of point estimates with pooled SE
-                dd  = results[f"dd15_{method}"]
-                fpr = results[f"boundary_fpr_{method}"]
-                util_mean = dd["mean"] - fpr["mean"]
-                util_se   = (dd["se"]**2 + fpr["se"]**2) ** 0.5
-                z = 1.96  # 95%
-                ci = {
-                    "mean":    util_mean,
-                    "ci_low":  util_mean - z * util_se,
-                    "ci_high": util_mean + z * util_se,
-                    "se":      util_se,
-                    "note":    "delta of independent CIs (per-record FPR unavailable)",
-                }
-                print(f"  {label:<20} {fmt(ci)}  [delta fallback]")
-                results[f"utility_{method}"] = ci
-
-    # ── 5. Human top-5 hit rate ──────────────────────────────────────────────
-    print_section("Human top-5 turn hit rate")
-
-    for annotator, label in [("Ann_A", "Ann A"), ("Ann_B", "Ann B")]:
+    if "dd15_guardlens" in results and "boundary_fpr" in results:
         try:
-            vals = extract_top5_hit_per_record(human_json, annotator)
-            ci   = bootstrap_ci(vals, np.mean, n_bootstrap=B, ci=C, seed=S)
-            print(f"  {label:<20} {fmt(ci)}")
-            results[f"human_top5_{annotator}"] = ci
+            dd_vals  = extract_dd15_per_record(causal_json, "guardlens")
+            fpr_vals = extract_boundary_fpr_per_record(boundary_json)
+            ci_result = bootstrap_paired_ci(
+                values_a=dd_vals,
+                values_b=fpr_vals,
+                stat_fn_a=np.mean,
+                stat_fn_b=np.mean,
+                combine_fn=lambda a, b: a - b,
+                n_bootstrap=B, ci=C, seed=S,
+            )
+            print(f"  {'GuardLens':<20} {fmt(ci_result)}")
+            results["utility_guardlens"] = ci_result
         except KeyError as e:
-            print(f"  SKIP {annotator}: {e}", file=P)
+            # Fallback: delta of independent CIs
+            dd  = results["dd15_guardlens"]
+            fpr = results["boundary_fpr"]
+            util_mean = dd["mean"] - fpr["mean"]
+            util_se   = (dd["se"]**2 + fpr["se"]**2) ** 0.5
+            z = 1.96
+            ci_result = {
+                "mean":    util_mean,
+                "ci_low":  util_mean - z * util_se,
+                "ci_high": util_mean + z * util_se,
+                "se":      util_se,
+                "note":    "delta of independent CIs (fallback)",
+            }
+            print(f"  {'GuardLens':<20} {fmt(ci_result)}  [delta fallback]")
+            results["utility_guardlens"] = ci_result
 
-    # ── Summary table for paper ──────────────────────────────────────────────
+    # ── 5. Human top-5 hit rate ───────────────────────────────────
+    if human_json:
+        print_section("Human top-5 turn hit rate")
+
+        # Try common annotator name patterns
+        annotator_names = []
+        for key in human_json.keys():
+            if key.startswith("Ann") or key.startswith("Annotator"):
+                annotator_names.append(key)
+
+        if not annotator_names:
+            print(f"  No annotator keys found. Keys: {list(human_json.keys())}", file=P)
+
+        for annotator in annotator_names:
+            try:
+                vals = extract_top5_hit_per_record(human_json, annotator)
+                ci_result = bootstrap_ci(vals, np.mean, n_bootstrap=B, ci=C, seed=S)
+                print(f"  {annotator:<20} {fmt(ci_result)}")
+                results[f"human_top5_{annotator}"] = ci_result
+            except KeyError as e:
+                print(f"  SKIP {annotator}: {e}", file=P)
+
+    # ── Summary table ─────────────────────────────────────────────
     print_section("PAPER-READY SUMMARY")
     print()
-    print(f"  {'Metric':<40} {'Proposed':<28} {'Surface-risk'}")
-    print(f"  {'-'*40} {'-'*28} {'-'*20}")
+    print(f"  {'Metric':<30} {'Point est':>10} {'95% CI':>24} {'n':>6}")
+    print(f"  {'-'*30} {'-'*10} {'-'*24} {'-'*6}")
 
-    def row(metric, key_gl, key_sr, decimals=3):
-        gl = results.get(key_gl)
-        sr = results.get(key_sr)
-        gl_str = f"{gl['mean']:.{decimals}f} [{gl['ci_low']:.{decimals}f}, {gl['ci_high']:.{decimals}f}]" if gl else "—"
-        sr_str = f"{sr['mean']:.{decimals}f} [{sr['ci_low']:.{decimals}f}, {sr['ci_high']:.{decimals}f}]" if sr else "—"
-        print(f"  {metric:<40} {gl_str:<28} {sr_str}")
+    for label, key in [
+        ("DD@15 (GuardLens)",     "dd15_guardlens"),
+        ("DD@15 (Surface-risk)",  "dd15_surface_risk"),
+        ("Flip@15 (GuardLens)",   "flip15_guardlens"),
+        ("Flip@15 (Surface-risk)","flip15_surface_risk"),
+        ("Boundary FPR",          "boundary_fpr"),
+        ("Utility (GuardLens)",   "utility_guardlens"),
+    ]:
+        ci_r = results.get(key)
+        if ci_r:
+            n = ci_r.get("n", ci_r.get("na", "?"))
+            print(f"  {label:<30} {ci_r['mean']:>10.4f} "
+                  f"[{ci_r['ci_low']:.4f}, {ci_r['ci_high']:.4f}] {n:>6}")
 
-    row("DD@15",              "dd15_guardlens",           "dd15_surface_risk")
-    row("Boundary FPR",       "boundary_fpr_guardlens",   "boundary_fpr_surface_risk")
-    row("SR-injected FPR",    "sr_injected_fpr_guardlens","sr_injected_fpr_surface_risk")
-    row("Attribution Utility","utility_guardlens",         "utility_surface_risk")
+    # Human annotators
+    for key, val in results.items():
+        if key.startswith("human_top5_"):
+            ann = key.replace("human_top5_", "")
+            print(f"  {'Top-5 hit (' + ann + ')':<30} {val['mean']:>10.4f} "
+                  f"[{val['ci_low']:.4f}, {val['ci_high']:.4f}] {val['n']:>6}")
 
-    print()
-    for ann in ["Ann_A", "Ann_B"]:
-        ci = results.get(f"human_top5_{ann}")
-        if ci:
-            label = ann.replace("_", " ")
-            print(f"  Human top-5 hit ({label:<6})              "
-                  f"{ci['mean']:.3f} [{ci['ci_low']:.3f}, {ci['ci_high']:.3f}]")
-
-    # ── Save ────────────────────────────────────────────────────────────────
+    # ── Save ──────────────────────────────────────────────────────
     os.makedirs(os.path.dirname(os.path.abspath(args.output)) or ".", exist_ok=True)
     with open(args.output, "w") as f:
         json.dump(results, f, indent=2, default=str)
