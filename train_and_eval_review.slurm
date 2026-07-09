@@ -47,16 +47,87 @@ TEST_PATH="${SPLIT_DIR}/test.jsonl"
 BASE_OUTPUT="$HOME/work/results/guardlens_v11/checkpoints"
 REVIEW_OUT="$HOME/work/results/guardlens_v11/results/review_response"
 
-# ---- Environment ----
+# ---- Environment setup ----
+# If the conda env doesn't exist, create it. This requires
+# network access (pip install). If compute nodes lack internet,
+# run the creation block on a login node first:
+#
+#   CONDA_BASE=$(conda info --base)
+#   source "$CONDA_BASE/etc/profile.d/conda.sh"
+#   conda create -p $HOME/work/conda_envs/guardlens_train python=3.10 -y
+#   conda activate $HOME/work/conda_envs/guardlens_train
+#   pip install torch --index-url https://download.pytorch.org/whl/cu118
+#   pip install transformers numpy scipy
+#
+set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
 source "$CONDA_BASE/etc/profile.d/conda.sh"
-conda activate "$CONDA_ENV"
+
+if [ ! -d "$CONDA_ENV" ]; then
+    echo "  Conda env not found at $CONDA_ENV — creating..."
+    conda create -p "$CONDA_ENV" python=3.10 -y \
+        || { echo "ERROR: conda create failed"; exit 1; }
+    conda activate "$CONDA_ENV"
+
+    echo "  Installing PyTorch (CUDA 11.8)..."
+    pip install torch --index-url https://download.pytorch.org/whl/cu118 \
+        || { echo "ERROR: PyTorch install failed"; exit 1; }
+
+    echo "  Installing transformers, numpy, scipy..."
+    pip install transformers numpy scipy \
+        || { echo "ERROR: pip install failed"; exit 1; }
+
+    echo "  Conda env created successfully"
+else
+    conda activate "$CONDA_ENV"
+fi
+set -u
+
+# Verify conda activated correctly
+echo "  Python: $(which python) ($(python --version 2>&1))"
+if python -c "import torch; import transformers; import dataclasses" 2>/dev/null; then
+    echo "  Conda env OK"
+    python -c "import torch; print(f'  PyTorch {torch.__version__}, CUDA available: {torch.cuda.is_available()}')"
+else
+    echo "ERROR: Conda env broken or failed to activate."
+    echo "  Got: $(which python)"
+    echo "  Expected: $CONDA_ENV"
+    echo "  Try recreating manually on a login node (see comments above)."
+    exit 1
+fi
 
 export TMPDIR="$HOME/work/.tmp"
 export HF_HOME="$HOME/work/hf_models"
 export TRANSFORMERS_CACHE="$HOME/work/hf_models/hub"
-export HF_HUB_OFFLINE=1
 mkdir -p "$TMPDIR" "$REVIEW_OUT" logs
+
+# Download backbone if not cached. Must happen before setting HF_HUB_OFFLINE=1.
+BACKBONE="microsoft/deberta-v3-base"
+if python -c "
+from transformers import AutoModel, AutoTokenizer
+import os
+cache = os.environ.get('TRANSFORMERS_CACHE', '')
+# Try loading offline first
+os.environ['HF_HUB_OFFLINE'] = '1'
+try:
+    AutoTokenizer.from_pretrained('$BACKBONE')
+    AutoModel.from_pretrained('$BACKBONE')
+    print('cached')
+except Exception:
+    print('missing')
+" 2>/dev/null | grep -q "cached"; then
+    echo "  HF backbone cached: $BACKBONE"
+else
+    echo "  Downloading HF backbone: $BACKBONE"
+    python -c "
+from transformers import AutoModel, AutoTokenizer
+AutoTokenizer.from_pretrained('$BACKBONE')
+AutoModel.from_pretrained('$BACKBONE')
+print('  Download complete')
+" || { echo "ERROR: Failed to download $BACKBONE (no network?)"; exit 1; }
+fi
+
+export HF_HUB_OFFLINE=1
 
 cd "$PROJECT_DIR"
 
