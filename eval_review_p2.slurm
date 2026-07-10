@@ -76,7 +76,7 @@ echo "  Checkpoint: $GL_ATTR"
 # Target MUST be Llama-3-8B-Instruct (the actual target from dataset
 # generation). If not cached, skip the target-LLM test entirely.
 # Using a different model would be a surrogate test, not a target test.
-TARGET_MODEL="meta-llama/Meta-Llama-3-8B-Instruct"
+TARGET_MODEL="/gpfs/home/s001/ssubram7/work/hf_models/llama3-8b-instruct"
 JUDGE_MODEL="Qwen/Qwen2.5-7B-Instruct"
 RUN_TARGET=1
 
