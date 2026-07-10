@@ -1,6 +1,24 @@
-# GuardLens training dependencies
+# GuardLens — Python dependencies (HPC / SLURM cluster)
+#
+# Install (matches setup_guardlens_env.sh):
+#   pip install torch --only-binary=:all:
+#   pip install -r requirements.txt
+#
+# `torch` is installed separately first so pip picks the CUDA-enabled wheel
+# for the cluster's default index rather than resolving it here.
+
+# Core training / inference
 torch>=2.2.0
 transformers>=4.40.0
 accelerate>=0.28.0
+sentencepiece>=0.1.99   # DeBERTa-v3 tokenizer (guardlens/config.py backbone)
 numpy>=1.24.0
+scipy>=1.10.0            # guardlens/evaluation/eval_paraphrase.py (spearmanr)
 requests>=2.31.0
+
+# Plotting (plots/*.py)
+matplotlib>=3.7.0
+
+# Optional: only needed for eval_cross_model_transfer.py 8-bit/4-bit
+# quantized causal-LM transfer test. Skip if not running that script.
+# bitsandbytes>=0.41.0
