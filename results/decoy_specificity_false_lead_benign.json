@@ -1,0 +1,22 @@
+{
+  "guardlens": {
+    "top1_decoy": 1,
+    "top3_decoy": 4,
+    "total": 6
+  },
+  "surface_risk": {
+    "top1_decoy": 3,
+    "top3_decoy": 4,
+    "total": 6
+  },
+  "attention": {
+    "top1_decoy": 0,
+    "top3_decoy": 3,
+    "total": 6
+  },
+  "random": {
+    "top1_decoy": 0,
+    "top3_decoy": 2,
+    "total": 6
+  }
+}

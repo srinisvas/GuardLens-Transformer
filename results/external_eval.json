@@ -1,0 +1,107 @@
+{
+  "self_eval": {
+    "5%": {
+      "deviation_drop": 0.49169793480265533,
+      "flip_rate": 0.4883720930232558,
+      "necessity": 0.4883720930232558,
+      "sufficiency": 1.0,
+      "n_adversarial": 86
+    },
+    "10%": {
+      "deviation_drop": 0.7536187618168189,
+      "flip_rate": 0.7558139534883721,
+      "necessity": 0.7558139534883721,
+      "sufficiency": 1.0,
+      "n_adversarial": 86
+    },
+    "15%": {
+      "deviation_drop": 0.8519733218327337,
+      "flip_rate": 0.8488372093023255,
+      "necessity": 0.8488372093023255,
+      "sufficiency": 1.0,
+      "n_adversarial": 86
+    },
+    "20%": {
+      "deviation_drop": 0.9507534197272604,
+      "flip_rate": 0.9534883720930233,
+      "necessity": 0.9534883720930233,
+      "sufficiency": 1.0,
+      "n_adversarial": 86
+    }
+  },
+  "external_eval": {
+    "conversation_deberta (ext.)": {
+      "5%": {
+        "deviation_drop": 0.05746222936337994,
+        "flip_rate": 0.0967741935483871,
+        "necessity": 0.0967741935483871,
+        "sufficiency": 0.9354838709677419,
+        "n_adversarial": 62
+      },
+      "10%": {
+        "deviation_drop": 0.13494375924910268,
+        "flip_rate": 0.25806451612903225,
+        "necessity": 0.25806451612903225,
+        "sufficiency": 0.8225806451612904,
+        "n_adversarial": 62
+      },
+      "15%": {
+        "deviation_drop": 0.20867767497416465,
+        "flip_rate": 0.43548387096774194,
+        "necessity": 0.43548387096774194,
+        "sufficiency": 0.8387096774193549,
+        "n_adversarial": 62
+      },
+      "20%": {
+        "deviation_drop": 0.3416502321319234,
+        "flip_rate": 0.5806451612903226,
+        "necessity": 0.5806451612903226,
+        "sufficiency": 0.7580645161290323,
+        "n_adversarial": 62
+      }
+    },
+    "turn_level (ext.)": {
+      "5%": {
+        "deviation_drop": 0.012154241834861645,
+        "flip_rate": 0.10144927536231885,
+        "necessity": 0.10144927536231885,
+        "sufficiency": 1.0,
+        "n_adversarial": 69
+      },
+      "10%": {
+        "deviation_drop": 0.013250851112863293,
+        "flip_rate": 0.08695652173913043,
+        "necessity": 0.08695652173913043,
+        "sufficiency": 1.0,
+        "n_adversarial": 69
+      },
+      "15%": {
+        "deviation_drop": 0.003630137098008308,
+        "flip_rate": 0.028985507246376812,
+        "necessity": 0.028985507246376812,
+        "sufficiency": 1.0,
+        "n_adversarial": 69
+      },
+      "20%": {
+        "deviation_drop": 2.0034935163414996e-05,
+        "flip_rate": 0.0,
+        "necessity": 0.0,
+        "sufficiency": 1.0,
+        "n_adversarial": 69
+      }
+    }
+  },
+  "subset": "full_test",
+  "n_test_samples": 276,
+  "top_k_fractions": [
+    0.05,
+    0.1,
+    0.15,
+    0.2
+  ],
+  "attribution_checkpoint": "/gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best_attribution.pt",
+  "external_checkpoints": [
+    "/gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/conversation_deberta/best_detection.pt",
+    "/gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/turn_level/best_detection.pt"
+  ]
+}

@@ -1,0 +1,781 @@
+  Python: /gpfs/home/s001/ssubram7/work/conda_envs/guardlens_train/bin/python (Python 3.11.15)
+  Conda env OK
+  PyTorch 2.6.0+cu126, CUDA available: True
+  HF backbone cached: microsoft/deberta-v3-base
+========================================================
+  GuardLens: Retrain + Reviewer Response Experiments
+  Job:       31702
+  Node:      g002
+  Train:     /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/train.jsonl
+  Dev:       /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/dev.jsonl
+  Test:      /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl
+========================================================
+NVIDIA A100 80GB PCIe, 81920 MiB
+  1220 records in train.jsonl
+  266 records in dev.jsonl
+  276 records in test.jsonl
+
+========================================================
+  Training: guardlens
+  Epochs: 25, Batch: 4, MaxTurns: 32
+  Output: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens
+  Start:  22:29:04
+========================================================
+Device: cuda
+Loading pre-split data...
+  Train: 1220, Dev: 266, Test: 276
+  Class balance: 383 pos, 837 neg (pos_weight=2.19)
+  Supervision tiers: {'benign_validated': 502, 'construction': 452, 'llm_confirmed': 237, 'cf_weak': 22, 'cf_strong': 7}
+
+Building model: guardlens (GuardLens)...
+  Total: 186,005,512  Trainable: 2,173,960  Frozen: 183,831,552
+
+Training 25 epochs:
+  Phase 1 (cls):   0-4
+  Phase 2 (+attr): 5-19
+  Phase 3 (+cf):   20-24
+Ep   0 P1 | loss 0.9773 acc 0.497 | val F1 0.750 acc 0.835 | attr F1 0.554 pivot 0.041 | thr 0.50
+       tiers: transfer_success=0.833 target_only=1.000 cross_only=0.829 benign=0.834
+       saved best_detection.pt (F1=0.7500)
+Ep   1 P1 | loss 0.5939 acc 0.805 | val F1 0.907 acc 0.947 | attr F1 0.391 pivot 0.703 | thr 0.20
+       tiers: transfer_success=0.857 target_only=0.500 cross_only=0.886 benign=0.984
+       saved best_detection.pt (F1=0.9067)
+Ep   2 P1 | loss 0.1390 acc 0.969 | val F1 0.958 acc 0.974 | attr F1 0.084 pivot 0.680 | thr 0.66
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.963
+       saved best_detection.pt (F1=0.9576)
+Ep   3 P1 | loss 0.0695 acc 0.985 | val F1 0.974 acc 0.985 | attr F1 0.245 pivot 0.718 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=0.914 benign=0.995
+       saved best_detection.pt (F1=0.9744)
+Ep   4 P1 | loss 0.1189 acc 0.987 | val F1 0.961 acc 0.977 | attr F1 0.339 pivot 0.729 | thr 0.20
+       tiers: transfer_success=0.952 target_only=1.000 cross_only=0.914 benign=0.995
+Ep   5 P2 | loss 0.5958 acc 0.984 | val F1 0.994 acc 0.996 | attr F1 0.881 pivot 0.744 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+       saved best_detection.pt (F1=0.9937)
+       saved best_attribution.pt (attrF1=0.8809)
+Ep   6 P2 | loss 0.5458 acc 0.982 | val F1 0.975 acc 0.985 | attr F1 0.881 pivot 0.756 | thr 0.57
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.979
+       saved best_attribution.pt (attrF1=0.8811)
+Ep   7 P2 | loss 0.4289 acc 0.998 | val F1 0.994 acc 0.996 | attr F1 0.881 pivot 0.774 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+Ep   8 P2 | loss 0.4323 acc 0.997 | val F1 1.000 acc 1.000 | attr F1 0.883 pivot 0.782 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+       saved best_detection.pt (F1=1.0000)
+       saved best_attribution.pt (attrF1=0.8827)
+Ep   9 P2 | loss 0.4315 acc 0.999 | val F1 1.000 acc 1.000 | attr F1 0.884 pivot 0.786 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+       saved best_attribution.pt (attrF1=0.8841)
+Ep  10 P2 | loss 0.4304 acc 0.998 | val F1 1.000 acc 1.000 | attr F1 0.840 pivot 0.771 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  11 P2 | loss 0.4532 acc 0.998 | val F1 1.000 acc 1.000 | attr F1 0.883 pivot 0.782 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  12 P2 | loss 0.4086 acc 1.000 | val F1 0.988 acc 0.992 | attr F1 0.885 pivot 0.778 | thr 0.59
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.989
+       saved best_attribution.pt (attrF1=0.8852)
+Ep  13 P2 | loss 0.4086 acc 1.000 | val F1 0.988 acc 0.992 | attr F1 0.888 pivot 0.774 | thr 0.22
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.989
+       saved best_attribution.pt (attrF1=0.8876)
+Ep  14 P2 | loss 0.4408 acc 0.998 | val F1 1.000 acc 1.000 | attr F1 0.886 pivot 0.778 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  15 P2 | loss 0.4114 acc 0.999 | val F1 1.000 acc 1.000 | attr F1 0.875 pivot 0.774 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  16 P2 | loss 0.4244 acc 0.998 | val F1 1.000 acc 1.000 | attr F1 0.871 pivot 0.778 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  17 P2 | loss 0.4201 acc 1.000 | val F1 0.994 acc 0.996 | attr F1 0.885 pivot 0.786 | thr 0.25
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+Ep  18 P2 | loss 0.4449 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.870 pivot 0.774 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  19 P2 | loss 0.4603 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.877 pivot 0.771 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  20 P3 | loss 0.4827 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.876 pivot 0.774 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  21 P3 | loss 0.4621 acc 1.000 | val F1 0.994 acc 0.996 | attr F1 0.877 pivot 0.767 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+Ep  22 P3 | loss 0.4682 acc 1.000 | val F1 0.994 acc 0.996 | attr F1 0.881 pivot 0.774 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+Ep  23 P3 | loss 0.4562 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.877 pivot 0.771 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  24 P3 | loss 0.4447 acc 1.000 | val F1 0.994 acc 0.996 | attr F1 0.878 pivot 0.774 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+
+============================================================
+  Test evaluation (guardlens)
+  Checkpoint: best_attribution.pt
+============================================================
+  Loaded from epoch 13, phase 2, threshold 0.22
+  Accuracy:       0.9964
+  Precision:      0.9886
+  Recall:         1.0000
+  F1:             0.9943
+  Attr F1:        0.8771
+  Pivot Accuracy: 0.7500
+  By transfer tier:
+    transfer_success: 1.0000
+    target_only: 1.0000
+    cross_only: 1.0000
+    benign: 0.9950
+  By benign status:
+    clean_benign: 0.9910
+    validated_benign_twin: 1.0000
+  By supervision tier:
+    cf_strong: 1.0000
+    cf_weak: 1.0000
+    llm_confirmed: 1.0000
+    construction: 1.0000
+    benign_validated: 0.9910
+  By family:
+    research_technical: 0.9660
+    hard_benign: 1.0000
+    false_lead_benign: 1.0000
+    interactive_adversarial: 1.0000
+    clean_everyday: 1.0000
+    topic_matched_safe: 1.0000
+    interactive_benign_twin: 1.0000
+  guardlens: SUCCESS (23:10:06)
+
+
+========================================================
+  Training: guardlens_no_fusion
+  Epochs: 20, Batch: 4, MaxTurns: 32
+  Output: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens_no_fusion
+  Start:  23:10:06
+========================================================
+Device: cuda
+Loading pre-split data...
+  Train: 1220, Dev: 266, Test: 276
+  Class balance: 383 pos, 837 neg (pos_weight=2.19)
+  Supervision tiers: {'benign_validated': 502, 'construction': 452, 'llm_confirmed': 237, 'cf_weak': 22, 'cf_strong': 7}
+
+Building model: guardlens_no_fusion (GuardLensNoFusion)...
+  Total: 185,874,184  Trainable: 2,042,632  Frozen: 183,831,552
+
+Training 20 epochs:
+  Phase 1 (cls):   0-4
+  Phase 2 (+attr): 5-19
+  Phase 3 (+cf):   20-19
+Ep   0 P1 | loss 0.9721 acc 0.548 | val F1 0.735 acc 0.835 | attr F1 0.251 pivot 0.331 | thr 0.50
+       tiers: transfer_success=0.786 target_only=0.500 cross_only=0.771 benign=0.861
+       saved best_detection.pt (F1=0.7349)
+Ep   1 P1 | loss 0.5661 acc 0.820 | val F1 0.952 acc 0.970 | attr F1 0.766 pivot 0.684 | thr 0.68
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.957
+       saved best_detection.pt (F1=0.9518)
+Ep   2 P1 | loss 0.1816 acc 0.966 | val F1 0.988 acc 0.992 | attr F1 0.832 pivot 0.707 | thr 0.32
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.989
+       saved best_detection.pt (F1=0.9875)
+Ep   3 P1 | loss 0.1270 acc 0.980 | val F1 0.969 acc 0.981 | attr F1 0.845 pivot 0.699 | thr 0.52
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.973
+Ep   4 P1 | loss 0.0483 acc 0.993 | val F1 0.994 acc 0.996 | attr F1 0.851 pivot 0.703 | thr 0.50
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+       saved best_detection.pt (F1=0.9937)
+Ep   5 P2 | loss 0.5064 acc 0.994 | val F1 1.000 acc 1.000 | attr F1 0.881 pivot 0.744 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+       saved best_detection.pt (F1=1.0000)
+       saved best_attribution.pt (attrF1=0.8808)
+Ep   6 P2 | loss 0.4979 acc 0.994 | val F1 0.974 acc 0.985 | attr F1 0.868 pivot 0.756 | thr 0.20
+       tiers: transfer_success=0.952 target_only=1.000 cross_only=0.943 benign=1.000
+Ep   7 P2 | loss 0.4646 acc 0.990 | val F1 1.000 acc 1.000 | attr F1 0.881 pivot 0.782 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+       saved best_attribution.pt (attrF1=0.8810)
+Ep   8 P2 | loss 0.4815 acc 0.993 | val F1 1.000 acc 1.000 | attr F1 0.871 pivot 0.778 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep   9 P2 | loss 0.4369 acc 0.998 | val F1 0.994 acc 0.996 | attr F1 0.884 pivot 0.771 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+       saved best_attribution.pt (attrF1=0.8839)
+Ep  10 P2 | loss 0.4350 acc 0.998 | val F1 1.000 acc 1.000 | attr F1 0.879 pivot 0.778 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  11 P2 | loss 0.4084 acc 0.998 | val F1 1.000 acc 1.000 | attr F1 0.886 pivot 0.778 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+       saved best_attribution.pt (attrF1=0.8860)
+Ep  12 P2 | loss 0.4563 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.887 pivot 0.774 | thr 0.57
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+       saved best_attribution.pt (attrF1=0.8875)
+Ep  13 P2 | loss 0.4410 acc 0.999 | val F1 1.000 acc 1.000 | attr F1 0.886 pivot 0.771 | thr 0.76
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  14 P2 | loss 0.4516 acc 0.999 | val F1 1.000 acc 1.000 | attr F1 0.886 pivot 0.778 | thr 0.34
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  15 P2 | loss 0.4278 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.878 pivot 0.774 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  16 P2 | loss 0.4525 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.880 pivot 0.778 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  17 P2 | loss 0.4834 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.885 pivot 0.778 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  18 P2 | loss 0.5097 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.881 pivot 0.778 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  19 P2 | loss 0.5020 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.880 pivot 0.774 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+
+============================================================
+  Test evaluation (guardlens_no_fusion)
+  Checkpoint: best_attribution.pt
+============================================================
+  Loaded from epoch 12, phase 2, threshold 0.57
+  Accuracy:       1.0000
+  Precision:      1.0000
+  Recall:         1.0000
+  F1:             1.0000
+  Attr F1:        0.8829
+  Pivot Accuracy: 0.7826
+  By transfer tier:
+    transfer_success: 1.0000
+    target_only: 1.0000
+    cross_only: 1.0000
+    benign: 1.0000
+  By benign status:
+    clean_benign: 1.0000
+    validated_benign_twin: 1.0000
+  By supervision tier:
+    cf_strong: 1.0000
+    cf_weak: 1.0000
+    llm_confirmed: 1.0000
+    construction: 1.0000
+    benign_validated: 1.0000
+  By family:
+    interactive_adversarial: 1.0000
+    hard_benign: 1.0000
+    research_technical: 1.0000
+    clean_everyday: 1.0000
+    interactive_benign_twin: 1.0000
+    topic_matched_safe: 1.0000
+    false_lead_benign: 1.0000
+  guardlens_no_fusion: SUCCESS (23:40:23)
+
+
+========================================================
+  Training: guardlens_no_cf
+  Epochs: 20, Batch: 4, MaxTurns: 32
+  Output: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens_no_cf
+  Start:  23:40:23
+========================================================
+Device: cuda
+Loading pre-split data...
+  Train: 1220, Dev: 266, Test: 276
+  Class balance: 383 pos, 837 neg (pos_weight=2.19)
+  Supervision tiers: {'benign_validated': 502, 'construction': 452, 'llm_confirmed': 237, 'cf_weak': 22, 'cf_strong': 7}
+
+Building model: guardlens_no_cf (GuardLensNoCF)...
+  Total: 186,005,512  Trainable: 2,173,960  Frozen: 183,831,552
+
+Training 20 epochs:
+  Phase 1 (cls):   0-4
+  Phase 2 (+attr): 5-19
+Ep   0 P1 | loss 0.9773 acc 0.497 | val F1 0.750 acc 0.835 | attr F1 0.554 pivot 0.041 | thr 0.50
+       tiers: transfer_success=0.833 target_only=1.000 cross_only=0.829 benign=0.834
+       saved best_detection.pt (F1=0.7500)
+Ep   1 P1 | loss 0.5939 acc 0.805 | val F1 0.907 acc 0.947 | attr F1 0.391 pivot 0.703 | thr 0.20
+       tiers: transfer_success=0.857 target_only=0.500 cross_only=0.886 benign=0.984
+       saved best_detection.pt (F1=0.9067)
+Ep   2 P1 | loss 0.1396 acc 0.968 | val F1 0.958 acc 0.974 | attr F1 0.070 pivot 0.673 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.963
+       saved best_detection.pt (F1=0.9576)
+Ep   3 P1 | loss 0.0677 acc 0.989 | val F1 0.947 acc 0.970 | attr F1 0.285 pivot 0.714 | thr 0.20
+       tiers: transfer_success=0.929 target_only=0.500 cross_only=0.914 benign=0.995
+Ep   4 P1 | loss 0.0743 acc 0.987 | val F1 0.994 acc 0.996 | attr F1 0.176 pivot 0.722 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+       saved best_detection.pt (F1=0.9937)
+Ep   5 P2 | loss 0.5956 acc 0.980 | val F1 0.994 acc 0.996 | attr F1 0.878 pivot 0.737 | thr 0.20
+       tiers: transfer_success=0.976 target_only=1.000 cross_only=1.000 benign=1.000
+       saved best_attribution.pt (attrF1=0.8781)
+Ep   6 P2 | loss 0.6228 acc 0.979 | val F1 0.988 acc 0.992 | attr F1 0.882 pivot 0.759 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.989
+       saved best_attribution.pt (attrF1=0.8820)
+Ep   7 P2 | loss 0.4579 acc 0.996 | val F1 0.988 acc 0.992 | attr F1 0.884 pivot 0.767 | thr 0.36
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.989
+       saved best_attribution.pt (attrF1=0.8839)
+Ep   8 P2 | loss 0.4041 acc 1.000 | val F1 1.000 acc 1.000 | attr F1 0.876 pivot 0.786 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+       saved best_detection.pt (F1=1.0000)
+Ep   9 P2 | loss 0.4478 acc 0.998 | val F1 0.994 acc 0.996 | attr F1 0.881 pivot 0.786 | thr 0.70
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+Ep  10 P2 | loss 0.4228 acc 1.000 | val F1 0.994 acc 0.996 | attr F1 0.880 pivot 0.778 | thr 0.49
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+Ep  11 P2 | loss 0.4516 acc 0.998 | val F1 1.000 acc 1.000 | attr F1 0.883 pivot 0.789 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=1.000
+Ep  12 P2 | loss 0.4150 acc 1.000 | val F1 0.994 acc 0.996 | attr F1 0.866 pivot 0.782 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+Ep  13 P2 | loss 0.4303 acc 0.998 | val F1 0.994 acc 0.996 | attr F1 0.882 pivot 0.786 | thr 0.23
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+Ep  14 P2 | loss 0.4518 acc 0.999 | val F1 0.994 acc 0.996 | attr F1 0.883 pivot 0.793 | thr 0.63
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+Ep  15 P2 | loss 0.4327 acc 1.000 | val F1 0.994 acc 0.996 | attr F1 0.867 pivot 0.782 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.995
+       early stop (patience=8)
+
+============================================================
+  Test evaluation (guardlens_no_cf)
+  Checkpoint: best_attribution.pt
+============================================================
+  Loaded from epoch 7, phase 2, threshold 0.36
+  Accuracy:       1.0000
+  Precision:      1.0000
+  Recall:         1.0000
+  F1:             1.0000
+  Attr F1:        0.8817
+  Pivot Accuracy: 0.7717
+  By transfer tier:
+    transfer_success: 1.0000
+    target_only: 1.0000
+    cross_only: 1.0000
+    benign: 1.0000
+  By benign status:
+    clean_benign: 1.0000
+    validated_benign_twin: 1.0000
+  By supervision tier:
+    cf_strong: 1.0000
+    cf_weak: 1.0000
+    llm_confirmed: 1.0000
+    construction: 1.0000
+    benign_validated: 1.0000
+  By family:
+    research_technical: 1.0000
+    hard_benign: 1.0000
+    topic_matched_safe: 1.0000
+    interactive_benign_twin: 1.0000
+    false_lead_benign: 1.0000
+    clean_everyday: 1.0000
+    interactive_adversarial: 1.0000
+  guardlens_no_cf: SUCCESS (00:04:45)
+
+
+========================================================
+  Training: turn_level
+  Epochs: 20, Batch: 4, MaxTurns: 32
+  Output: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/turn_level
+  Start:  00:04:45
+========================================================
+Device: cuda
+Loading pre-split data...
+  Train: 1220, Dev: 266, Test: 276
+  Class balance: 383 pos, 837 neg (pos_weight=2.19)
+  Supervision tiers: {'benign_validated': 502, 'construction': 452, 'llm_confirmed': 237, 'cf_weak': 22, 'cf_strong': 7}
+
+Building model: turn_level (TurnLevelClassifier)...
+  Total: 184,028,673  Trainable: 197,121  Frozen: 183,831,552
+
+Training 20 epochs:
+  Phase 1 (cls):   0-4
+  Phase 2 (+attr): 5-19
+Ep   0 P1 | loss 0.9685 acc 0.424 | val F1 0.458 acc 0.297 | attr F1 0.000 pivot 0.000 | thr 0.20
+       tiers: transfer_success=1.000 target_only=1.000 cross_only=1.000 benign=0.000
+       saved best_detection.pt (F1=0.4580)
+Ep   1 P1 | loss 0.9777 acc 0.413 | val F1 0.702 acc 0.812 | attr F1 0.000 pivot 0.000 | thr 0.51
+       tiers: transfer_success=0.762 target_only=1.000 cross_only=0.714 benign=0.840
+       saved best_detection.pt (F1=0.7024)
+Ep   2 P1 | loss 0.9753 acc 0.451 | val F1 0.695 acc 0.808 | attr F1 0.000 pivot 0.000 | thr 0.56
+       tiers: transfer_success=0.738 target_only=1.000 cross_only=0.714 benign=0.840
+Ep   3 P1 | loss 0.9598 acc 0.480 | val F1 0.731 acc 0.853 | attr F1 0.000 pivot 0.000 | thr 0.42
+       tiers: transfer_success=0.690 target_only=0.500 cross_only=0.657 benign=0.930
+       saved best_detection.pt (F1=0.7310)
+Ep   4 P1 | loss 0.9075 acc 0.630 | val F1 0.750 acc 0.835 | attr F1 0.000 pivot 0.000 | thr 0.55
+       tiers: transfer_success=0.857 target_only=1.000 cross_only=0.800 benign=0.834
+       saved best_detection.pt (F1=0.7500)
+Ep   5 P2 | loss 0.8408 acc 0.693 | val F1 0.750 acc 0.872 | attr F1 0.000 pivot 0.000 | thr 0.38
+       tiers: transfer_success=0.714 target_only=0.500 cross_only=0.571 benign=0.968
+       saved best_detection.pt (F1=0.7500)
+Ep   6 P2 | loss 0.7574 acc 0.734 | val F1 0.750 acc 0.872 | attr F1 0.000 pivot 0.000 | thr 0.48
+       tiers: transfer_success=0.714 target_only=0.500 cross_only=0.571 benign=0.968
+Ep   7 P2 | loss 0.6639 acc 0.776 | val F1 0.750 acc 0.872 | attr F1 0.000 pivot 0.000 | thr 0.60
+       tiers: transfer_success=0.714 target_only=0.500 cross_only=0.571 benign=0.968
+Ep   8 P2 | loss 0.6297 acc 0.757 | val F1 0.759 acc 0.876 | attr F1 0.000 pivot 0.000 | thr 0.33
+       tiers: transfer_success=0.714 target_only=0.500 cross_only=0.600 benign=0.968
+       saved best_detection.pt (F1=0.7591)
+Ep   9 P2 | loss 0.5651 acc 0.795 | val F1 0.759 acc 0.876 | attr F1 0.000 pivot 0.000 | thr 0.45
+       tiers: transfer_success=0.714 target_only=0.500 cross_only=0.600 benign=0.968
+Ep  10 P2 | loss 0.5038 acc 0.822 | val F1 0.761 acc 0.872 | attr F1 0.000 pivot 0.000 | thr 0.55
+       tiers: transfer_success=0.738 target_only=0.500 cross_only=0.629 benign=0.952
+       saved best_detection.pt (F1=0.7606)
+Ep  11 P2 | loss 0.4546 acc 0.830 | val F1 0.759 acc 0.876 | attr F1 0.000 pivot 0.000 | thr 0.51
+       tiers: transfer_success=0.714 target_only=0.500 cross_only=0.600 benign=0.968
+Ep  12 P2 | loss 0.4104 acc 0.848 | val F1 0.757 acc 0.872 | attr F1 0.000 pivot 0.000 | thr 0.41
+       tiers: transfer_success=0.714 target_only=0.500 cross_only=0.629 benign=0.957
+       early stop (patience=8)
+
+============================================================
+  Test evaluation (turn_level)
+  Checkpoint: best_detection.pt
+============================================================
+  Loaded from epoch 10, phase 2, threshold 0.55
+  Accuracy:       0.8659
+  Precision:      0.8788
+  Recall:         0.6667
+  F1:             0.7582
+  Attr F1:        0.0000
+  Pivot Accuracy: 0.0000
+  By transfer tier:
+    transfer_success: 0.6900
+    target_only: 0.4290
+    cross_only: 0.6840
+    benign: 0.9580
+  By benign status:
+    clean_benign: 0.9560
+    validated_benign_twin: 0.9610
+  By supervision tier:
+    cf_strong: 1.0000
+    cf_weak: 0.7500
+    llm_confirmed: 0.6730
+    construction: 0.8670
+    benign_validated: 0.9560
+  By family:
+    false_lead_benign: 0.6670
+    interactive_adversarial: 0.6670
+    topic_matched_safe: 0.9410
+    interactive_benign_twin: 0.9610
+    research_technical: 0.9660
+    clean_everyday: 0.9780
+    hard_benign: 1.0000
+  turn_level: SUCCESS (00:13:17)
+
+
+========================================================
+  Training: conversation_deberta
+  Epochs: 20, Batch: 2, MaxTurns: 32
+  Output: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/conversation_deberta
+  Start:  00:13:17
+========================================================
+Device: cuda
+Loading pre-split data...
+  Train: 1220, Dev: 266, Test: 276
+  Class balance: 383 pos, 837 neg (pos_weight=2.19)
+  Supervision tiers: {'benign_validated': 502, 'construction': 452, 'llm_confirmed': 237, 'cf_weak': 22, 'cf_strong': 7}
+
+Building model: conversation_deberta (ConversationDeBERTa)...
+  Total: 184,028,673  Trainable: 197,121  Frozen: 183,831,552
+
+Training 20 epochs:
+  Phase 1 (cls):   0-4
+  Phase 2 (+attr): 5-19
+Ep   0 P1 | loss 0.9682 acc 0.424 | val F1 0.713 acc 0.797 | attr F1 0.000 pivot 0.000 | thr 0.52
+       tiers: transfer_success=0.881 target_only=1.000 cross_only=0.800 benign=0.775
+       saved best_detection.pt (F1=0.7128)
+Ep   1 P1 | loss 0.8657 acc 0.689 | val F1 0.745 acc 0.846 | attr F1 0.000 pivot 0.000 | thr 0.54
+       tiers: transfer_success=0.857 target_only=0.500 cross_only=0.657 benign=0.882
+       saved best_detection.pt (F1=0.7453)
+Ep   2 P1 | loss 0.7182 acc 0.781 | val F1 0.759 acc 0.850 | attr F1 0.000 pivot 0.000 | thr 0.71
+       tiers: transfer_success=0.857 target_only=0.500 cross_only=0.743 benign=0.872
+       saved best_detection.pt (F1=0.7590)
+Ep   3 P1 | loss 0.6463 acc 0.790 | val F1 0.800 acc 0.880 | attr F1 0.000 pivot 0.000 | thr 0.59
+       tiers: transfer_success=0.857 target_only=0.500 cross_only=0.771 benign=0.909
+       saved best_detection.pt (F1=0.8000)
+Ep   4 P1 | loss 0.6176 acc 0.811 | val F1 0.798 acc 0.876 | attr F1 0.000 pivot 0.000 | thr 0.76
+       tiers: transfer_success=0.857 target_only=0.500 cross_only=0.800 benign=0.898
+Ep   5 P2 | loss 0.5608 acc 0.826 | val F1 0.802 acc 0.880 | attr F1 0.000 pivot 0.000 | thr 0.79
+       tiers: transfer_success=0.857 target_only=0.500 cross_only=0.800 benign=0.904
+       saved best_detection.pt (F1=0.8025)
+Ep   6 P2 | loss 0.5352 acc 0.830 | val F1 0.815 acc 0.891 | attr F1 0.000 pivot 0.000 | thr 0.74
+       tiers: transfer_success=0.833 target_only=0.500 cross_only=0.800 benign=0.925
+       saved best_detection.pt (F1=0.8153)
+Ep   7 P2 | loss 0.4663 acc 0.845 | val F1 0.818 acc 0.895 | attr F1 0.000 pivot 0.000 | thr 0.76
+       tiers: transfer_success=0.833 target_only=0.500 cross_only=0.771 benign=0.936
+       saved best_detection.pt (F1=0.8182)
+Ep   8 P2 | loss 0.4208 acc 0.848 | val F1 0.826 acc 0.887 | attr F1 0.000 pivot 0.000 | thr 0.60
+       tiers: transfer_success=0.929 target_only=0.500 cross_only=0.886 benign=0.882
+       saved best_detection.pt (F1=0.8256)
+Ep   9 P2 | loss 0.4167 acc 0.833 | val F1 0.836 acc 0.898 | attr F1 0.000 pivot 0.000 | thr 0.55
+       tiers: transfer_success=0.905 target_only=0.500 cross_only=0.857 benign=0.909
+       saved best_detection.pt (F1=0.8364)
+Ep  10 P2 | loss 0.3465 acc 0.850 | val F1 0.832 acc 0.891 | attr F1 0.000 pivot 0.000 | thr 0.66
+       tiers: transfer_success=0.929 target_only=0.500 cross_only=0.914 benign=0.882
+Ep  11 P2 | loss 0.3082 acc 0.858 | val F1 0.837 acc 0.906 | attr F1 0.000 pivot 0.000 | thr 0.56
+       tiers: transfer_success=0.857 target_only=0.500 cross_only=0.771 benign=0.947
+       saved best_detection.pt (F1=0.8366)
+Ep  12 P2 | loss 0.2912 acc 0.859 | val F1 0.843 acc 0.906 | attr F1 0.000 pivot 0.000 | thr 0.59
+       tiers: transfer_success=0.881 target_only=0.500 cross_only=0.829 benign=0.930
+       saved best_detection.pt (F1=0.8428)
+       early stop (patience=8)
+
+============================================================
+  Test evaluation (conversation_deberta)
+  Checkpoint: best_detection.pt
+============================================================
+  Loaded from epoch 12, phase 2, threshold 0.59
+  Accuracy:       0.8949
+  Precision:      0.8372
+  Recall:         0.8276
+  F1:             0.8324
+  Attr F1:        0.0000
+  Pivot Accuracy: 0.0000
+  By transfer tier:
+    transfer_success: 0.9290
+    target_only: 0.5710
+    cross_only: 0.7630
+    benign: 0.9260
+  By benign status:
+    clean_benign: 0.8850
+    validated_benign_twin: 0.9870
+  By supervision tier:
+    cf_strong: 0.5000
+    cf_weak: 0.7500
+    llm_confirmed: 0.9040
+    construction: 0.9140
+    benign_validated: 0.8850
+  By family:
+    topic_matched_safe: 0.8240
+    interactive_adversarial: 0.8280
+    research_technical: 0.8620
+    hard_benign: 0.8750
+    clean_everyday: 0.9110
+    interactive_benign_twin: 0.9870
+    false_lead_benign: 1.0000
+  conversation_deberta: SUCCESS (00:30:11)
+
+
+========================================================
+  Training Summary
+========================================================
+  Model                     | F1       Acc      AttrF1   PivAcc   Thresh  
+  --------------------------+---------------------------------------------
+  guardlens                 | 0.9943   0.9964   0.8771   0.7500   0.22    
+  guardlens_no_fusion       | 1.0000   1.0000   0.8829   0.7826   0.57    
+  guardlens_no_cf           | 1.0000   1.0000   0.8817   0.7717   0.36    
+  turn_level                | 0.7582   0.8659   0.0000   0.0000   0.55    
+  conversation_deberta      | 0.8324   0.8949   0.0000   0.0000   0.59    
+
+  Checkpoints produced:
+    guardlens: best_attribution.pt best_detection.pt best.pt 
+    guardlens_no_fusion: best_attribution.pt best_detection.pt best.pt 
+    guardlens_no_cf: best_attribution.pt best_detection.pt best.pt 
+    turn_level: best_detection.pt best.pt 
+    conversation_deberta: best_detection.pt best.pt 
+
+========================================================
+  Resolved checkpoints for eval:
+    guardlens:    /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best_attribution.pt
+    nocf:         /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens_no_cf/best_attribution.pt
+    deberta_flat: /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/conversation_deberta/best_detection.pt
+    turn_level:   /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/turn_level/best_detection.pt
+========================================================
+
+========================================================
+  6. NoCF Specificity Decomposition
+  Start: 00:30:11
+========================================================
+Device: cuda
+
+Loading full GuardLens...
+  Loaded: guardlens
+Loading NoCF...
+  Loaded: guardlens_no_cf
+Test records: 276
+
+======================================================================
+  Full GuardLens Decomposition
+======================================================================
+  GuardLens @ 5%: DD_all=0.1540  DD_nonSR=0.1321  DD_SR=0.0001  SR_frac=0.066  n=86
+  GuardLens @ 10%: DD_all=0.4308  DD_nonSR=0.3793  DD_SR=0.0004  SR_frac=0.065  n=86
+  GuardLens @ 15%: DD_all=0.6086  DD_nonSR=0.5532  DD_SR=0.0005  SR_frac=0.064  n=86
+  GuardLens @ 20%: DD_all=0.7125  DD_nonSR=0.6515  DD_SR=0.0008  SR_frac=0.062  n=86
+
+======================================================================
+  NoCF Decomposition
+======================================================================
+  NoCF @ 5%: DD_all=0.1999  DD_nonSR=0.1581  DD_SR=0.0003  SR_frac=0.071  n=87
+  NoCF @ 10%: DD_all=0.4664  DD_nonSR=0.3944  DD_SR=0.0007  SR_frac=0.064  n=87
+  NoCF @ 15%: DD_all=0.5269  DD_nonSR=0.4797  DD_SR=0.0008  SR_frac=0.059  n=87
+  NoCF @ 20%: DD_all=0.5736  DD_nonSR=0.5283  DD_SR=0.0008  SR_frac=0.056  n=87
+
+================================================================================
+  SPECIFICITY DECOMPOSITION: GuardLens vs NoCF
+================================================================================
+  k      Model          DD all  DD non-SR    DD SR   SR frac     n
+  ------ ------------ -------- ---------- -------- --------- -----
+  5%     GuardLens      0.1540     0.1321   0.0001     0.066    86
+         NoCF           0.1999     0.1581   0.0003     0.071    87
+         Delta         +0.0459    +0.0260  +0.0002    +0.005
+
+  10%    GuardLens      0.4308     0.3793   0.0004     0.065    86
+         NoCF           0.4664     0.3944   0.0007     0.064    87
+         Delta         +0.0356    +0.0151  +0.0002    -0.001
+
+  15%    GuardLens      0.6086     0.5532   0.0005     0.064    86
+         NoCF           0.5269     0.4797   0.0008     0.059    87
+         Delta         -0.0817    -0.0734  +0.0003    -0.005
+
+  20%    GuardLens      0.7125     0.6515   0.0008     0.062    86
+         NoCF           0.5736     0.5283   0.0008     0.056    87
+         Delta         -0.1388    -0.1232  +0.0000    -0.006
+
+  DIAGNOSTIC @ 15%:
+  CF LOSS VALIDATED: NoCF advantage concentrates in surface-risk tokens.
+  NoCF DD non-SR delta: -0.0734 (no advantage on non-surface-risk tokens)
+  NoCF DD SR delta:     +0.0003 (over-attributes surface-risk tokens)
+  NoCF SR fraction:     0.059 vs GuardLens 0.064
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/review_response/nocf_decomposition.json
+  6: SUCCESS (00:36:00)
+
+========================================================
+  7. Top-k Turn Hit Rate
+  Start: 00:36:00
+========================================================
+Device: cuda
+Test records: 276
+Adversarial: 87
+
+User turns per adversarial conversation:
+  mean=14.4  median=15  range=[8, 21]
+Causal turns per conversation:
+  mean=2.4  median=2  range=[1, 5]
+
+Expected random floor (averaged over dataset):
+  top-1: 0.1776
+  top-2: 0.3254
+  top-3: 0.4477
+  top-5: 0.6312
+
+============================================================
+  Method: guardlens
+============================================================
+  top-1: hit=0.3678  random=0.1949  margin=+0.1729
+  top-2: hit=0.4943  random=0.3551  margin=+0.1392
+  top-3: hit=0.5517  random=0.4857  margin=+0.0660
+  top-5: hit=0.7011  random=0.6769  margin=+0.0242
+
+============================================================
+  Method: surface_risk
+============================================================
+  top-1: hit=0.2184  random=0.1949  margin=+0.0235
+  top-2: hit=0.3793  random=0.3551  margin=+0.0242
+  top-3: hit=0.5747  random=0.4857  margin=+0.0890
+  top-5: hit=0.7701  random=0.6769  margin=+0.0932
+
+============================================================
+  Method: attention
+============================================================
+  top-1: hit=0.1724  random=0.1949  margin=-0.0225
+  top-2: hit=0.2644  random=0.3551  margin=-0.0907
+  top-3: hit=0.3563  random=0.4857  margin=-0.1294
+  top-5: hit=0.5517  random=0.6769  margin=-0.1252
+
+============================================================
+  Method: random
+============================================================
+  top-1: hit=0.2299  random=0.1949  margin=+0.0350
+  top-2: hit=0.3908  random=0.3551  margin=+0.0357
+  top-3: hit=0.4943  random=0.4857  margin=+0.0086
+  top-5: hit=0.6897  random=0.6769  margin=+0.0127
+
+================================================================================
+  TOP-K TURN HIT RATE COMPARISON
+================================================================================
+  Method                        top-1        top-2        top-3        top-5
+  ---------------------- ------------ ------------ ------------ ------------
+  Random floor                 0.1949       0.3551       0.4857       0.6769
+  guardlens                    0.3678       0.4943       0.5517       0.7011
+  surface_risk                 0.2184       0.3793       0.5747       0.7701
+  attention                    0.1724       0.2644       0.3563       0.5517
+  random                       0.2299       0.3908       0.4943       0.6897
+
+  MARGIN ABOVE RANDOM:
+  guardlens                   +0.1729      +0.1392      +0.0660      +0.0242
+  surface_risk                +0.0235      +0.0242      +0.0890      +0.0932
+  attention                   -0.0225      -0.0907      -0.1294      -0.1252
+  random                      +0.0350      +0.0357      +0.0086      +0.0127
+
+  DIAGNOSTIC:
+  WARNING: attention top-5 margin is non-positive (-0.1252). Top-5 is uninformative for this method.
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/review_response/topk_turn_hitrate.json
+  7: SUCCESS (00:37:04)
+
+========================================================
+  8. External Evaluator Comparison
+  Start: 00:37:04
+========================================================
+Device: cuda
+
+Loading GuardLens attribution model from /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/guardlens/best_attribution.pt...
+  GuardLens loaded (epoch 13, phase 2)
+
+Loading test data from /gpfs/home/s001/ssubram7/staging/dataset_gen_output/splits/test.jsonl...
+  Using full test set: 276 samples
+  Test loader: 69 batches
+
+Loading 2 external evaluator(s)...
+  /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/conversation_deberta/best_detection.pt...
+    Loaded conversation_deberta (epoch 12)
+  /gpfs/home/s001/ssubram7/work/results/guardlens_v11/checkpoints/turn_level/best_detection.pt...
+    Loaded turn_level (epoch 10)
+
+Running self-eval (GuardLens -> GuardLens)...
+  Batch 10/69...
+  Batch 20/69...
+  Batch 30/69...
+  Batch 40/69...
+  Batch 50/69...
+  Batch 60/69...
+
+Running external evaluation...
+  Batch 10/69...
+  Batch 20/69...
+  Batch 30/69...
+  Batch 40/69...
+  Batch 50/69...
+  Batch 60/69...
+
+================================================================================
+  Self-Eval vs External-Eval Comparison
+  Attribution: GuardLens | Evaluator: varies
+================================================================================
+
+  Metrics at top-15% token removal:
+  Evaluator                         DevDrop       Flip        Nec        Suf
+  ------------------------------ ---------- ---------- ---------- ----------
+  GuardLens (self)                    0.852      0.849      0.849      1.000
+  conversation_deberta (ext.)         0.209      0.435      0.435      0.839
+  turn_level (ext.)                   0.004      0.029      0.029      1.000
+
+  Full breakdown by k (DevDrop | FlipRate):
+
+  GuardLens (self-eval):
+    5%: DD=0.492  Flip=0.488  Nec=0.488  Suf=1.000
+    10%: DD=0.754  Flip=0.756  Nec=0.756  Suf=1.000
+    15%: DD=0.852  Flip=0.849  Nec=0.849  Suf=1.000
+    20%: DD=0.951  Flip=0.953  Nec=0.953  Suf=1.000
+
+  conversation_deberta (ext.) (external eval):
+    5%: DD=0.057  Flip=0.097  Nec=0.097  Suf=0.935
+    10%: DD=0.135  Flip=0.258  Nec=0.258  Suf=0.823
+    15%: DD=0.209  Flip=0.435  Nec=0.435  Suf=0.839
+    20%: DD=0.342  Flip=0.581  Nec=0.581  Suf=0.758
+
+  turn_level (ext.) (external eval):
+    5%: DD=0.012  Flip=0.101  Nec=0.101  Suf=1.000
+    10%: DD=0.013  Flip=0.087  Nec=0.087  Suf=1.000
+    15%: DD=0.004  Flip=0.029  Nec=0.029  Suf=1.000
+    20%: DD=0.000  Flip=0.000  Nec=0.000  Suf=1.000
+
+  Gap analysis (self minus external at 15%):
+    conversation_deberta (ext.) | deviation_drop: +0.643 ⚠ large gap
+    conversation_deberta (ext.) | flip_rate: +0.413 ⚠ large gap
+    conversation_deberta (ext.) | necessity: +0.413 ⚠ large gap
+    conversation_deberta (ext.) | sufficiency: +0.161
+    turn_level (ext.) | deviation_drop: +0.848 ⚠ large gap
+    turn_level (ext.) | flip_rate: +0.820 ⚠ large gap
+    turn_level (ext.) | necessity: +0.820 ⚠ large gap
+    turn_level (ext.) | sufficiency: +0.000
+
+Results saved to /gpfs/home/s001/ssubram7/work/results/guardlens_v11/results/review_response/external_eval.json
+  8: SUCCESS (00:42:54)
+
+========================================================
+  Reviewer Response Results
+  Fri Jul 10 00:42:54 EDT 2026
+========================================================
+
+  Eval outputs:
+    OK: nocf_decomposition.json
+    OK: topk_turn_hitrate.json
+    OK: external_eval.json
+
+  NoCF Decomposition @ 15%:
+    GuardLens  DD_all=0.6086  DD_nonSR=0.5532  DD_SR=0.0005  SR_frac=0.064
+    NoCF       DD_all=0.5269  DD_nonSR=0.4797  DD_SR=0.0008  SR_frac=0.059
+    VERDICT: CF loss validated (NoCF advantage is surface-risk-driven)
+
+  Top-k Turn Hit Rate (margin above random):
+    guardlens       k=1: 0.368 (+0.173)  k=2: 0.494 (+0.139)  k=3: 0.552 (+0.066)  k=5: 0.701 (+0.024)
+    surface_risk    k=1: 0.218 (+0.023)  k=2: 0.379 (+0.024)  k=3: 0.575 (+0.089)  k=5: 0.770 (+0.093)
+    attention       k=1: 0.172 (-0.023)  k=2: 0.264 (-0.091)  k=3: 0.356 (-0.129)  k=5: 0.552 (-0.125)
+    random          k=1: 0.230 (+0.035)  k=2: 0.391 (+0.036)  k=3: 0.494 (+0.009)  k=5: 0.690 (+0.013)
+
+========================================================
+  Done: Fri Jul 10 00:42:54 EDT 2026
+========================================================

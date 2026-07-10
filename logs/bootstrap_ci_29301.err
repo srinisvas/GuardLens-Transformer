@@ -1,0 +1,11 @@
+Bootstrap CIs (95%, B=10000, seed=42)
+Traceback (most recent call last):
+  File "/gpfs/home/s001/ssubram7/projects/GuardLens-Transformer/compute_bootstrap_cis.py", line 407, in <module>
+    main()
+  File "/gpfs/home/s001/ssubram7/projects/GuardLens-Transformer/compute_bootstrap_cis.py", line 285, in main
+    vals = extract_dd15_per_record(causal_json, method)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/home/s001/ssubram7/projects/GuardLens-Transformer/compute_bootstrap_cis.py", line 140, in extract_dd15_per_record
+    return np.array(method_data["per_record_dd"], dtype=float)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: float() argument must be a string or a real number, not 'dict'
