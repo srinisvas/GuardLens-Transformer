@@ -282,7 +282,10 @@ def run_counterfactual_test(
             turns = record.get("turns", [])
             gl_pivot = get_top_attributed_user_turn(gl_scores, batch, record, i)
             sr_pivot = get_top_attributed_user_turn(sr_scores, batch, record, i)
-            rand_pivot = get_random_user_turn(record, exclude_turn=gl_pivot or -1)
+            rand_pivot = get_random_user_turn(
+                record,
+                exclude_turn=gl_pivot if gl_pivot is not None else -1,
+            )
 
             if gl_pivot is None:
                 n_skipped_no_pivot += 1
