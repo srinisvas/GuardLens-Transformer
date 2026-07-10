@@ -423,6 +423,7 @@ def main():
                 "margin": float(margin),
                 "n": len(hits),
                 "per_record_hits": [int(h) for h in hits],
+                "per_record_floors": [float(f) for f in floors],
             }
 
             print(f"  top-{k}: hit={hit_rate:.4f}  "
