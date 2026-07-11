@@ -61,8 +61,8 @@ if [ -z "$GL_ATTR" ]; then
     echo "FATAL: No GuardLens checkpoint"; exit 1
 fi
 
-TARGET_MODEL="$HOME/work/hf_models/llama3-8b-instruct"
-JUDGE_MODEL="Qwen/Qwen2.5-7B-Instruct"
+TARGET_MODEL="Qwen/Qwen2.5-7B-Instruct"
+JUDGE_MODEL="$HOME/work/hf_models/llama3-8b-instruct"
 
 echo "  Target (original): $TARGET_MODEL"
 echo "  Judge: $JUDGE_MODEL"

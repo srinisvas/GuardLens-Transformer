@@ -508,9 +508,12 @@ def run_counterfactual_test(
                     jdg = judge_response(
                         judge_model, judge_tokenizer, judge_user_request, resp,
                     )
+
                     sample_judgments.append({
                         "unsafe": jdg["unsafe"],
                         "confidence": jdg["confidence"],
+                        "response": resp[:500],
+                        "judge_raw": jdg.get("raw", "")[:300],
                     })
 
                 n_unsafe_samples = sum(1 for j in sample_judgments if j["unsafe"])
@@ -677,10 +680,14 @@ def main():
     from guardlens.evaluation.eval_utils import load_jsonl
     all_records = load_jsonl(args.test_path)
     n_adv = sum(1 for r in all_records if r.get("label") == 1)
+
     eligible = [
         r for r in all_records
-        if r.get("label") == 1 and has_cached_unsafe(r, args.target_model)
+        if r.get("label") == 1
+           and "qwen7b" in r.get("success_targets", [])
+           and has_cached_unsafe(r, args.target_model)
     ]
+
     print(f"  Total: {len(all_records)} records ({n_adv} adversarial)")
     print(f"  Eligible (cached unsafe): {len(eligible)}")
 
