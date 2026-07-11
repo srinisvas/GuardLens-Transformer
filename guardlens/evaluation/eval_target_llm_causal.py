@@ -194,6 +194,36 @@ def get_outcome_request_response_turns(
     return None, None
 
 
+def get_validation_response_map(record: Dict, target_model_name: str = "") -> Dict[int, str]:
+    """Map assistant turn index to target-specific validation response snippet.
+
+    The compliance_trajectory turn_id refers to the user turn that was
+    evaluated. The response_snippet is the target model's response to
+    that user turn, so it belongs to the next assistant turn in the
+    conversation, not the turn_id itself.
+    """
+    v = get_validation_block(record, target_model_name)
+    turns = record.get("turns", [])
+    response_map = {}
+
+    for x in v.get("compliance_trajectory", []):
+        if not isinstance(x, dict):
+            continue
+
+        user_turn = x.get("turn_id")
+        snippet = x.get("response_snippet")
+        if user_turn is None or not snippet:
+            continue
+
+        # trajectory turn_id is the user turn; find the following assistant turn
+        for t in range(int(user_turn) + 1, len(turns)):
+            if turns[t].get("role") == "assistant":
+                response_map[t] = snippet
+                break
+
+    return response_map
+
+
 # ================================================================
 # Chat construction and generation
 # ================================================================
@@ -421,18 +451,17 @@ def run_counterfactual_test(
                 continue
 
             turns = record.get("turns", [])
-            outcome_req, outcome_resp = get_outcome_request_response_turns(record, target_model)
+            outcome_req, outcome_resp = get_outcome_request_response_turns(
+                record, target_model_name,
+            )
 
             if outcome_req is None:
                 continue
 
-            # Cached unsafe response (for anchoring)
-            cached_response = turns[outcome_resp]["text"] if (
-                outcome_resp is not None and outcome_resp < len(turns)
-            ) else None
-
-            if cached_response is None:
-                continue
+            # Build target-specific assistant response map from validation
+            val_response_map = get_validation_response_map(
+                record, target_model_name,
+            )
 
             # Get pivot selections, restricted to user turns <= outcome_req
             gl_pivot = get_top_attributed_user_turn(
@@ -449,17 +478,31 @@ def run_counterfactual_test(
             if gl_pivot is None:
                 continue
 
-            # Sanity check: live original replay (up to request turn only,
-            # NOT including the assistant response turn)
+            # Sanity check: live original replay with target-specific
+            # assistant responses where available
             sys_prompt = system_prompt if system_prompt else None
-            orig_messages = build_chat_messages(
-                turns, up_to_turn=outcome_req, system_prompt=sys_prompt,
-            )
+            orig_messages = []
+            if sys_prompt:
+                orig_messages.append({"role": "system", "content": sys_prompt})
+            for ti, turn in enumerate(turns):
+                if ti > outcome_req:
+                    break
+                role = turn.get("role")
+                text = turn.get("text", "")
+                # Substitute target-specific validation response for
+                # assistant turns where we have cached snippets
+                if role == "assistant" and ti in val_response_map:
+                    text = val_response_map[ti]
+                orig_messages.append({
+                    "role": "user" if role == "user" else "assistant",
+                    "content": text,
+                })
+
+            request_text = turns[outcome_req].get("text", "")
             live_orig_response = generate_response(
                 target_model, target_tokenizer, orig_messages,
                 temperature=temperature, seed=42,
             )
-            request_text = turns[outcome_req].get("text", "")
             live_orig_judgment = judge_response(
                 judge_model, judge_tokenizer,
                 request_text, live_orig_response,
@@ -472,6 +515,7 @@ def run_counterfactual_test(
                 "n_turns": len(turns),
                 "outcome_request_turn": outcome_req,
                 "outcome_response_turn": outcome_resp,
+                "n_val_responses_used": len(val_response_map),
                 "live_original_unsafe": live_orig_judgment["unsafe"],
                 "cached_original_unsafe": True,
                 "methods": {},
@@ -492,19 +536,26 @@ def run_counterfactual_test(
                 pivot_text = turns[pivot_turn].get("text", "")
                 neutral_text = neutralize_turn(pivot_text, pivot_turn)
 
-                # Build neutralized prefix up to outcome_req only.
-                # Replace the pivot turn text if it falls within this range.
+                # Build neutralized prefix up to outcome_req, using
+                # target-specific validation responses for assistant turns
                 neutral_messages = []
                 if sys_prompt:
                     neutral_messages.append({"role": "system", "content": sys_prompt})
                 for ti, turn in enumerate(turns):
                     if ti > outcome_req:
                         break
+                    role = turn.get("role")
                     text = turn.get("text", "")
+                    # Substitute target-specific validation response
+                    if role == "assistant" and ti in val_response_map:
+                        text = val_response_map[ti]
+                    # Apply neutralization on the pivot turn
                     if ti == pivot_turn:
                         text = neutral_text
-                    chat_role = "user" if turn.get("role") == "user" else "assistant"
-                    neutral_messages.append({"role": chat_role, "content": text})
+                    neutral_messages.append({
+                        "role": "user" if role == "user" else "assistant",
+                        "content": text,
+                    })
 
                 # Judge user_request: if we neutralized the final request
                 # itself, the judge should see the neutralized text. Otherwise
