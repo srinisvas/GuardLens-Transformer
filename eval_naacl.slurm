@@ -5,12 +5,11 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=80G
-#SBATCH --time=8:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=logs/eval_naacl_%j.out
 #SBATCH --error=logs/eval_naacl_%j.err
 
-# Targeted NAACL evaluation suite. Reuses the existing reviewer baselines but
-# points them only at repaired splits/checkpoints.
+# Targeted NAACL evaluation suite on repaired splits/checkpoints only.
 
 set -euo pipefail
 
@@ -19,11 +18,11 @@ CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
 SPLIT_DIR="${SPLIT_DIR:-$HOME/staging/dataset_gen_output/naacl_splits}"
 CKPT_DIR="${CKPT_DIR:-$HOME/work/results/guardlens_naacl/checkpoints}"
 OUT_DIR="${OUT_DIR:-$HOME/work/results/guardlens_naacl/results}"
+BENIGN_STRESS="${BENIGN_STRESS:-$HOME/staging/dataset_gen_output/naacl_benign_untrimmed_stress.jsonl}"
 
 TRAIN_PATH="$SPLIT_DIR/train.jsonl"
 DEV_PATH="$SPLIT_DIR/dev.jsonl"
 TEST_PATH="$SPLIT_DIR/test.jsonl"
-GL_ATTR="$CKPT_DIR/guardlens/best_attribution.pt"
 
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -38,21 +37,37 @@ export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 mkdir -p "$TMPDIR" "$OUT_DIR" logs
 cd "$PROJECT_DIR"
 
-for path in "$TRAIN_PATH" "$DEV_PATH" "$TEST_PATH" "$GL_ATTR"; do
-    if [[ ! -f "$path" ]]; then
-        echo "ERROR: required input missing: $path"
-        exit 2
-    fi
+pick_ckpt() {
+    local dir="$1"
+    for name in best_attribution.pt best.pt best_detection.pt; do
+        if [[ -f "$dir/$name" ]]; then
+            echo "$dir/$name"
+            return 0
+        fi
+    done
+    return 1
+}
+
+for path in "$TRAIN_PATH" "$DEV_PATH" "$TEST_PATH"; do
+    [[ -f "$path" ]] || { echo "ERROR: required split missing: $path"; exit 2; }
 done
 
-# 1. Shortcut check. This is CPU-light and should be interpreted first.
+GL_ATTR=$(pick_ckpt "$CKPT_DIR/guardlens") || {
+    echo "ERROR: no GuardLens checkpoint found"; exit 2;
+}
+NOCF_ATTR=$(pick_ckpt "$CKPT_DIR/guardlens_no_cf" || true)
+
+echo "Primary checkpoint: $GL_ATTR"
+[[ -n "$NOCF_ATTR" ]] && echo "NoCF checkpoint: $NOCF_ATTR"
+
+# Final held-out shortcut report. Unlike train_naacl preflight, this accesses test
+# only after preprocessing/training choices are frozen.
 python -m guardlens.evaluation.eval_length_probe \
     --train "$TRAIN_PATH" \
     --dev "$DEV_PATH" \
     --test "$TEST_PATH" \
     --output "$OUT_DIR/length_probe.json"
 
-# 2. Top-k evidence-bearing turn localization against repaired evidence targets.
 python -m guardlens.evaluation.eval_topk_turn_hitrate \
     --test-path "$TEST_PATH" \
     --checkpoint "$GL_ATTR" \
@@ -62,7 +77,6 @@ python -m guardlens.evaluation.eval_topk_turn_hitrate \
     --batch-size 4 \
     --device cuda
 
-# 3. Reviewer-requested leave-one-turn-out baseline using the same classifier.
 python -m guardlens.evaluation.eval_loto_baseline \
     --test-path "$TEST_PATH" \
     --checkpoint "$GL_ATTR" \
@@ -72,7 +86,6 @@ python -m guardlens.evaluation.eval_loto_baseline \
     --batch-size 4 \
     --device cuda
 
-# 4. Attribution intervention metrics and tier-stratified analysis.
 python -m guardlens.evaluation.eval_causal \
     --test-path "$TEST_PATH" \
     --checkpoint "$GL_ATTR" \
@@ -83,8 +96,6 @@ python -m guardlens.evaluation.eval_causal \
     --batch-size 4 \
     --device cuda
 
-# 5. Utility tradeoff without reusing the old boundary pool. If a repaired
-# boundary set is later supplied, eval_utility_grid can be rerun separately.
 python -m guardlens.evaluation.eval_utility_grid \
     --test-path "$TEST_PATH" \
     --checkpoint "$GL_ATTR" \
@@ -95,6 +106,43 @@ python -m guardlens.evaluation.eval_utility_grid \
     --batch-size 4 \
     --device cuda
 
+# Existing NoCF ablation, rerun on exactly the repaired test distribution.
+if [[ -n "$NOCF_ATTR" ]]; then
+    python -m guardlens.evaluation.eval_causal \
+        --test-path "$TEST_PATH" \
+        --checkpoint "$NOCF_ATTR" \
+        --output "$OUT_DIR/evidence_eval_nocf.json" \
+        --methods guardlens \
+        --top-k 0.05 0.10 0.15 0.20 \
+        --batch-size 4 \
+        --device cuda
+
+    python -m guardlens.evaluation.eval_utility_grid \
+        --test-path "$TEST_PATH" \
+        --checkpoint "$NOCF_ATTR" \
+        --output "$OUT_DIR/utility_grid_nocf.json" \
+        --methods guardlens \
+        --k-values 0.05 0.10 0.15 0.20 \
+        --lambda-values 0.0 0.5 1.0 2.0 5.0 \
+        --batch-size 4 \
+        --device cuda
+else
+    echo "WARN: NoCF checkpoint unavailable; NoCF evaluation skipped"
+fi
+
+# Original long benign distribution is an explicit stress test, not a training
+# source and not a threshold-tuning source.
+if [[ -f "$BENIGN_STRESS" ]]; then
+    python -m guardlens.evaluation.eval_boundary_stress \
+        --boundary-files "$BENIGN_STRESS" \
+        --checkpoint "$GL_ATTR" \
+        --output "$OUT_DIR/untrimmed_benign_stress.json" \
+        --batch-size 8 \
+        --device cuda
+else
+    echo "WARN: untrimmed benign stress file missing: $BENIGN_STRESS"
+fi
+
 echo "========================================================"
 echo "NAACL evaluation complete"
 echo "Results: $OUT_DIR"
@@ -103,11 +151,17 @@ echo "========================================================"
 python3 - <<PY
 import json, os
 out = "$OUT_DIR"
-for name in ["length_probe", "topk_turn_hitrate", "loto_baseline", "evidence_eval_with_tiers", "utility_grid"]:
+names = [
+    "length_probe", "topk_turn_hitrate", "loto_baseline",
+    "evidence_eval_with_tiers", "utility_grid", "evidence_eval_nocf",
+    "utility_grid_nocf", "untrimmed_benign_stress",
+]
+for name in names:
     path = os.path.join(out, name + ".json")
-    print(f"{name}: {'OK' if os.path.exists(path) else 'MISSING'}")
-if os.path.exists(os.path.join(out, "length_probe.json")):
-    r = json.load(open(os.path.join(out, "length_probe.json")))
+    print(f"{name}: {'OK' if os.path.exists(path) else 'MISSING/OPTIONAL'}")
+path = os.path.join(out, "length_probe.json")
+if os.path.exists(path):
+    r = json.load(open(path, encoding="utf-8"))
     t = r["test"]
     print(f"Length probe test AUC={t['roc_auc']:.3f}, balanced_acc={t['balanced_accuracy']:.3f}")
 PY
