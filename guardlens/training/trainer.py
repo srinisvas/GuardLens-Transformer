@@ -1,6 +1,7 @@
 """Training and evaluation loops — v11 dataset compatible."""
 
 import json
+import math
 import os
 import random
 from collections import Counter
@@ -51,7 +52,12 @@ def train_epoch(
     correct = 0
     total = 0
 
-    optimizer.zero_grad()
+    accumulation = max(1, int(config.gradient_accumulation))
+    loader_steps = len(loader)
+    if loader_steps <= 0:
+        raise RuntimeError("training DataLoader is empty")
+
+    optimizer.zero_grad(set_to_none=True)
 
     for step, batch in enumerate(loader):
         input_ids = batch["input_ids"].to(device)
@@ -65,6 +71,12 @@ def train_epoch(
         pivot_labels = batch["pivot_labels"].to(device)
         pivot_kind_labels = batch["pivot_kind_labels"].to(device)
 
+        # A final accumulation group may contain fewer than `accumulation`
+        # microbatches. Scale that whole group by its actual size so its update
+        # is not artificially shrunk and ensure it is stepped at epoch end.
+        group_start = (step // accumulation) * accumulation
+        group_size = min(accumulation, loader_steps - group_start)
+
         try:
             outputs = model(
                 input_ids=input_ids,
@@ -73,56 +85,64 @@ def train_epoch(
                 role_ids=role_ids,
                 compute_attribution=(phase >= 2),
             )
-        except RuntimeError as e:
-            if "out of memory" in str(e):
-                torch.cuda.empty_cache()
-                print(f"  OOM at step {step}, skipping batch")
-                continue
+
+            losses = loss_fn(
+                outputs, labels, token_labels,
+                span_weights=span_weights,
+                sample_weights=sample_weights,
+                pivot_labels=pivot_labels,
+                pivot_kind_labels=pivot_kind_labels,
+                phase=phase,
+                lambda_cls=lambda_cls,
+                lambda_attr=lambda_attr,
+                lambda_cf=lambda_cf,
+                lambda_pivot=config.lambda_pivot,
+            )
+            loss = losses["total"]
+
+            # Counterfactual loss (phase 3, only for models with attribution)
+            if (phase >= 3 and lambda_cf > 0
+                    and outputs.get("attr_probs") is not None
+                    and hasattr(model, "forward_cf")):
+                phase3_start = config.phase1_epochs + config.phase2_epochs
+                cf_progress = min(1.0, (epoch - phase3_start) / max(1, config.phase3_epochs))
+
+                l_cf = loss_fn.counterfactual_loss(model, {
+                    "attention_mask": attention_mask,
+                    "turn_mask": turn_mask,
+                    "role_ids": role_ids,
+                    "labels": labels,
+                }, outputs, cf_progress=cf_progress)
+                loss = loss + lambda_cf * l_cf
+                total_cf_loss += l_cf.item()
+
+            unscaled_loss = loss
+            (loss / group_size).backward()
+        except RuntimeError as exc:
+            if "out of memory" in str(exc).lower():
+                optimizer.zero_grad(set_to_none=True)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                raise RuntimeError(
+                    f"CUDA OOM at epoch={epoch} step={step} with "
+                    f"batch_size={config.batch_size}, max_turns={config.max_turns}, "
+                    f"max_tokens_per_turn={config.max_tokens_per_turn}. "
+                    "Aborting instead of silently skipping a training batch."
+                ) from exc
             raise
 
-        losses = loss_fn(
-            outputs, labels, token_labels,
-            span_weights=span_weights,
-            sample_weights=sample_weights,
-            pivot_labels=pivot_labels,
-            pivot_kind_labels=pivot_kind_labels,
-            phase=phase,
-            lambda_cls=lambda_cls,
-            lambda_attr=lambda_attr,
-            lambda_cf=lambda_cf,
-            lambda_pivot=config.lambda_pivot,
+        should_step = (
+            (step + 1) % accumulation == 0
+            or (step + 1) == loader_steps
         )
-        loss = losses["total"]
-
-        # Counterfactual loss (phase 3, only for models with attribution)
-        if (phase >= 3 and lambda_cf > 0
-                and outputs.get("attr_probs") is not None
-                and hasattr(model, "forward_cf")):
-            phase3_start = config.phase1_epochs + config.phase2_epochs
-            cf_progress = min(1.0, (epoch - phase3_start) / max(1, config.phase3_epochs))
-
-            l_cf = loss_fn.counterfactual_loss(model, {
-                "attention_mask": attention_mask,
-                "turn_mask": turn_mask,
-                "role_ids": role_ids,
-                "labels": labels,
-            }, outputs, cf_progress=cf_progress)
-            loss = loss + lambda_cf * l_cf
-            total_cf_loss += l_cf.item()
-
-        loss = loss / config.gradient_accumulation
-        loss.backward()
-
-        if (step + 1) % config.gradient_accumulation == 0:
+        if should_step:
             nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
             optimizer.step()
             if scheduler is not None:
                 scheduler.step()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
 
-        # Log the actual total loss including CF
-        actual_total = loss.detach().item() * config.gradient_accumulation
-        total_loss += actual_total
+        total_loss += unscaled_loss.detach().item()
         total_cls_loss += losses["cls"].item()
         if "attr" in losses:
             total_attr_loss += losses["attr"].item()
@@ -465,12 +485,19 @@ def train(
         lr=config.learning_rate,
         weight_decay=config.weight_decay,
     )
-    total_steps = len(train_loader) // config.gradient_accumulation * config.max_epochs
+    optimizer_steps_per_epoch = math.ceil(
+        len(train_loader) / max(1, int(config.gradient_accumulation))
+    )
+    total_steps = optimizer_steps_per_epoch * config.max_epochs
+    pct_start = min(
+        0.99,
+        max(1.0 / max(1, total_steps), config.warmup_steps / max(1, total_steps)),
+    )
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=config.learning_rate,
         total_steps=max(1, total_steps),
-        pct_start=config.warmup_steps / max(1, total_steps),
+        pct_start=pct_start,
         anneal_strategy="cos",
     )
 
