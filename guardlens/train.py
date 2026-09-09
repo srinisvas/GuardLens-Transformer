@@ -1,21 +1,12 @@
 """
-Training entry point — v11 dataset compatible.
+Training entry point — NAACL validity-repair compatible.
 
 Usage:
-    # With pre-split files (recommended):
     python -m guardlens.train \
         --train-path splits/train.jsonl \
         --dev-path splits/dev.jsonl \
         --test-path splits/test.jsonl \
         --output ./checkpoints
-
-    # With single file (fallback, re-splits internally):
-    python -m guardlens.train --data data.jsonl --output ./checkpoints
-
-    # Specific model:
-    python -m guardlens.train --train-path splits/train.jsonl \
-        --dev-path splits/dev.jsonl --test-path splits/test.jsonl \
-        --output ./checkpoints --model turn_level
 """
 
 import argparse
@@ -44,10 +35,11 @@ def main():
 
     # Hyperparameters
     parser.add_argument("--backbone", type=str, default="microsoft/deberta-v3-base")
-    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--grad-accumulation", type=int, default=8)
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--epochs", type=int, default=25)
-    parser.add_argument("--max-turns", type=int, default=32)
+    parser.add_argument("--max-turns", type=int, default=48)
     parser.add_argument("--max-tokens", type=int, default=192)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", type=str, default="cuda")
@@ -59,10 +51,17 @@ def main():
     parser.add_argument("--no-threshold-tune", action="store_true", default=False)
 
     args = parser.parse_args()
+    if args.batch_size <= 0:
+        parser.error("--batch-size must be positive")
+    if args.grad_accumulation <= 0:
+        parser.error("--grad-accumulation must be positive")
+    if args.max_turns <= 0 or args.max_tokens <= 0:
+        parser.error("--max-turns and --max-tokens must be positive")
 
     config = GuardLensConfig(
         backbone_name=args.backbone,
         batch_size=args.batch_size,
+        gradient_accumulation=args.grad_accumulation,
         learning_rate=args.lr,
         max_epochs=args.epochs,
         max_turns=args.max_turns,
