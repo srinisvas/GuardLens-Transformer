@@ -1,4 +1,4 @@
-"""Model and training configuration — v11 dataset compatible."""
+"""Model and training configuration — NAACL validity-repair compatible."""
 
 from dataclasses import dataclass, field
 from typing import Tuple, List
@@ -30,8 +30,10 @@ class GuardLensConfig:
     use_gated_fusion: bool = True
     fusion_temperature: float = 1.0
 
-    # Sequence limits (v11: interactive conversations avg 28 turns)
-    max_turns: int = 32
+    # Sequence limits. The repaired primary legacy corpus contains up to 48
+    # realized user+assistant turns, so the NAACL default preserves every
+    # primary training/evaluation turn rather than silently truncating at 32.
+    max_turns: int = 48
     max_tokens_per_turn: int = 192
     max_total_tokens: int = 2048  # For flat baseline
 
@@ -40,8 +42,8 @@ class GuardLensConfig:
     weight_decay: float = 0.01
     warmup_steps: int = 200
     max_epochs: int = 25
-    batch_size: int = 4  # Reduced from 8 due to larger sequences
-    gradient_accumulation: int = 4  # Effective batch = 16
+    batch_size: int = 2  # 48-turn hierarchical window; effective batch kept at 16
+    gradient_accumulation: int = 8
     max_grad_norm: float = 1.0
 
     # Loss weights (scheduled during training)
@@ -68,19 +70,17 @@ class GuardLensConfig:
     )
 
     # Supervision tier weights for attribution loss
-    # Spans with higher-confidence causal labels get more weight
     span_tier_weights: dict = field(default_factory=lambda: {
         "cf_strong": 1.00,
         "cf_weak": 0.70,
         "llm_confirmed": 0.60,
         "construction": 0.40,
         "llm_only": 0.25,
-        "incidental": 1.00,  # Negative supervision is important too
+        "incidental": 1.00,
         "ignore": 0.00,
     })
 
     # Class balance
-    # Will be computed from data if not set
     pos_weight: float = 0.0  # 0 = auto-compute from data
 
     # Counterfactual
@@ -88,7 +88,7 @@ class GuardLensConfig:
 
     # CF/tier oversampling
     oversample_cf: bool = True
-    cf_oversample_factor: int = 3  # cf_strong/cf_weak records appear 3x
+    cf_oversample_factor: int = 3
 
     # Dev threshold tuning
     tune_threshold: bool = True
@@ -101,7 +101,7 @@ class GuardLensConfig:
     eval_every: int = 1
     patience: int = 8
 
-    # Data paths (v11 pre-split)
+    # Data paths
     train_path: str = ""
     dev_path: str = ""
     test_path: str = ""
