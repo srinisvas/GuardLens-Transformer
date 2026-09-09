@@ -2,8 +2,9 @@
 """One-batch GPU smoke for the repaired 48-turn GuardLens training path.
 
 This deliberately exercises phase 3, including attribution and counterfactual
-loss, on the longest available primary training records. It is a runtime gate,
-not a benchmark and never reads dev/test labels or metrics.
+loss, on long primary training records. The default two-record smoke uses the
+longest malicious and longest benign examples so both class-loss paths are
+represented. It is a runtime gate, not a benchmark, and never reads dev/test.
 """
 from __future__ import annotations
 
@@ -29,6 +30,30 @@ def load_jsonl(path):
     return rows
 
 
+def longest_first(records):
+    return sorted(
+        records,
+        key=lambda r: (-len(r.get("turns", [])), str(r.get("conversation_id", ""))),
+    )
+
+
+def select_smoke_records(records, batch_size):
+    positives = longest_first([r for r in records if int(r.get("label", -1)) == 1])
+    negatives = longest_first([r for r in records if int(r.get("label", -1)) == 0])
+    if not positives or not negatives:
+        raise RuntimeError("training smoke requires both malicious and benign records")
+
+    selected = [positives[0], negatives[0]]
+    if batch_size > 2:
+        used = {str(r.get("conversation_id", "")) for r in selected}
+        remaining = [
+            r for r in longest_first(records)
+            if str(r.get("conversation_id", "")) not in used
+        ]
+        selected.extend(remaining[: batch_size - 2])
+    return selected[:batch_size]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", required=True)
@@ -43,6 +68,8 @@ def main() -> None:
         raise RuntimeError("CUDA is required for the training-window smoke")
     if min(args.max_turns, args.max_tokens, args.batch_size) <= 0:
         raise ValueError("max-turns, max-tokens, and batch-size must be positive")
+    if args.batch_size < 2:
+        raise ValueError("batch-size must be >=2 so both classes are represented")
 
     records = load_jsonl(args.train)
     if not records:
@@ -53,11 +80,7 @@ def main() -> None:
             f"{len(over)} training records exceed max_turns={args.max_turns}; run model-window audit first"
         )
 
-    # Stable worst-case selection by realized length, then conversation ID.
-    selected = sorted(
-        records,
-        key=lambda r: (-len(r.get("turns", [])), str(r.get("conversation_id", ""))),
-    )[: args.batch_size]
+    selected = select_smoke_records(records, args.batch_size)
     if len(selected) < args.batch_size:
         raise RuntimeError(
             f"need at least batch_size={args.batch_size} training records for smoke"
