@@ -9,8 +9,9 @@
 #SBATCH --output=logs/train_naacl_%j.out
 #SBATCH --error=logs/train_naacl_%j.err
 
-# Retrain the unchanged GuardLens architecture and existing baselines on the
-# validity-repaired NAACL splits. Old v11 checkpoints are never touched.
+# Retrain GuardLens and existing baselines from scratch on validity-repaired
+# NAACL splits. The 48-turn primary window covers every repaired Dataset A/B
+# primary record; training aborts on model-window mismatch or CUDA OOM.
 
 set -euo pipefail
 
@@ -20,6 +21,10 @@ SPLIT_DIR="${SPLIT_DIR:-$HOME/staging/dataset_gen_output/naacl_splits}"
 BASE_OUTPUT="${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl/checkpoints}"
 PRECHECK_DIR="${PRECHECK_DIR:-$HOME/work/results/guardlens_naacl/preflight}"
 MAX_LENGTH_AUC="${MAX_LENGTH_AUC:-0.65}"
+MAX_TURNS="${MAX_TURNS:-48}"
+MAX_TOKENS="${MAX_TOKENS:-192}"
+BATCH_SIZE="${BATCH_SIZE:-2}"
+GRAD_ACCUMULATION="${GRAD_ACCUMULATION:-8}"
 
 TRAIN_PATH="$SPLIT_DIR/train.jsonl"
 DEV_PATH="$SPLIT_DIR/dev.jsonl"
@@ -45,12 +50,19 @@ for path in "$TRAIN_PATH" "$DEV_PATH" "$TEST_PATH"; do
     fi
 done
 
+if [[ "$MAX_TURNS" -le 0 || "$MAX_TOKENS" -le 0 || "$BATCH_SIZE" -le 0 || "$GRAD_ACCUMULATION" -le 0 ]]; then
+    echo "ERROR: MAX_TURNS, MAX_TOKENS, BATCH_SIZE, and GRAD_ACCUMULATION must be positive"
+    exit 2
+fi
+
 echo "========================================================"
 echo " GuardLens NAACL validity-repair retraining"
 echo " Train:  $TRAIN_PATH"
 echo " Dev:    $DEV_PATH"
 echo " Test:   $TEST_PATH"
 echo " Output: $BASE_OUTPUT"
+echo " Window: max_turns=$MAX_TURNS max_tokens_per_turn=$MAX_TOKENS"
+echo " Batch:  micro=$BATCH_SIZE accumulation=$GRAD_ACCUMULATION effective=$((BATCH_SIZE*GRAD_ACCUMULATION))"
 echo "========================================================"
 
 # Verify split linkage before training. This reads identifiers/labels only for
@@ -85,6 +97,15 @@ for name, rows in data.items():
     print(name, len(rows), {k: sum(int(r.get('label',-1)) == k for r in rows) for k in (0,1)})
 PY
 
+# Primary model-window gate. This opens all three already-frozen partitions only
+# to assert representation compatibility; it does not compute/tune a test metric.
+python -m guardlens.evaluation.audit_model_window \
+    --train "$TRAIN_PATH" \
+    --dev "$DEV_PATH" \
+    --test "$TEST_PATH" \
+    --max-turns "$MAX_TURNS" \
+    --output "$PRECHECK_DIR/model_window.json"
+
 # Shortcut gate uses TRAIN + DEV ONLY. The held-out test split is deliberately
 # not opened by this probe. Full test AUC is reported later by eval_naacl.slurm.
 python -m guardlens.evaluation.eval_length_probe_preflight \
@@ -108,12 +129,10 @@ PY
 
 MODELS=("guardlens" "guardlens_no_fusion" "guardlens_no_cf" "turn_level" "conversation_deberta")
 EPOCHS=(25 20 20 20 20)
-BATCH=(4 4 4 4 2)
 
 for i in "${!MODELS[@]}"; do
     MODEL="${MODELS[$i]}"
     EP="${EPOCHS[$i]}"
-    BS="${BATCH[$i]}"
     OUTPUT="$BASE_OUTPUT/$MODEL"
     mkdir -p "$OUTPUT"
 
@@ -131,11 +150,12 @@ for i in "${!MODELS[@]}"; do
         --output "$OUTPUT" \
         --model "$MODEL" \
         --backbone microsoft/deberta-v3-base \
-        --batch-size "$BS" \
+        --batch-size "$BATCH_SIZE" \
+        --grad-accumulation "$GRAD_ACCUMULATION" \
         --lr 2e-4 \
         --epochs "$EP" \
-        --max-turns 32 \
-        --max-tokens 192 \
+        --max-turns "$MAX_TURNS" \
+        --max-tokens "$MAX_TOKENS" \
         --seed 42 \
         "${EXTRA_FLAGS[@]}"
 done
