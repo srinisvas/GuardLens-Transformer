@@ -36,7 +36,7 @@ class GuardLensDataset(Dataset):
         char_labels_per_turn, char_tier_weights_per_turn = [], []
 
         for turn in turns:
-            text = turn["text"][:500]
+            text = turn["text"]
             role = 0 if turn["role"] == "user" else 1
             turn_texts.append(text)
             turn_roles.append(role)

@@ -92,6 +92,38 @@ for a, b in (("train", "dev"), ("train", "test"), ("dev", "test")):
     if dup_pairs:
         raise SystemExit(f"ERROR: pair leakage {a}<->{b}: {len(dup_pairs)} pair_ids")
 
+    groups_a = {
+        str((r.get("metadata") or {}).get("consolidated_split_group", ""))
+        for r in data[a]
+        if (r.get("metadata") or {}).get("consolidated_split_group")
+    }
+    groups_b = {
+        str((r.get("metadata") or {}).get("consolidated_split_group", ""))
+        for r in data[b]
+        if (r.get("metadata") or {}).get("consolidated_split_group")
+    }
+    dup_groups = groups_a & groups_b
+    if dup_groups:
+        raise SystemExit(
+            f"ERROR: consolidated split-group leakage {a}<->{b}: {len(dup_groups)} groups"
+        )
+
+    hashes_a = {
+        str((r.get("metadata") or {}).get("normalized_user_trajectory_hash", ""))
+        for r in data[a]
+        if (r.get("metadata") or {}).get("normalized_user_trajectory_hash")
+    }
+    hashes_b = {
+        str((r.get("metadata") or {}).get("normalized_user_trajectory_hash", ""))
+        for r in data[b]
+        if (r.get("metadata") or {}).get("normalized_user_trajectory_hash")
+    }
+    dup_hashes = hashes_a & hashes_b
+    if dup_hashes:
+        raise SystemExit(
+            f"ERROR: exact user-trajectory leakage {a}<->{b}: {len(dup_hashes)} hashes"
+        )
+
 print("Split leakage/class preflight: PASS")
 for name, rows in data.items():
     print(name, len(rows), {k: sum(int(r.get('label',-1)) == k for r in rows) for k in (0,1)})
