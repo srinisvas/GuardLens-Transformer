@@ -126,6 +126,9 @@ class GuardLensLoss(nn.Module):
         labels = batch["labels"]
 
         adv_mask = labels == 1
+        cf_eligible = batch.get("cf_loss_eligible")
+        if cf_eligible is not None:
+            adv_mask = adv_mask & cf_eligible.to(labels.device).bool()
         if not adv_mask.any():
             return torch.tensor(0.0, device=cls_logits.device, requires_grad=True)
 

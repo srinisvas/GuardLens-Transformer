@@ -69,15 +69,18 @@ echo "========================================================"
 # structural sanity and does not tune anything on the held-out test split.
 python3 - "$TRAIN_PATH" "$DEV_PATH" "$TEST_PATH" <<'PY'
 import json, sys
+from guardlens.data.training_contract import is_auxiliary_detection_record, training_label
 paths = dict(zip(("train", "dev", "test"), sys.argv[1:]))
 data = {}
 for name, path in paths.items():
     rows = [json.loads(x) for x in open(path, encoding="utf-8") if x.strip()]
     if not rows:
         raise SystemExit(f"ERROR: {name} split is empty")
-    labels = {int(r.get("label", -1)) for r in rows}
+    labels = {training_label(r) for r in rows}
     if not {0, 1}.issubset(labels):
-        raise SystemExit(f"ERROR: {name} split does not contain both labels: {labels}")
+        raise SystemExit(f"ERROR: {name} split does not contain both detection labels: {labels}")
+    if name in {"dev", "test"} and any(is_auxiliary_detection_record(r) for r in rows):
+        raise SystemExit(f"ERROR: {name} must remain primary-only for the auxiliary ablation")
     data[name] = rows
 
 for a, b in (("train", "dev"), ("train", "test"), ("dev", "test")):
@@ -126,7 +129,7 @@ for a, b in (("train", "dev"), ("train", "test"), ("dev", "test")):
 
 print("Split leakage/class preflight: PASS")
 for name, rows in data.items():
-    print(name, len(rows), {k: sum(int(r.get('label',-1)) == k for r in rows) for k in (0,1)})
+    print(name, len(rows), {k: sum(training_label(r) == k for r in rows) for k in (0,1)})
 PY
 
 # Primary model-window gate. This opens all three already-frozen partitions only

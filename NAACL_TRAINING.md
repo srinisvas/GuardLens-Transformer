@@ -24,6 +24,20 @@ $HOME/staging/dataset_gen_output/naacl_frontier_benign_stress.jsonl
 
 The frozen legacy benign stress corpus is also evaluation-only.
 
+### Optional detection-only auxiliary ablation
+
+The primary A+B split is the baseline and remains authoritative. An optional
+candidate may add audited B2-rejected Dataset B outcomes to **training only**.
+Dev and test must remain the exact primary partitions. The DataGen attachment
+step withholds auxiliary records whose scenario family belongs to primary dev
+or test.
+
+For an auxiliary record, the trainer uses `detection_label` and
+`detection_loss_weight` for trajectory classification. It ignores all token,
+span, and pivot supervision for that record and excludes it from phase-3
+counterfactual loss. The original authoring `label` remains provenance and is
+never used as the auxiliary training target.
+
 ## Why the primary model window is 48 turns
 
 The repaired Dataset A primary corpus contains 1,052 records and has a maximum of 48 realized user+assistant turns. Its class-conditional user-turn histograms are exactly matched. The old 32-turn model setting would truncate 314/1,052 primary Dataset A examples.

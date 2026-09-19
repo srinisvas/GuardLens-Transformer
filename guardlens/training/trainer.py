@@ -17,6 +17,10 @@ from guardlens.data.dataset import (
     GuardLensDataset, GuardLensCollator, FlatConversationCollator,
     build_weighted_sampler,
 )
+from guardlens.data.training_contract import (
+    is_auxiliary_detection_record,
+    training_label,
+)
 from guardlens.models import MODEL_REGISTRY
 from guardlens.training.loss import GuardLensLoss
 from guardlens.training.schedule import get_current_phase, get_lambda_schedule
@@ -68,6 +72,7 @@ def train_epoch(
         span_weights = batch["span_weights"].to(device)
         labels = batch["labels"].to(device)
         sample_weights = batch["sample_weights"].to(device)
+        cf_loss_eligible = batch["cf_loss_eligible"].to(device)
         pivot_labels = batch["pivot_labels"].to(device)
         pivot_kind_labels = batch["pivot_kind_labels"].to(device)
 
@@ -112,6 +117,7 @@ def train_epoch(
                     "turn_mask": turn_mask,
                     "role_ids": role_ids,
                     "labels": labels,
+                    "cf_loss_eligible": cf_loss_eligible,
                 }, outputs, cf_progress=cf_progress)
                 loss = loss + lambda_cf * l_cf
                 total_cf_loss += l_cf.item()
@@ -406,7 +412,7 @@ def train(
         print(f"  Train: {len(train_records)}, Dev: {len(val_records)}, Test: {len(test_records)}")
 
     # ---- Compute class balance ----
-    n_pos = sum(1 for r in train_records if r.get("label") == 1)
+    n_pos = sum(1 for r in train_records if training_label(r) == 1)
     n_neg = len(train_records) - n_pos
     if config.pos_weight <= 0:
         config.pos_weight = n_neg / max(1, n_pos)
@@ -415,6 +421,9 @@ def train(
     # ---- Print tier distribution ----
     tier_dist = Counter(r.get("supervision_tier", "?") for r in train_records)
     print(f"  Supervision tiers: {dict(tier_dist.most_common())}")
+    aux_count = sum(is_auxiliary_detection_record(r) for r in train_records)
+    if aux_count:
+        print(f"  Detection-only auxiliary training records: {aux_count}")
 
     # ---- Datasets ----
     train_dataset = GuardLensDataset(train_records, config)

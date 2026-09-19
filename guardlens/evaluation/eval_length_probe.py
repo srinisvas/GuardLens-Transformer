@@ -30,6 +30,8 @@ from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 
+from guardlens.data.training_contract import training_label
+
 
 FEATURE_NAMES = [
     "n_user_turns",
@@ -75,7 +77,7 @@ def extract_features(record: Dict) -> np.ndarray:
 
 def make_xy(records: Sequence[Dict]) -> Tuple[np.ndarray, np.ndarray]:
     x = np.stack([extract_features(r) for r in records], axis=0)
-    y = np.asarray([int(r.get("label", 0)) for r in records], dtype=np.float64)
+    y = np.asarray([training_label(r) for r in records], dtype=np.float64)
     return x, y
 
 

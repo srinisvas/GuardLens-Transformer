@@ -11,6 +11,13 @@ import torch
 from torch.utils.data import Dataset, WeightedRandomSampler
 
 from guardlens.config import GuardLensConfig
+from guardlens.data.training_contract import (
+    classification_loss_weight,
+    counterfactual_loss_eligible,
+    is_auxiliary_detection_record,
+    localization_supervision_ignored,
+    training_label,
+)
 
 PIVOT_KIND_MAP = {
     "lexical_pivot": 0,
@@ -34,6 +41,8 @@ class GuardLensDataset(Dataset):
         turns = record["turns"][:self.config.max_turns]
         turn_texts, turn_roles = [], []
         char_labels_per_turn, char_tier_weights_per_turn = [], []
+        auxiliary_detection_only = is_auxiliary_detection_record(record)
+        localization_ignore = localization_supervision_ignored(record)
 
         for turn in turns:
             text = turn["text"]
@@ -44,6 +53,8 @@ class GuardLensDataset(Dataset):
             char_weights = [0.0] * len(text)
 
             for span in turn.get("span_annotations", []):
+                if localization_ignore:
+                    continue
                 cs = span.get("char_start", 0)
                 ce = span.get("char_end", 0)
                 causal_type = span.get("causal_type", "unvalidated")
@@ -82,8 +93,11 @@ class GuardLensDataset(Dataset):
         return {
             "turn_texts": turn_texts,
             "turn_roles": turn_roles,
-            "label": record["label"],
-            "loss_weight": record.get("loss_weight", 0.5),
+            "label": training_label(record),
+            "loss_weight": classification_loss_weight(record),
+            "auxiliary_detection_only": auxiliary_detection_only,
+            "localization_supervision_ignore": localization_ignore,
+            "cf_loss_eligible": counterfactual_loss_eligible(record),
             "char_labels": char_labels_per_turn,
             "char_tier_weights": char_tier_weights_per_turn,
             "conversation_id": record.get("conversation_id", ""),
@@ -110,6 +124,7 @@ class GuardLensCollator:
         all_turn_masks, all_role_ids = [], []
         all_token_labels, all_span_weights = [], []
         all_labels, all_sample_weights = [], []
+        all_cf_loss_eligible = []
         all_pivot_labels, all_pivot_kind_labels = [], []
         metadata = []
 
@@ -174,6 +189,7 @@ class GuardLensCollator:
             all_span_weights.append(torch.stack(turn_span_weights))
             all_labels.append(item["label"])
             all_sample_weights.append(item["loss_weight"])
+            all_cf_loss_eligible.append(item["cf_loss_eligible"])
 
             pivot_id = item["pivot_turn_id"]
             if item.get("pivot_supervision_ignore", False):
@@ -194,6 +210,8 @@ class GuardLensCollator:
                 "pivot_turn_id": item["pivot_turn_id"],
                 "pivot_kind": item.get("pivot_kind", "none"),
                 "pivot_supervision_ignore": item.get("pivot_supervision_ignore", False),
+                "auxiliary_detection_only": item.get("auxiliary_detection_only", False),
+                "localization_supervision_ignore": item.get("localization_supervision_ignore", False),
                 "supervision_tier": item["supervision_tier"],
                 "transfer_tier": item["transfer_tier"],
                 "benign_status": item["benign_status"],
@@ -208,6 +226,7 @@ class GuardLensCollator:
             "span_weights": torch.stack(all_span_weights),
             "labels": torch.tensor(all_labels, dtype=torch.long),
             "sample_weights": torch.tensor(all_sample_weights, dtype=torch.float),
+            "cf_loss_eligible": torch.tensor(all_cf_loss_eligible, dtype=torch.bool),
             "pivot_labels": torch.tensor(all_pivot_labels, dtype=torch.long),
             "pivot_kind_labels": torch.tensor(all_pivot_kind_labels, dtype=torch.long),
             "metadata": metadata,
@@ -223,6 +242,7 @@ class FlatConversationCollator:
     def __call__(self, batch: List[Dict]) -> Dict[str, torch.Tensor]:
         all_input_ids, all_attention_masks = [], []
         all_token_labels, all_labels, all_sample_weights = [], [], []
+        all_cf_loss_eligible = []
         metadata = []
         for item in batch:
             full_text = f" {self.sep} ".join(item["turn_texts"])
@@ -258,6 +278,7 @@ class FlatConversationCollator:
             all_token_labels.append(tok_labels)
             all_labels.append(item["label"])
             all_sample_weights.append(item["loss_weight"])
+            all_cf_loss_eligible.append(item["cf_loss_eligible"])
             metadata.append({
                 "conversation_id": item["conversation_id"],
                 "difficulty": item["difficulty"],
@@ -278,6 +299,7 @@ class FlatConversationCollator:
             "span_weights": torch.ones(B, self.config.max_total_tokens, dtype=torch.float) * 0.4,
             "labels": torch.tensor(all_labels, dtype=torch.long),
             "sample_weights": torch.tensor(all_sample_weights, dtype=torch.float),
+            "cf_loss_eligible": torch.tensor(all_cf_loss_eligible, dtype=torch.bool),
             "pivot_labels": torch.full((B,), 0, dtype=torch.long),
             "pivot_kind_labels": torch.full((B,), 4, dtype=torch.long),
             "metadata": metadata,

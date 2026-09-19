@@ -15,6 +15,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from guardlens.config import GuardLensConfig
+from guardlens.data.training_contract import is_auxiliary_detection_record
 from guardlens.data.dataset import GuardLensCollator, GuardLensDataset
 from guardlens.models import MODEL_REGISTRY
 from guardlens.training.loss import GuardLensLoss
@@ -71,9 +72,10 @@ def main() -> None:
     if args.batch_size < 2:
         raise ValueError("batch-size must be >=2 so both classes are represented")
 
-    records = load_jsonl(args.train)
+    all_records = load_jsonl(args.train)
+    records = [r for r in all_records if not is_auxiliary_detection_record(r)]
     if not records:
-        raise RuntimeError("training split is empty")
+        raise RuntimeError("training split has no primary records for the representation smoke")
     over = [r for r in records if len(r.get("turns", [])) > args.max_turns]
     if over:
         raise RuntimeError(
