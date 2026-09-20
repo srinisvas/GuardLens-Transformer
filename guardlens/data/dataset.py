@@ -1,34 +1,27 @@
-"""Dataset and collation for GuardLens — v11 dataset compatible.
-
-NAACL repair addition: ``pivot_supervision_ignore`` distinguishes an unknown
-malicious pivot from a true no-pivot benign example. This prevents absence of
-counterfactual evidence from being trained as evidence for the no-pivot class.
-"""
+"""Fail-closed dataset and dynamic collator for causal localization."""
+from __future__ import annotations
 
 from typing import Dict, List
 
 import torch
-from torch.utils.data import Dataset, WeightedRandomSampler
+from torch.utils.data import Dataset
 
 from guardlens.config import GuardLensConfig
+from guardlens.data.causal_targets import (
+    build_evidence_turn_targets,
+    span_supervision_target,
+)
 from guardlens.data.training_contract import (
     classification_loss_weight,
-    counterfactual_loss_eligible,
     is_auxiliary_detection_record,
     localization_supervision_ignored,
     training_label,
 )
 
-PIVOT_KIND_MAP = {
-    "lexical_pivot": 0,
-    "contextual_pivot": 1,
-    "distributed": 2,
-    "misleading_decoy": 3,
-    "none": 4,
-}
-
 
 class GuardLensDataset(Dataset):
+    """Convert frozen records to model-visible text and supervision targets."""
+
     def __init__(self, records: List[Dict], config: GuardLensConfig):
         self.records = records
         self.config = config
@@ -38,148 +31,228 @@ class GuardLensDataset(Dataset):
 
     def __getitem__(self, idx):
         record = self.records[idx]
-        turns = record["turns"][:self.config.max_turns]
-        turn_texts, turn_roles = [], []
-        char_labels_per_turn, char_tier_weights_per_turn = [], []
-        auxiliary_detection_only = is_auxiliary_detection_record(record)
+        cid = str(record.get("conversation_id", "")) or "<missing>"
+        turns = list(record.get("turns", []))
+        if not turns:
+            raise RuntimeError(f"{cid}: empty realized trajectory")
+        if len(turns) > self.config.max_turns:
+            raise RuntimeError(
+                f"{cid}: {len(turns)} turns exceed max_turns={self.config.max_turns}; "
+                "silent turn truncation is forbidden"
+            )
+
+        expected_ids = list(range(len(turns)))
+        realized_ids = [turn.get("turn_id") for turn in turns]
+        if realized_ids != expected_ids:
+            raise RuntimeError(
+                f"{cid}: realized turn_id values must equal indices 0..{len(turns)-1}"
+            )
+
         localization_ignore = localization_supervision_ignored(record)
+        turn_texts: List[str] = []
+        turn_roles: List[int] = []
+        char_labels_per_turn: List[List[int]] = []
+        char_weights_per_turn: List[List[float]] = []
 
         for turn in turns:
-            text = turn["text"]
-            role = 0 if turn["role"] == "user" else 1
+            text = str(turn.get("text", ""))
+            role_name = str(turn.get("role", "")).lower()
+            if role_name not in {"user", "assistant"}:
+                raise RuntimeError(f"{cid}: unsupported turn role {role_name!r}")
             turn_texts.append(text)
-            turn_roles.append(role)
+            turn_roles.append(0 if role_name == "user" else 1)
+
             char_labels = [-1] * len(text)
             char_weights = [0.0] * len(text)
-
-            for span in turn.get("span_annotations", []):
-                if localization_ignore:
-                    continue
-                cs = span.get("char_start", 0)
-                ce = span.get("char_end", 0)
-                causal_type = span.get("causal_type", "unvalidated")
-                label_name = span.get("label", "")
-                span_tier = span.get("supervision_tier", "construction")
-                tier_weight = self.config.span_tier_weights.get(span_tier, 0.40)
-
-                if causal_type == "causal":
-                    token_label = 1
-                elif causal_type == "incidental":
-                    token_label = 0
-                elif label_name in self.config.causal_span_labels:
-                    token_label = 1
-                elif label_name in self.config.incidental_span_labels:
-                    token_label = 0
-                else:
-                    continue
-
-                if not isinstance(cs, int) or not isinstance(ce, int):
-                    continue
-                if cs < 0 or ce <= cs:
-                    continue
-                for i in range(cs, min(ce, len(text))):
-                    if token_label == 1 or char_labels[i] == -1:
-                        char_labels[i] = token_label
-                        char_weights[i] = tier_weight
+            if not localization_ignore:
+                for span in turn.get("span_annotations", []) or []:
+                    target = span_supervision_target(span)
+                    if target is None:
+                        continue
+                    token_label, tier_weight = target
+                    cs = span.get("char_start")
+                    ce = span.get("char_end")
+                    if (
+                        isinstance(cs, bool) or isinstance(ce, bool)
+                        or not isinstance(cs, int) or not isinstance(ce, int)
+                        or cs < 0 or ce <= cs or ce > len(text)
+                    ):
+                        raise RuntimeError(
+                            f"{cid}: invalid supervised span offsets {cs!r}:{ce!r} "
+                            f"for text length {len(text)}"
+                        )
+                    for char_idx in range(cs, ce):
+                        # Positive evidence wins only if overlapping annotations disagree.
+                        if token_label == 1 or char_labels[char_idx] == -1:
+                            char_labels[char_idx] = token_label
+                            char_weights[char_idx] = float(tier_weight)
 
             char_labels_per_turn.append(char_labels)
-            char_tier_weights_per_turn.append(char_weights)
+            char_weights_per_turn.append(char_weights)
 
-        pivot_turn_id = record.get("pivot_turn_id")
-        pivot_kind = record.get("pivot_kind", "none")
-        pivot_kind_id = PIVOT_KIND_MAP.get(pivot_kind, 4)
-        pivot_supervision_ignore = bool(record.get("pivot_supervision_ignore", False))
+        evidence_turn_labels, evidence_turn_weights = build_evidence_turn_targets(
+            record, turns
+        )
 
         return {
             "turn_texts": turn_texts,
             "turn_roles": turn_roles,
             "label": training_label(record),
-            "loss_weight": classification_loss_weight(record),
-            "auxiliary_detection_only": auxiliary_detection_only,
+            "detection_weight": classification_loss_weight(record),
+            "auxiliary_detection_only": is_auxiliary_detection_record(record),
             "localization_supervision_ignore": localization_ignore,
-            "cf_loss_eligible": counterfactual_loss_eligible(record),
             "char_labels": char_labels_per_turn,
-            "char_tier_weights": char_tier_weights_per_turn,
+            "char_tier_weights": char_weights_per_turn,
+            "evidence_turn_labels": evidence_turn_labels,
+            "evidence_turn_weights": evidence_turn_weights,
             "conversation_id": record.get("conversation_id", ""),
             "difficulty": record.get("difficulty", "medium"),
             "family": record.get("family", "unknown"),
-            "pivot_turn_id": pivot_turn_id,
-            "pivot_kind": pivot_kind,
-            "pivot_kind_id": pivot_kind_id,
-            "pivot_supervision_ignore": pivot_supervision_ignore,
-            "supervision_tier": record.get("supervision_tier", "construction"),
+            "evidence_turn_ids": list(record.get("evidence_turn_ids") or []),
+            "pivot_turn_id": record.get("pivot_turn_id"),
+            "pivot_kind": record.get("pivot_kind", "none"),
+            "supervision_tier": record.get("supervision_tier", "unknown"),
             "transfer_tier": record.get("transfer_tier", "unknown"),
             "benign_status": record.get("benign_status", "none"),
         }
 
 
 class GuardLensCollator:
+    """Tokenize without truncation and dynamically pad each batch.
+
+    max_tokens_per_turn is enforced as a hard ceiling. A record that exceeds it
+    raises instead of silently dropping text or localization targets.
+    """
+
     def __init__(self, tokenizer, config: GuardLensConfig):
         self.tokenizer = tokenizer
         self.config = config
+        self.pad_token_id = (
+            tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+        )
+
+    def _encode_turn(self, item: Dict, t_idx: int) -> Dict:
+        text = item["turn_texts"][t_idx]
+        enc = self.tokenizer(
+            text,
+            padding=False,
+            truncation=False,
+            return_offsets_mapping=True,
+            add_special_tokens=True,
+        )
+        ids = list(enc["input_ids"])
+        offsets = list(enc["offset_mapping"])
+        if len(ids) > self.config.max_tokens_per_turn:
+            cid = item.get("conversation_id", "<missing>")
+            raise RuntimeError(
+                f"{cid}: turn {t_idx} tokenizes to {len(ids)} tokens, exceeding "
+                f"max_tokens_per_turn={self.config.max_tokens_per_turn}; "
+                "silent token truncation is forbidden"
+            )
+
+        char_labels = item["char_labels"][t_idx]
+        char_weights = item["char_tier_weights"][t_idx]
+        token_labels = [-1] * len(ids)
+        token_weights = [0.0] * len(ids)
+
+        for tok_idx, pair in enumerate(offsets):
+            start_i, end_i = int(pair[0]), int(pair[1])
+            if end_i <= start_i:
+                continue
+            span_labels = char_labels[start_i:end_i]
+            span_weights = char_weights[start_i:end_i]
+            if not span_labels:
+                continue
+            max_label = max(span_labels)
+            if max_label >= 0:
+                token_labels[tok_idx] = max_label
+                token_weights[tok_idx] = max(span_weights) if span_weights else 0.0
+
+        return {
+            "ids": ids,
+            "token_labels": token_labels,
+            "token_weights": token_weights,
+        }
 
     def __call__(self, batch: List[Dict]) -> Dict[str, torch.Tensor]:
-        max_turns = min(max(len(item["turn_texts"]) for item in batch), self.config.max_turns)
-        all_input_ids, all_attention_masks = [], []
-        all_turn_masks, all_role_ids = [], []
-        all_token_labels, all_span_weights = [], []
-        all_labels, all_sample_weights = [], []
-        all_cf_loss_eligible = []
-        all_pivot_labels, all_pivot_kind_labels = [], []
+        if not batch:
+            raise RuntimeError("empty batch")
+
+        max_turns = max(len(item["turn_texts"]) for item in batch)
+        if max_turns > self.config.max_turns:
+            raise RuntimeError("batch exceeds configured max_turns")
+
+        encoded_batch: List[List[Dict]] = []
+        max_seq_len = 1
+        for item in batch:
+            encoded_turns = []
+            for t_idx in range(len(item["turn_texts"])):
+                encoded = self._encode_turn(item, t_idx)
+                encoded_turns.append(encoded)
+                max_seq_len = max(max_seq_len, len(encoded["ids"]))
+            encoded_batch.append(encoded_turns)
+
+        all_input_ids = []
+        all_attention_masks = []
+        all_turn_masks = []
+        all_role_ids = []
+        all_token_labels = []
+        all_span_weights = []
+        all_labels = []
+        all_detection_weights = []
+        all_turn_labels = []
+        all_turn_weights = []
         metadata = []
 
-        for item in batch:
-            turn_input_ids, turn_attention_masks = [], []
-            turn_mask, turn_role_ids = [], []
-            turn_token_labels, turn_span_weights = [], []
+        for item, encoded_turns in zip(batch, encoded_batch):
+            turn_input_ids = []
+            turn_attention_masks = []
+            turn_mask = []
+            turn_role_ids = []
+            turn_token_labels = []
+            turn_span_weights = []
+            turn_labels = []
+            turn_weights = []
 
             for t_idx in range(max_turns):
-                if t_idx < len(item["turn_texts"]):
-                    text = item["turn_texts"][t_idx]
-                    role = item["turn_roles"][t_idx]
-                    char_labels = item["char_labels"][t_idx]
-                    char_weights = item["char_tier_weights"][t_idx]
-                    enc = self.tokenizer(
-                        text,
-                        max_length=self.config.max_tokens_per_turn,
-                        padding="max_length",
-                        truncation=True,
-                        return_offsets_mapping=True,
-                        return_tensors="pt",
-                    )
-                    input_ids = enc["input_ids"].squeeze(0)
-                    attn_mask = enc["attention_mask"].squeeze(0)
-                    offsets = enc["offset_mapping"].squeeze(0)
-                    tok_labels = torch.full((self.config.max_tokens_per_turn,), -1, dtype=torch.long)
-                    tok_weights = torch.zeros(self.config.max_tokens_per_turn, dtype=torch.float)
-
-                    for tok_idx, (start, end) in enumerate(offsets):
-                        start_i, end_i = int(start), int(end)
-                        if end_i <= start_i or attn_mask[tok_idx] == 0:
-                            continue
-                        span_labels = char_labels[start_i:end_i]
-                        span_wts = char_weights[start_i:end_i]
-                        if not span_labels:
-                            continue
-                        max_label = max(span_labels)
-                        if max_label >= 0:
-                            tok_labels[tok_idx] = max_label
-                            tok_weights[tok_idx] = max(span_wts) if span_wts else 0.40
-
-                    turn_input_ids.append(input_ids)
-                    turn_attention_masks.append(attn_mask)
+                if t_idx < len(encoded_turns):
+                    encoded = encoded_turns[t_idx]
+                    n = len(encoded["ids"])
+                    pad = max_seq_len - n
+                    turn_input_ids.append(torch.tensor(
+                        encoded["ids"] + [self.pad_token_id] * pad,
+                        dtype=torch.long,
+                    ))
+                    turn_attention_masks.append(torch.tensor(
+                        [1] * n + [0] * pad, dtype=torch.long
+                    ))
+                    turn_token_labels.append(torch.tensor(
+                        encoded["token_labels"] + [-1] * pad, dtype=torch.long
+                    ))
+                    turn_span_weights.append(torch.tensor(
+                        encoded["token_weights"] + [0.0] * pad, dtype=torch.float
+                    ))
                     turn_mask.append(1)
-                    turn_role_ids.append(role)
-                    turn_token_labels.append(tok_labels)
-                    turn_span_weights.append(tok_weights)
+                    turn_role_ids.append(item["turn_roles"][t_idx])
+                    turn_labels.append(item["evidence_turn_labels"][t_idx])
+                    turn_weights.append(item["evidence_turn_weights"][t_idx])
                 else:
-                    s = self.config.max_tokens_per_turn
-                    turn_input_ids.append(torch.zeros(s, dtype=torch.long))
-                    turn_attention_masks.append(torch.zeros(s, dtype=torch.long))
+                    turn_input_ids.append(torch.full(
+                        (max_seq_len,), self.pad_token_id, dtype=torch.long
+                    ))
+                    turn_attention_masks.append(torch.zeros(
+                        max_seq_len, dtype=torch.long
+                    ))
+                    turn_token_labels.append(torch.full(
+                        (max_seq_len,), -1, dtype=torch.long
+                    ))
+                    turn_span_weights.append(torch.zeros(
+                        max_seq_len, dtype=torch.float
+                    ))
                     turn_mask.append(0)
                     turn_role_ids.append(0)
-                    turn_token_labels.append(torch.full((s,), -1, dtype=torch.long))
-                    turn_span_weights.append(torch.zeros(s, dtype=torch.float))
+                    turn_labels.append(-1)
+                    turn_weights.append(0.0)
 
             all_input_ids.append(torch.stack(turn_input_ids))
             all_attention_masks.append(torch.stack(turn_attention_masks))
@@ -188,30 +261,20 @@ class GuardLensCollator:
             all_token_labels.append(torch.stack(turn_token_labels))
             all_span_weights.append(torch.stack(turn_span_weights))
             all_labels.append(item["label"])
-            all_sample_weights.append(item["loss_weight"])
-            all_cf_loss_eligible.append(item["cf_loss_eligible"])
-
-            pivot_id = item["pivot_turn_id"]
-            if item.get("pivot_supervision_ignore", False):
-                pivot_idx = -1
-            elif pivot_id is None:
-                pivot_idx = max_turns
-            elif isinstance(pivot_id, int) and 0 <= pivot_id < max_turns:
-                pivot_idx = pivot_id
-            else:
-                pivot_idx = -1
-
-            all_pivot_labels.append(pivot_idx)
-            all_pivot_kind_labels.append(item["pivot_kind_id"])
+            all_detection_weights.append(item["detection_weight"])
+            all_turn_labels.append(torch.tensor(turn_labels, dtype=torch.long))
+            all_turn_weights.append(torch.tensor(turn_weights, dtype=torch.float))
             metadata.append({
                 "conversation_id": item["conversation_id"],
                 "difficulty": item["difficulty"],
                 "family": item["family"],
+                "evidence_turn_ids": item["evidence_turn_ids"],
                 "pivot_turn_id": item["pivot_turn_id"],
-                "pivot_kind": item.get("pivot_kind", "none"),
-                "pivot_supervision_ignore": item.get("pivot_supervision_ignore", False),
-                "auxiliary_detection_only": item.get("auxiliary_detection_only", False),
-                "localization_supervision_ignore": item.get("localization_supervision_ignore", False),
+                "pivot_kind": item["pivot_kind"],
+                "auxiliary_detection_only": item["auxiliary_detection_only"],
+                "localization_supervision_ignore": item[
+                    "localization_supervision_ignore"
+                ],
                 "supervision_tier": item["supervision_tier"],
                 "transfer_tier": item["transfer_tier"],
                 "benign_status": item["benign_status"],
@@ -225,25 +288,30 @@ class GuardLensCollator:
             "token_labels": torch.stack(all_token_labels),
             "span_weights": torch.stack(all_span_weights),
             "labels": torch.tensor(all_labels, dtype=torch.long),
-            "sample_weights": torch.tensor(all_sample_weights, dtype=torch.float),
-            "cf_loss_eligible": torch.tensor(all_cf_loss_eligible, dtype=torch.bool),
-            "pivot_labels": torch.tensor(all_pivot_labels, dtype=torch.long),
-            "pivot_kind_labels": torch.tensor(all_pivot_kind_labels, dtype=torch.long),
+            "detection_weights": torch.tensor(
+                all_detection_weights, dtype=torch.float
+            ),
+            "turn_labels": torch.stack(all_turn_labels),
+            "turn_weights": torch.stack(all_turn_weights),
             "metadata": metadata,
         }
 
 
 class FlatConversationCollator:
+    """Legacy flat baseline collator retained until baseline migration."""
+
     def __init__(self, tokenizer, config: GuardLensConfig):
         self.tokenizer = tokenizer
         self.config = config
         self.sep = tokenizer.sep_token or "[SEP]"
 
     def __call__(self, batch: List[Dict]) -> Dict[str, torch.Tensor]:
-        all_input_ids, all_attention_masks = [], []
-        all_token_labels, all_labels, all_sample_weights = [], [], []
-        all_cf_loss_eligible = []
+        ids_list = []
+        masks = []
+        labels = []
+        detection_weights = []
         metadata = []
+
         for item in batch:
             full_text = f" {self.sep} ".join(item["turn_texts"])
             enc = self.tokenizer(
@@ -251,69 +319,35 @@ class FlatConversationCollator:
                 max_length=self.config.max_total_tokens,
                 padding="max_length",
                 truncation=True,
-                return_offsets_mapping=True,
                 return_tensors="pt",
             )
-            input_ids = enc["input_ids"].squeeze(0)
-            attn_mask = enc["attention_mask"].squeeze(0)
-            offsets = enc["offset_mapping"].squeeze(0)
-            char_labels = []
-            sep_pad = [-1] * len(f" {self.sep} ")
-            for cl in item["char_labels"]:
-                char_labels.extend(cl)
-                char_labels.extend(sep_pad)
-            char_labels = char_labels[:len(full_text)]
-            tok_labels = torch.full((self.config.max_total_tokens,), -1, dtype=torch.long)
-            for tok_idx, (start, end) in enumerate(offsets):
-                start_i, end_i = int(start), int(end)
-                if end_i <= start_i or attn_mask[tok_idx] == 0:
-                    continue
-                if start_i < len(char_labels):
-                    span = char_labels[start_i:min(end_i, len(char_labels))]
-                    valid = [s for s in span if s >= 0]
-                    tok_labels[tok_idx] = max(valid) if valid else -1
-
-            all_input_ids.append(input_ids)
-            all_attention_masks.append(attn_mask)
-            all_token_labels.append(tok_labels)
-            all_labels.append(item["label"])
-            all_sample_weights.append(item["loss_weight"])
-            all_cf_loss_eligible.append(item["cf_loss_eligible"])
+            ids_list.append(enc["input_ids"].squeeze(0))
+            masks.append(enc["attention_mask"].squeeze(0))
+            labels.append(item["label"])
+            detection_weights.append(item["detection_weight"])
             metadata.append({
                 "conversation_id": item["conversation_id"],
                 "difficulty": item["difficulty"],
                 "family": item["family"],
-                "pivot_turn_id": item["pivot_turn_id"],
-                "supervision_tier": item.get("supervision_tier", "unknown"),
-                "transfer_tier": item.get("transfer_tier", "unknown"),
-                "benign_status": item.get("benign_status", "none"),
+                "evidence_turn_ids": item["evidence_turn_ids"],
+                "supervision_tier": item["supervision_tier"],
             })
 
-        B = len(all_input_ids)
+        batch_size = len(batch)
         return {
-            "input_ids": torch.stack(all_input_ids),
-            "attention_mask": torch.stack(all_attention_masks),
-            "turn_mask": torch.ones(B, 1, dtype=torch.long),
-            "role_ids": torch.zeros(B, 1, dtype=torch.long),
-            "token_labels": torch.stack(all_token_labels),
-            "span_weights": torch.ones(B, self.config.max_total_tokens, dtype=torch.float) * 0.4,
-            "labels": torch.tensor(all_labels, dtype=torch.long),
-            "sample_weights": torch.tensor(all_sample_weights, dtype=torch.float),
-            "cf_loss_eligible": torch.tensor(all_cf_loss_eligible, dtype=torch.bool),
-            "pivot_labels": torch.full((B,), 0, dtype=torch.long),
-            "pivot_kind_labels": torch.full((B,), 4, dtype=torch.long),
+            "input_ids": torch.stack(ids_list),
+            "attention_mask": torch.stack(masks),
+            "turn_mask": torch.ones(batch_size, 1, dtype=torch.long),
+            "role_ids": torch.zeros(batch_size, 1, dtype=torch.long),
+            "token_labels": torch.full(
+                (batch_size, self.config.max_total_tokens), -1, dtype=torch.long
+            ),
+            "span_weights": torch.zeros(
+                batch_size, self.config.max_total_tokens, dtype=torch.float
+            ),
+            "labels": torch.tensor(labels, dtype=torch.long),
+            "detection_weights": torch.tensor(detection_weights, dtype=torch.float),
+            "turn_labels": torch.full((batch_size, 1), -1, dtype=torch.long),
+            "turn_weights": torch.zeros(batch_size, 1, dtype=torch.float),
             "metadata": metadata,
         }
-
-
-def build_weighted_sampler(records: List[Dict], config: GuardLensConfig) -> WeightedRandomSampler:
-    weights = []
-    for r in records:
-        tier = r.get("supervision_tier", "construction")
-        if tier in ("cf_strong", "cf_weak"):
-            weights.append(float(config.cf_oversample_factor))
-        elif tier == "llm_confirmed":
-            weights.append(1.5)
-        else:
-            weights.append(1.0)
-    return WeightedRandomSampler(weights=weights, num_samples=len(records), replacement=True)
