@@ -117,9 +117,7 @@ required = [
     "torch",
     "transformers",
     "accelerate",
-    "sentencepiece",
-    "google.protobuf",
-    "tiktoken",
+    "tokenizers",
     "numpy",
     "scipy",
     "requests",
@@ -146,16 +144,16 @@ else:
 PY
 
 echo
-echo "=== DeBERTa-v3 tokenizer verification ==="
+echo "=== ModernBERT tokenizer/config verification ==="
 python - <<'PY'
 from transformers import AutoConfig, AutoTokenizer
 
-name = "microsoft/deberta-v3-base"
+name = "answerdotai/ModernBERT-large"
 tokenizer = AutoTokenizer.from_pretrained(name, use_fast=True)
 config = AutoConfig.from_pretrained(name)
 
 if not getattr(tokenizer, "is_fast", False):
-    raise RuntimeError("DeBERTa tokenizer is not fast; offset mapping is required")
+    raise RuntimeError("ModernBERT tokenizer is not fast; offset mapping is required")
 
 probe = tokenizer(
     "GuardLens tokenizer offset verification.",
@@ -167,15 +165,38 @@ if "offset_mapping" not in probe:
     raise RuntimeError("Tokenizer did not return offset mappings")
 
 limit = getattr(config, "max_position_embeddings", None)
-if limit != 512:
+hidden = getattr(config, "hidden_size", None)
+if limit != 8192:
     raise RuntimeError(
-        f"Unexpected DeBERTa max_position_embeddings={limit}; expected 512"
+        f"Unexpected ModernBERT max_position_embeddings={limit}; expected 8192"
+    )
+if hidden != 1024:
+    raise RuntimeError(
+        f"Unexpected ModernBERT hidden_size={hidden}; expected 1024"
     )
 
 print(f"  tokenizer: {tokenizer.__class__.__name__}")
 print(f"  fast:      {tokenizer.is_fast}")
 print(f"  positions: {limit}")
+print(f"  hidden:    {hidden}")
 print(f"  offsets:   OK ({len(probe['offset_mapping'])} entries)")
+PY
+
+echo
+echo "=== Caching ModernBERT-large weights ==="
+python - <<'PY'
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="answerdotai/ModernBERT-large",
+    allow_patterns=[
+        "*.json",
+        "*.safetensors",
+        "tokenizer*",
+        "special_tokens_map.json",
+    ],
+)
+print("  ModernBERT-large snapshot cached")
 PY
 
 echo
@@ -187,7 +208,9 @@ from guardlens.data.causal_targets import build_evidence_turn_targets
 from guardlens.training.schedule import get_lambda_schedule
 
 cfg = GuardLensConfig()
-assert cfg.backbone_name == "microsoft/deberta-v3-base"
+assert cfg.backbone_name == "answerdotai/ModernBERT-large"
+assert cfg.backbone_dim == 1024
+assert cfg.max_tokens_per_turn == 8192
 assert get_lambda_schedule(5, cfg)[1] == 0.25
 assert get_lambda_schedule(9, cfg)[1] == 1.0
 print("  GuardLens imports: OK")
@@ -199,7 +222,4 @@ echo "========================================================"
 echo " Environment ready"
 echo " Activate with:"
 echo "   conda activate $ENV_PREFIX"
-echo
-echo " Optional full backbone cache warm-up:"
-echo "   python -c \"from transformers import AutoModel; AutoModel.from_pretrained('microsoft/deberta-v3-base')\""
 echo "========================================================"
