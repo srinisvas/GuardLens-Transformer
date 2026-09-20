@@ -218,7 +218,9 @@ Weak intervention evidence receives weight 0.70.
 A weak evidence turn is not upgraded merely because another turn in the same
 record made the record-level tier `cf_strong`. Turn confidence is derived from
 the intervention status on that turn or from the strongest supported span on
-that turn.
+that turn. If `evidence_turn_ids` establishes turn membership but neither a
+turn-local intervention status nor a supported span is present, the turn uses a
+conservative weak-confidence weight of 0.70 independent of the record tier.
 
 ## 5. Detection loss contract
 
@@ -266,16 +268,26 @@ Phase 2:
 
 Detection remains fully weighted throughout.
 
-Localization begins at 0.25 of its configured weight at the first joint epoch
-and ramps linearly to full weight at the final joint epoch.
+Localization begins at 0.25 of its configured weight at the first joint epoch.
+With the canonical `localization_ramp_epochs=5`, it reaches full weight at
+epoch 9 and then remains at full weight for epochs 9 through 19.
+
+This early plateau is deliberate. The optimizer still uses OneCycleLR, whose
+cosine decay reduces the learning rate in the latter part of training. Letting
+the localization ramp reach 1.0 only at epoch 19 would make the advertised full
+localization weight largely cosmetic because the LR is already near its floor.
+The five-epoch ramp gives the turn/span heads substantial full-weight training
+while the LR is still materially high, without changing the detection optimizer
+schedule.
 
 There is no Phase 3 in the canonical recipe.
 
 There is no weighted CF sampler.
 
-The canonical schedule runs all configured epochs by default so the localization
-ramp actually reaches full weight. Early stopping is disabled by default;
-`patience > 0` exists only as an explicit non-canonical override.
+The canonical schedule runs all configured epochs by default. Early stopping is
+disabled by default; `patience > 0` exists only as an explicit non-canonical
+override. Training logs report both the current LR and localization lambda so
+their interaction is directly auditable.
 
 ## 7. Representation and truncation contract
 
@@ -354,6 +366,11 @@ The audit is train/dev only and reports:
 - backbone maximum position capacity
 
 A positive causal span beyond the representation ceiling is a hard failure.
+
+Structural audit failures such as empty trajectories, turn-ID mismatches,
+unsupported roles, or trajectories exceeding `max_turns` are accumulated into
+the failed audit report rather than escaping as a traceback. The audit therefore
+remains fail-closed while still producing its intended diagnostic JSON.
 
 The trainer independently fails if either train or dev lacks both detection
 classes, both positive/negative evidence-turn targets, or both
@@ -440,7 +457,10 @@ migration is complete.
 
 Both canonical launchers require the checked-out branch to be
 `naacl-causal-localization-redesign`, reject tracked uncommitted changes, and
-export the exact Git commit SHA into the training process.
+export the exact Git commit SHA into the training process. The training
+DataLoader also uses an explicit seed-bound `torch.Generator`, pinning shuffled
+batch order to `config.seed`. This does not claim full CUDA bitwise
+determinism; it removes batch-order nondeterminism.
 
 The smoke launcher is pinned to the frozen primary train/dev hashes before it
 touches the GPU.
@@ -595,6 +615,17 @@ assumptions:
     produced one-class or empty turn/span localization supervision
 26. training checkpoints recorded frozen data hashes but not the exact model
     code revision used to produce them
+27. the localization lambda ramp reached full weight only when OneCycleLR had
+    already annealed close to zero, materially weakening the intended
+    localization training signal
+28. an `evidence_turn_ids` member without turn-local status/span evidence could
+    inherit weight 1.0 solely from a record-level `cf_strong` tier
+29. overlapping strong/weak positive spans could become order-dependent at the
+    character level and lose the strong 1.0 confidence weight
+30. representation overflow could raise inside `GuardLensDataset.__getitem__`
+    before the representation audit could emit its structured failed report
+31. shuffled training batches relied on the global Torch RNG rather than an
+    explicit seed-bound DataLoader generator
 
 All of the above are addressed in the current redesign branch.
 
