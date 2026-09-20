@@ -9,6 +9,12 @@
 #SBATCH --output=logs/train_phase3_%j.out
 #SBATCH --error=logs/train_phase3_%j.err
 
+# Disabled on naacl-causal-localization-redesign.
+echo "ERROR: train_phase3.slurm is a legacy EMNLP/v11 launcher and is intentionally disabled on this branch."
+echo "Use train_naacl.slurm for redesigned training. Evaluation launchers will be re-enabled after eval migration."
+exit 2
+
+
 # ============================================================
 # Resume Phase 3 (CF fine-tuning) from Phase 2 checkpoint
 #
