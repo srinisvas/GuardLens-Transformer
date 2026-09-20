@@ -21,9 +21,13 @@ tokenizer and offset mappings, verifies `max_position_embeddings=8192` and
 `hidden_size=1024`, caches the canonical backbone snapshot, and imports the
 redesigned GuardLens package/training schedule.
 
-The canonical backbone is `answerdotai/ModernBERT-large`. Transformers 4.48+
-is required for native ModernBERT support. The setup script installs from the
-requirements file rather than duplicating package lists in shell commands.
+The canonical backbone is `answerdotai/ModernBERT-large`, pinned to Hugging
+Face revision:
+
+    45bb4654a4d5aaff24dd11d4781fa46d39bf8c13
+
+Transformers 4.48+ is required for native ModernBERT support. The setup script
+downloads that exact revision rather than following a mutable `main` ref.
 
 Heavy evaluation backends such as vLLM and bitsandbytes remain optional and are
 not installed by the canonical training environment until their corresponding
@@ -173,12 +177,24 @@ The canonical backbone is `answerdotai/ModernBERT-large`:
 - 1,024-dimensional token states for the contextual span head
 - local/global alternating attention suitable for long inputs
 - fast-tokenizer offset mappings required by the span supervision contract
+- frozen-backbone inference in BF16 with PyTorch SDPA on the A100 path
 
 The frozen train/dev representation audit showed that a 512-token encoder is
 structurally mismatched to this corpus: p95 is about 700 tokens, p99 about 1.15K,
 and observed maxima are 3,491 train / 2,113 dev. The model therefore preserves
 each realized turn as one native encoder sequence instead of splitting it into
 overlapping chunks. This keeps cross-token dependencies within the turn intact.
+
+Long-context implementation must also avoid turning dynamic padding into hidden
+quadratic work. The collator remains batch-padded for a simple model interface,
+but the frozen backbone does not encode every realized turn at the batch-wide
+maximum length. Realized turns are sorted by their true token length and passed
+through ModernBERT in length-local microbatches (default 8). Only each
+microbatch's local maximum length enters the backbone. The dense tensor is
+reconstructed afterward for the hierarchical heads.
+
+Assistant/padded turns are masked from evidence-turn output, and assistant or
+padding tokens are also masked from causal span output.
 
 ### Excluded from the canonical model
 
@@ -474,8 +490,10 @@ Every checkpoint records:
 
 - architecture_version=causal_localization_v2
 - exact training-code Git SHA
+- exact ModernBERT model revision through the stored config
 - exact train SHA-256
 - exact dev SHA-256
+- Python / PyTorch / Transformers / CUDA runtime versions
 - dev threshold
 - dev metrics
 - epoch and phase
@@ -519,8 +537,10 @@ DataLoader also uses an explicit seed-bound `torch.Generator`, pinning shuffled
 batch order to `config.seed`. This does not claim full CUDA bitwise
 determinism; it removes batch-order nondeterminism.
 
-The smoke launcher is pinned to the frozen primary train/dev hashes before it
-touches the GPU.
+The smoke launcher is pinned to the frozen primary train/dev hashes and exact
+ModernBERT revision before it touches the GPU. It executes both a
+localization-supervision batch and a separate worst-token-footprint batch chosen
+from actual ModernBERT token counts; both report peak CUDA allocation.
 
 The following historical launchers are intentionally disabled on this branch:
 
@@ -711,6 +731,25 @@ assumptions:
     corpus: roughly 9% of train/dev turns exceeded 512, with train/dev maxima of
     3,491 / 2,113 tokens. The canonical architecture now uses native 8K
     ModernBERT-large full-turn encoding instead of truncation or chunking.
+37. the first ModernBERT switch still followed the mutable Hugging Face `main`
+    revision, so data/code hashes alone were insufficient for reproducibility;
+    the exact backbone revision is now pinned.
+38. batch-global turn padding would have sent every realized turn through
+    ModernBERT at the single longest turn length in the batch, creating severe
+    long-context compute inflation; frozen-backbone encoding is now
+    length-sorted and microbatched.
+39. ModernBERT would otherwise load and execute in FP32 despite A100 BF16/SDPA
+    support; the frozen canonical backbone now runs BF16 with SDPA while
+    downstream trainable heads receive FP32 hidden states.
+40. causal span logits on assistant/padding tokens were unconstrained even
+    though the localization contract is user-turn-only; those outputs are now
+    hard masked.
+41. the original GPU smoke selected worst cases using character length, which
+    does not reliably stress tokenizer-level long-context memory; the smoke now
+    runs a separate batch selected by actual token footprint.
+42. scientific checkpoints recorded code/data provenance but not exact runtime
+    library versions; Python, PyTorch, Transformers and CUDA runtime versions
+    are now stored.
 
 All of the above are addressed in the current redesign branch.
 
