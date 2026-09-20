@@ -96,7 +96,7 @@ echo " Model:   $MODEL"
 echo " Backbone:$BACKBONE"
 echo " Revision:$BACKBONE_REVISION"
 echo " Window:  turns=$MAX_TURNS hard_token_ceiling=$MAX_TOKENS"
-echo " Batch:   micro=$BATCH_SIZE accumulation=$GRAD_ACCUMULATION"
+echo " Batch:   micro=$BATCH_SIZE accumulation=$GRAD_ACCUMULATION backbone_turn_microbatch=$BACKBONE_TURN_MICROBATCH"
 echo " Schedule: phase1=5 localization_ramp_epochs=$LOCALIZATION_RAMP_EPOCHS"
 echo "========================================================"
 
@@ -143,6 +143,8 @@ python -m guardlens.train \
   --output "$OUTPUT" \
   --model "$MODEL" \
   --backbone "$BACKBONE" \
+  --backbone-revision "$BACKBONE_REVISION" \
+  --backbone-turn-microbatch "$BACKBONE_TURN_MICROBATCH" \
   --batch-size "$BATCH_SIZE" \
   --grad-accumulation "$GRAD_ACCUMULATION" \
   --lr 2e-4 \
