@@ -2,51 +2,197 @@
 # ============================================================
 # setup_guardlens_env.sh
 #
-# Creates conda environment for GuardLens model training.
-# Installs to ~/work/conda_envs/ (GPFS data, plenty of space).
+# Creates or repairs the canonical GuardLens training environment.
 #
-# Usage:
+# Default:
 #   bash setup_guardlens_env.sh
+#       Reuses the existing prefix (if present) and installs/verifies the full
+#       requirements set.
+#
+# Clean rebuild:
+#   bash setup_guardlens_env.sh --recreate
+#
+# Environment prefix:
+#   ~/work/conda_envs/guardlens_train
 # ============================================================
 
 set -euo pipefail
 
-ENV_PREFIX="$HOME/work/conda_envs/guardlens_train"
+ENV_PREFIX="${GUARDLENS_ENV_PREFIX:-$HOME/work/conda_envs/guardlens_train}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REQUIREMENTS="$SCRIPT_DIR/requirements.txt"
+RECREATE=0
 
-export PIP_CACHE_DIR="$HOME/work/.pip_cache"
-export TMPDIR="$HOME/work/.tmp"
-mkdir -p "$PIP_CACHE_DIR" "$TMPDIR"
+usage() {
+    cat <<'EOF'
+Usage: bash setup_guardlens_env.sh [--recreate]
 
-echo "=== GuardLens training environment ==="
-echo "  Prefix: $ENV_PREFIX"
+  --recreate   Remove the existing GuardLens conda prefix and build it again.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --recreate)
+            RECREATE=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "ERROR: unknown argument: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+[[ -f "$REQUIREMENTS" ]] || {
+    echo "ERROR: requirements.txt not found at $REQUIREMENTS" >&2
+    exit 2
+}
+
+export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$HOME/work/.pip_cache}"
+export TMPDIR="${TMPDIR:-$HOME/work/.tmp}"
+export HF_HOME="${HF_HOME:-$HOME/work/hf_models}"
+export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/hub}"
+mkdir -p "$PIP_CACHE_DIR" "$TMPDIR" "$HF_HOME"
+
+echo "========================================================"
+echo " GuardLens environment setup"
+echo " Prefix:       $ENV_PREFIX"
+echo " Requirements: $REQUIREMENTS"
+echo " Recreate:     $RECREATE"
+echo "========================================================"
 
 CONDA_BASE=$(conda info --base 2>/dev/null)
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 
-if [[ -d "$ENV_PREFIX" ]]; then
-    echo "  Environment exists. Activating..."
-    conda activate "$ENV_PREFIX"
-else
-    echo "  Creating environment..."
-    conda create --prefix "$ENV_PREFIX" python=3.11 -y
-    conda activate "$ENV_PREFIX"
+if [[ "$RECREATE" -eq 1 && -d "$ENV_PREFIX" ]]; then
+    if [[ "${CONDA_PREFIX:-}" == "$ENV_PREFIX" ]]; then
+        conda deactivate || true
+    fi
+    echo "Removing existing environment..."
+    conda env remove --prefix "$ENV_PREFIX" -y
 fi
 
-echo ""
-echo "Installing packages (pre-built wheels only)..."
+if [[ ! -d "$ENV_PREFIX" ]]; then
+    echo "Creating Python 3.11 environment..."
+    conda create --prefix "$ENV_PREFIX" python=3.11 -y
+fi
 
-pip install --upgrade pip
-pip install torch --only-binary=:all:
-pip install transformers>=4.40.0 accelerate>=0.28.0 numpy>=1.24.0 requests>=2.31.0
+conda activate "$ENV_PREFIX"
 
-echo ""
-echo "--- Verification ---"
-python3 -c "import torch; print(f'  torch {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
-python3 -c "import transformers; print(f'  transformers {transformers.__version__}')"
+echo
+echo "=== Python / pip ==="
+which python
+python --version
+python -m pip --version
 
-echo ""
-echo "=== Ready ==="
-echo "  Activate: conda activate $ENV_PREFIX"
-echo ""
-echo "  Pre-download DeBERTa backbone (run once):"
-echo "    python -c \"from transformers import AutoModel, AutoTokenizer; AutoModel.from_pretrained('microsoft/deberta-v3-base'); AutoTokenizer.from_pretrained('microsoft/deberta-v3-base')\""
+echo
+echo "=== Installing binary tooling ==="
+python -m pip install --upgrade pip setuptools wheel
+
+# Install torch first. This keeps Torch resolution separate from the rest of the
+# environment and avoids an evaluator dependency unexpectedly choosing it.
+echo
+echo "=== Installing PyTorch ==="
+python -m pip install --upgrade --only-binary=:all: "torch>=2.2,<3"
+
+echo
+echo "=== Installing GuardLens dependencies ==="
+python -m pip install --upgrade -r "$REQUIREMENTS"
+
+echo
+echo "=== Dependency consistency ==="
+python -m pip check
+
+echo
+echo "=== Import verification ==="
+python - <<'PY'
+import importlib
+
+required = [
+    "torch",
+    "transformers",
+    "accelerate",
+    "sentencepiece",
+    "tiktoken",
+    "numpy",
+    "scipy",
+    "requests",
+    "matplotlib",
+]
+
+for name in required:
+    mod = importlib.import_module(name)
+    version = getattr(mod, "__version__", "<unknown>")
+    print(f"  {name:14s} {version}")
+
+import torch
+print(f"  torch CUDA available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"  torch CUDA version:   {torch.version.cuda}")
+    print(f"  GPU:                  {torch.cuda.get_device_name(0)}")
+PY
+
+echo
+echo "=== DeBERTa-v3 tokenizer verification ==="
+python - <<'PY'
+from transformers import AutoConfig, AutoTokenizer
+
+name = "microsoft/deberta-v3-base"
+tokenizer = AutoTokenizer.from_pretrained(name, use_fast=True)
+config = AutoConfig.from_pretrained(name)
+
+if not getattr(tokenizer, "is_fast", False):
+    raise RuntimeError("DeBERTa tokenizer is not fast; offset mapping is required")
+
+probe = tokenizer(
+    "GuardLens tokenizer offset verification.",
+    truncation=False,
+    return_offsets_mapping=True,
+    add_special_tokens=True,
+)
+if "offset_mapping" not in probe:
+    raise RuntimeError("Tokenizer did not return offset mappings")
+
+limit = getattr(config, "max_position_embeddings", None)
+if limit != 512:
+    raise RuntimeError(
+        f"Unexpected DeBERTa max_position_embeddings={limit}; expected 512"
+    )
+
+print(f"  tokenizer: {tokenizer.__class__.__name__}")
+print(f"  fast:      {tokenizer.is_fast}")
+print(f"  positions: {limit}")
+print(f"  offsets:   OK ({len(probe['offset_mapping'])} entries)")
+PY
+
+echo
+echo "=== GuardLens package import verification ==="
+cd "$SCRIPT_DIR"
+python - <<'PY'
+from guardlens import GuardLens, GuardLensConfig
+from guardlens.data.causal_targets import build_evidence_turn_targets
+from guardlens.training.schedule import get_lambda_schedule
+
+cfg = GuardLensConfig()
+assert cfg.backbone_name == "microsoft/deberta-v3-base"
+assert get_lambda_schedule(5, cfg)[1] == 0.25
+assert get_lambda_schedule(9, cfg)[1] == 1.0
+print("  GuardLens imports: OK")
+print("  training schedule: OK")
+PY
+
+echo
+echo "========================================================"
+echo " Environment ready"
+echo " Activate with:"
+echo "   conda activate $ENV_PREFIX"
+echo
+echo " Optional full backbone cache warm-up:"
+echo "   python -c \"from transformers import AutoModel; AutoModel.from_pretrained('microsoft/deberta-v3-base')\""
+echo "========================================================"
