@@ -9,6 +9,12 @@
 #SBATCH --output=logs/train_all_%j.out
 #SBATCH --error=logs/train_all_%j.err
 
+# Disabled on naacl-causal-localization-redesign.
+echo "ERROR: train_all.slurm is a legacy EMNLP/v11 launcher and is intentionally disabled on this branch."
+echo "Use train_naacl.slurm for redesigned training. Evaluation launchers will be re-enabled after eval migration."
+exit 2
+
+
 # ============================================================
 # Train GuardLens + all baselines/ablations for the paper.
 #
