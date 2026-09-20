@@ -1,24 +1,39 @@
 # GuardLens — Python dependencies (HPC / SLURM cluster)
 #
-# Install (matches setup_guardlens_env.sh):
-#   pip install torch --only-binary=:all:
-#   pip install -r requirements.txt
+# Canonical install:
+#   bash setup_guardlens_env.sh --recreate
 #
-# `torch` is installed separately first so pip picks the CUDA-enabled wheel
-# for the cluster's default index rather than resolving it here.
+# PyTorch is installed first by setup_guardlens_env.sh so the cluster can
+# resolve the appropriate binary wheel. Keeping it here makes a direct
+# `pip install -r requirements.txt` fail closed if torch is absent.
+#
+# Heavy evaluation backends such as vLLM and bitsandbytes are intentionally
+# not installed by default because they may impose their own CUDA/Torch
+# constraints. Install those only for the migrated evaluation jobs that need
+# them.
 
 # Core training / inference
-torch>=2.2.0
-transformers>=4.40.0
-accelerate>=0.28.0
-sentencepiece>=0.1.99   # DeBERTa-v3 tokenizer (guardlens/config.py backbone)
-numpy>=1.24.0
-scipy>=1.10.0            # guardlens/evaluation/eval_paraphrase.py (spearmanr)
-requests>=2.31.0
+torch>=2.2,<3
+transformers>=4.40,<5
+accelerate>=0.28,<2
 
-# Plotting (plots/*.py)
-matplotlib>=3.7.0
+# DeBERTa-v3 tokenizer.
+# This is REQUIRED: microsoft/deberta-v3-base ships an spm.model file.
+sentencepiece>=0.2,<1
 
-# Optional: only needed for eval_cross_model_transfer.py 8-bit/4-bit
-# quantized causal-LM transfer test. Skip if not running that script.
-# bitsandbytes>=0.41.0
+# Useful for tokenizers/models that genuinely use TikToken. It is not a
+# substitute for SentencePiece for DeBERTa-v3.
+tiktoken>=0.7,<1
+
+# Numeric / evaluation utilities
+numpy>=1.24,<3
+scipy>=1.10,<2
+requests>=2.31,<3
+
+# Plotting
+matplotlib>=3.7,<4
+
+# Optional heavy evaluation dependencies (install only when the corresponding
+# migrated evaluator is enabled):
+#   bitsandbytes
+#   vllm
