@@ -118,6 +118,36 @@ class NaaclDatasetContractTests(unittest.TestCase):
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertEqual(item["evidence_turn_labels"], [0, -1, 1])
 
+    def test_contradictory_evidence_turn_and_negative_intervention_fails_closed(self):
+        record = base_record(1)
+        record["evidence_turn_ids"] = [0]
+        record["frontier_evidence_analysis"] = {
+            "turn_interventions": [
+                {"turn_id": 0, "status": "not_supported"},
+            ]
+        }
+        with self.assertRaisesRegex(RuntimeError, "evidence_turn_ids contains turn 0"):
+            GuardLensDataset([record], GuardLensConfig())[0]
+
+    def test_supported_span_can_override_negative_whole_turn_intervention(self):
+        record = base_record(1)
+        record["evidence_turn_ids"] = [0]
+        record["frontier_evidence_analysis"] = {
+            "turn_interventions": [
+                {"turn_id": 0, "status": "not_supported"},
+            ]
+        }
+        record["turns"][0]["span_annotations"] = [{
+            "causal_type": "causal",
+            "evidence_status": "supported_weak",
+            "supervision_tier": "cf_weak",
+            "char_start": 0,
+            "char_end": 5,
+        }]
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertEqual(item["evidence_turn_labels"], [1, -1, -1])
+        self.assertEqual(item["evidence_turn_weights"], [0.70, 0.0, 0.0])
+
     def test_benign_user_turns_are_negative_and_assistant_ignored(self):
         item = GuardLensDataset([base_record(0)], GuardLensConfig())[0]
         self.assertEqual(item["evidence_turn_labels"], [0, -1, 0])
