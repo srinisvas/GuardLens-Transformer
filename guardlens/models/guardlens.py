@@ -39,9 +39,22 @@ class GuardLens(nn.Module):
             return
         from transformers import AutoModel
 
+        dtype_map = {
+            "float32": torch.float32,
+            "bfloat16": torch.bfloat16,
+            "float16": torch.float16,
+        }
+        if self.config.backbone_dtype not in dtype_map:
+            raise RuntimeError(
+                f"unsupported backbone_dtype={self.config.backbone_dtype!r}"
+            )
+
         self.backbone = AutoModel.from_pretrained(
             self.config.backbone_name,
+            revision=self.config.backbone_revision,
             output_hidden_states=False,
+            torch_dtype=dtype_map[self.config.backbone_dtype],
+            attn_implementation=self.config.backbone_attn_implementation,
         )
         max_positions = getattr(self.backbone.config, "max_position_embeddings", None)
         hidden_size = getattr(self.backbone.config, "hidden_size", None)
@@ -72,33 +85,56 @@ class GuardLens(nn.Module):
         batch_size, turns, seq_len = input_ids.shape
         flat_ids = input_ids.reshape(batch_size * turns, seq_len)
         flat_mask = attention_mask.reshape(batch_size * turns, seq_len)
-        realized = flat_mask.sum(dim=1) > 0
-        if not realized.any():
+        lengths = flat_mask.sum(dim=1)
+        realized_idx = torch.nonzero(lengths > 0, as_tuple=False).squeeze(-1)
+        if realized_idx.numel() == 0:
             raise RuntimeError("batch contains no realized turns")
 
-        ctx = (
-            torch.no_grad()
-            if self.config.freeze_backbone
-            else torch.enable_grad()
-        )
-        with ctx:
-            outputs = self.backbone(
-                input_ids=flat_ids[realized],
-                attention_mask=flat_mask[realized],
+        # With long-context turns, padding every realized turn to the single
+        # longest turn in the conversation batch can multiply backbone compute.
+        # Canonical training freezes ModernBERT, so we sort realized turns by
+        # length and encode them in small length-local microbatches.
+        if self.config.freeze_backbone:
+            order = realized_idx[
+                torch.argsort(lengths[realized_idx], stable=True)
+            ]
+            hidden = torch.zeros(
+                batch_size * turns,
+                seq_len,
+                self.config.backbone_dim,
+                device=input_ids.device,
+                dtype=torch.float32,
             )
-            realized_hidden = outputs.last_hidden_state
+            microbatch = max(1, int(self.config.backbone_turn_microbatch))
 
-        # Padded turns never enter the backbone. This both avoids needless
-        # compute and avoids relying on model behavior for all-zero masks.
-        hidden = realized_hidden.new_zeros(
-            batch_size * turns,
-            seq_len,
-            realized_hidden.size(-1),
-        )
-        hidden[realized] = realized_hidden
+            with torch.no_grad():
+                for start in range(0, order.numel(), microbatch):
+                    idx = order[start:start + microbatch]
+                    local_len = int(lengths[idx].max().item())
+                    outputs = self.backbone(
+                        input_ids=flat_ids[idx, :local_len],
+                        attention_mask=flat_mask[idx, :local_len],
+                    )
+                    chunk = outputs.last_hidden_state.float()
+                    hidden[idx, :local_len] = chunk
+        else:
+            # Fine-tuning is deliberately kept simple until a dedicated
+            # selective-unfreezing recipe is introduced.
+            outputs = self.backbone(
+                input_ids=flat_ids[realized_idx],
+                attention_mask=flat_mask[realized_idx],
+            )
+            realized_hidden = outputs.last_hidden_state.float()
+            hidden = realized_hidden.new_zeros(
+                batch_size * turns,
+                seq_len,
+                realized_hidden.size(-1),
+            )
+            hidden[realized_idx] = realized_hidden
+
         return hidden.reshape(
             batch_size, turns, seq_len, -1
-        ).float()
+        )
 
     def forward(
         self,
@@ -144,6 +180,11 @@ class GuardLens(nn.Module):
             turn_probs = torch.sigmoid(turn_logits)
 
             attr_logits = self.attr_head(token_embeds, turn_context)
+            invalid_span = (
+                (attention_mask == 0)
+                | (role_ids.unsqueeze(-1) != 0)
+            )
+            attr_logits = attr_logits.masked_fill(invalid_span, -1e9)
             attr_probs = torch.sigmoid(attr_logits)
 
         return {
