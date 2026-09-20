@@ -1,15 +1,17 @@
 """Configuration for the NAACL causal-localization redesign."""
 
 from dataclasses import dataclass
-from typing import Tuple
-
 
 @dataclass
 class GuardLensConfig:
     # Backbone
     backbone_name: str = "answerdotai/ModernBERT-large"
+    backbone_revision: str = "45bb4654a4d5aaff24dd11d4781fa46d39bf8c13"
     backbone_dim: int = 1024
     freeze_backbone: bool = True
+    backbone_dtype: str = "bfloat16"
+    backbone_attn_implementation: str = "sdpa"
+    backbone_turn_microbatch: int = 8
 
     # Hierarchical turn-context encoder
     cross_turn_layers: int = 2
@@ -26,7 +28,6 @@ class GuardLensConfig:
     # dynamic padding and never truncates a turn to fit this value.
     max_turns: int = 48
     max_tokens_per_turn: int = 8192
-    max_total_tokens: int = 2048  # legacy flat baseline only
 
     # Optimization
     learning_rate: float = 2e-4
@@ -65,12 +66,3 @@ class GuardLensConfig:
     train_path: str = ""
     dev_path: str = ""
 
-    # Kept only for the legacy flat baseline until its evaluation migration.
-    causal_span_labels: Tuple = (
-        "MALICIOUS_TRIGGER", "PAYLOAD_SPAN", "CONTEXT_BRIDGE",
-        "IMPLICIT_TRIGGER", "STRUCTURAL_TRIGGER",
-    )
-    incidental_span_labels: Tuple = (
-        "SAFE_CONSTRAINT", "DECOY", "QUOTED_UNSAFE_CONTENT",
-        "BENIGN_CONTEXT",
-    )
