@@ -64,6 +64,7 @@ class CausalLocalizationArchitectureTests(unittest.TestCase):
         self.assertFalse(hasattr(config, "cf_oversample_factor"))
         self.assertFalse(hasattr(config, "phase3_epochs"))
         self.assertFalse(hasattr(config, "lambda_cf"))
+        self.assertFalse(hasattr(config, "test_path"))
 
     def test_joint_loss_accepts_multiple_positive_turns(self):
         config = tiny_config()
