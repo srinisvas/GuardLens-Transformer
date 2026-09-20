@@ -64,7 +64,11 @@ class GuardLensDataset(Dataset):
 
             char_labels = [-1] * len(text)
             char_weights = [0.0] * len(text)
-            if not localization_ignore:
+            # Causal span localization is defined over user turns only. Keep
+            # assistant-turn targets ignored so supervision matches the model's
+            # hard role mask by construction. The representation audit fails
+            # closed if target-bearing assistant annotations exist in frozen data.
+            if not localization_ignore and role_name == "user":
                 for span in turn.get("span_annotations", []) or []:
                     target = span_supervision_target(span)
                     if target is None:
@@ -326,61 +330,5 @@ class GuardLensCollator:
             ),
             "turn_labels": torch.stack(all_turn_labels),
             "turn_weights": torch.stack(all_turn_weights),
-            "metadata": metadata,
-        }
-
-
-class FlatConversationCollator:
-    """Legacy flat baseline collator retained until baseline migration."""
-
-    def __init__(self, tokenizer, config: GuardLensConfig):
-        self.tokenizer = tokenizer
-        self.config = config
-        self.sep = tokenizer.sep_token or "[SEP]"
-
-    def __call__(self, batch: List[Dict]) -> Dict[str, torch.Tensor]:
-        ids_list = []
-        masks = []
-        labels = []
-        detection_weights = []
-        metadata = []
-
-        for item in batch:
-            full_text = f" {self.sep} ".join(item["turn_texts"])
-            enc = self.tokenizer(
-                full_text,
-                max_length=self.config.max_total_tokens,
-                padding="max_length",
-                truncation=True,
-                return_tensors="pt",
-            )
-            ids_list.append(enc["input_ids"].squeeze(0))
-            masks.append(enc["attention_mask"].squeeze(0))
-            labels.append(item["label"])
-            detection_weights.append(item["detection_weight"])
-            metadata.append({
-                "conversation_id": item["conversation_id"],
-                "difficulty": item["difficulty"],
-                "family": item["family"],
-                "evidence_turn_ids": item["evidence_turn_ids"],
-                "supervision_tier": item["supervision_tier"],
-            })
-
-        batch_size = len(batch)
-        return {
-            "input_ids": torch.stack(ids_list),
-            "attention_mask": torch.stack(masks),
-            "turn_mask": torch.ones(batch_size, 1, dtype=torch.long),
-            "role_ids": torch.zeros(batch_size, 1, dtype=torch.long),
-            "token_labels": torch.full(
-                (batch_size, self.config.max_total_tokens), -1, dtype=torch.long
-            ),
-            "span_weights": torch.zeros(
-                batch_size, self.config.max_total_tokens, dtype=torch.float
-            ),
-            "labels": torch.tensor(labels, dtype=torch.long),
-            "detection_weights": torch.tensor(detection_weights, dtype=torch.float),
-            "turn_labels": torch.full((batch_size, 1), -1, dtype=torch.long),
-            "turn_weights": torch.zeros(batch_size, 1, dtype=torch.float),
             "metadata": metadata,
         }
