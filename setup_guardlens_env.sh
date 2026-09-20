@@ -56,14 +56,23 @@ done
 
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$HOME/work/.pip_cache}"
 export TMPDIR="${TMPDIR:-$HOME/work/.tmp}"
-export HF_HOME="${HF_HOME:-$HOME/work/hf_models}"
-mkdir -p "$PIP_CACHE_DIR" "$TMPDIR" "$HF_HOME"
+
+# GuardLens owns one canonical Hugging Face cache. Do not inherit generic
+# HF_HOME/HF_HUB_CACHE values from an interactive shell, because SLURM jobs
+# may otherwise look in a different cache than environment setup populated.
+export HF_HOME="${GUARDLENS_HF_HOME:-$HOME/work/hf_models}"
+export HF_HUB_CACHE="$HF_HOME/hub"
+unset TRANSFORMERS_CACHE HUGGINGFACE_HUB_CACHE
+
+mkdir -p "$PIP_CACHE_DIR" "$TMPDIR" "$HF_HUB_CACHE"
 
 echo "========================================================"
 echo " GuardLens environment setup"
 echo " Prefix:       $ENV_PREFIX"
 echo " Requirements: $REQUIREMENTS"
 echo " Recreate:     $RECREATE"
+echo " HF_HOME:      $HF_HOME"
+echo " HF_HUB_CACHE: $HF_HUB_CACHE"
 echo "========================================================"
 
 CONDA_BASE=$(conda info --base 2>/dev/null)
