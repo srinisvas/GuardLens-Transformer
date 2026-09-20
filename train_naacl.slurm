@@ -54,7 +54,6 @@ set -u
 
 export TMPDIR="${TMPDIR:-$HOME/work/.tmp}"
 export HF_HOME="${HF_HOME:-$HOME/work/hf_models}"
-export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/hub}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 mkdir -p "$TMPDIR" "$BASE_OUTPUT" "$PRECHECK_DIR" logs
 cd "$PROJECT_DIR"
@@ -108,7 +107,7 @@ python -m guardlens.data.verify_freeze \
 python -m guardlens.data.audit_representation \
   --train "$TRAIN_PATH" \
   --dev "$DEV_PATH" \
-  --backbone $BACKBONE \
+  --backbone "$BACKBONE" \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --output "$PRECHECK_DIR/representation_coverage.json"
@@ -139,7 +138,7 @@ python -m guardlens.train \
   --dev-path "$DEV_PATH" \
   --output "$OUTPUT" \
   --model "$MODEL" \
-  --backbone $BACKBONE \
+  --backbone "$BACKBONE" \
   --batch-size "$BATCH_SIZE" \
   --grad-accumulation "$GRAD_ACCUMULATION" \
   --lr 2e-4 \
