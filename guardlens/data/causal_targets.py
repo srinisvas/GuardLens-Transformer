@@ -106,7 +106,19 @@ def build_evidence_turn_targets(
         return labels, weights
 
     analysis = record.get("frontier_evidence_analysis") or {}
-    interventions = analysis.get("turn_interventions") or []
+    interventions = list(analysis.get("turn_interventions") or [])
+
+    # Dataset A stored one tested anchor intervention under evidence_analysis.
+    legacy_analysis = record.get("evidence_analysis") or {}
+    legacy_anchor = legacy_analysis.get("anchor_turn_intervention")
+    legacy_anchor_tid = legacy_analysis.get("fresh_anchor_turn_id")
+    if isinstance(legacy_anchor, dict) and isinstance(legacy_anchor_tid, int):
+        interventions.append({
+            "turn_id": legacy_anchor_tid,
+            "status": legacy_anchor.get("status", ""),
+            "_source": "legacy_anchor_turn_intervention",
+        })
+
     status_by_turn: Dict[int, str] = {}
 
     for intervention in interventions:
@@ -114,8 +126,9 @@ def build_evidence_turn_targets(
         status = str(intervention.get("status", ""))
         if not isinstance(tid, int) or isinstance(tid, bool):
             continue
+        source = str(intervention.get("_source", "turn_interventions"))
         _validate_turn_id(
-            tid, turns, conversation_id=cid, source="turn_interventions"
+            tid, turns, conversation_id=cid, source=source
         )
         status_by_turn[tid] = status
         if status in TURN_POSITIVE_STATUS:
