@@ -79,6 +79,28 @@ class NaaclDatasetContractTests(unittest.TestCase):
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertEqual(item["evidence_turn_labels"], [1, -1, 1])
 
+    def test_record_strong_tier_does_not_upgrade_weak_evidence_turn(self):
+        record = base_record(1)
+        record["supervision_tier"] = "cf_strong"
+        record["evidence_turn_ids"] = [0, 2]
+        record["turns"][0]["span_annotations"] = [{
+            "causal_type": "causal",
+            "evidence_status": "supported_weak",
+            "supervision_tier": "cf_weak",
+            "char_start": 0,
+            "char_end": 5,
+        }]
+        record["turns"][2]["span_annotations"] = [{
+            "causal_type": "causal",
+            "evidence_status": "supported_strong",
+            "supervision_tier": "cf_strong",
+            "char_start": 0,
+            "char_end": 5,
+        }]
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertEqual(item["evidence_turn_labels"], [1, -1, 1])
+        self.assertEqual(item["evidence_turn_weights"], [0.70, 0.0, 1.0])
+
     def test_explicit_not_supported_turn_is_negative(self):
         record = base_record(1)
         record["evidence_turn_ids"] = [2]
