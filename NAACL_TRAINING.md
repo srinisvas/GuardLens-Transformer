@@ -1,151 +1,90 @@
-# GuardLens NAACL Training Handoff
+# GuardLens NAACL causal-localization training contract
 
-This document is the execution contract between the repaired DataGen pipeline and the Transformer retraining/evaluation branch.
+This branch supersedes the old single-pivot, gated-fusion, Phase-3 self-CF and CF-oversampling training recipe.
 
-## Frozen input contract
+## Canonical model
 
-Training begins only after Dataset A and Dataset B have independently passed their validity audits, have been merged, and have been split once using the consolidated group-aware splitter.
+The main model jointly learns three sibling tasks over shared hierarchical representations.
 
-Expected split directory:
+1. trajectory detection
+2. multi-label evidence-turn localization
+3. context-conditioned token/span localization
 
-```text
-$HOME/staging/dataset_gen_output/naacl_splits/
-  train.jsonl
-  dev.jsonl
-  test.jsonl
-  split_metadata.json
-```
+DeBERTa encodes each realized turn. Token representations are pooled within each turn, then a two-layer turn Transformer contextualizes the turn sequence. Detection pools those contextualized turns. The evidence-turn head emits an independent sigmoid logit for each turn. The span head combines each token representation with the contextual state of its containing turn.
 
-Dataset B standalone frontier hard-benign records are **not** part of these primary splits. They remain evaluation-only at:
+Localization never gates or otherwise feeds the detector.
 
-```text
-$HOME/staging/dataset_gen_output/naacl_frontier_benign_stress.jsonl
-```
+The canonical model has no pivot classifier, no gated fusion, no Phase-3 self-counterfactual objective and no CF oversampling.
 
-The frozen legacy benign stress corpus is also evaluation-only.
+## Frozen data
 
-### Optional detection-only auxiliary ablation
+Canonical artifacts are read from:
 
-The primary A+B split is the baseline and remains authoritative. An optional
-candidate may add audited B2-rejected Dataset B outcomes to **training only**.
-Dev and test must remain the exact primary partitions. The DataGen attachment
-step withholds auxiliary records whose scenario family belongs to primary dev
-or test.
+    $HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze
 
-For an auxiliary record, the trainer uses `detection_label` and
-`detection_loss_weight` for trajectory classification. It ignores all token,
-span, and pivot supervision for that record and excludes it from phase-3
-counterfactual loss. The original authoring `label` remains provenance and is
-never used as the auxiliary training target.
+Primary training uses:
 
-## Why the primary model window is 48 turns
+    splits_primary/train.jsonl
+    splits_primary/dev.jsonl
 
-The repaired Dataset A primary corpus contains 1,052 records and has a maximum of 48 realized user+assistant turns. Its class-conditional user-turn histograms are exactly matched. The old 32-turn model setting would truncate 314/1,052 primary Dataset A examples.
+The optional auxiliary ablation uses:
 
-The NAACL branch therefore uses:
+    splits_primary_plus_train_auxiliary/train.jsonl
+    splits_primary_plus_train_auxiliary/dev.jsonl
 
-```text
-max_turns = 48
-max_tokens_per_turn = 192
-microbatch = 2
-gradient_accumulation = 8
-effective batch = 16
-```
+The trainer never opens the held-out test split. Final test evaluation is a separate stage after model and training choices are frozen.
 
-GuardLens uses sinusoidal turn-position encoding, so extending the supported turn window does not introduce a new learned positional embedding table. All NAACL checkpoints are trained from scratch.
+Before training, guardlens.data.verify_freeze checks train/dev SHA-256 values against data_prep_freeze_report.json.
 
-## Fail-closed guarantees
+## Supervision contract
 
-Before training, `audit_model_window.py` requires:
+Primary trajectory labels are behaviorally validated and always receive detection weight 1.0. Localization confidence never down-weights detection.
 
-- every primary record fits wholly inside `max_turns`
-- realized `turn_id` values equal their actual indices `0..N-1`
-- supported pivots point to an in-window realized turn
-- malicious records with unknown pivots use `pivot_supervision_ignore=true`
-- no primary conversation label is trained on a silently truncated trajectory
+Detection-only auxiliary records use detection_label and detection_loss_weight. Their turn and span localization targets are completely ignored.
 
-The trainer additionally:
+Span positives are only intervention-backed cf_strong or cf_weak spans. Incidental / negative_control_supported spans are explicit negatives. LLM-confirmed, construction-derived, unassessed and semantically masked spans are ignored for localization.
 
-- aborts on CUDA OOM instead of skipping the affected batch
-- steps a final partial gradient-accumulation group correctly
-- computes scheduler length with `ceil(microbatches / accumulation)`
+Turn positives are the full evidence_turn_ids set plus supported tested turn interventions. Explicit not_supported tested turns are negatives. Untested or not-assessable malicious turns are ignored. Validated benign user turns are negative turn-localization examples.
 
-## Required execution order
+## Representation contract
 
-### 1. CPU representation/shortcut preflight
+There is no silent truncation.
 
-`train_naacl.slurm` repeats these checks automatically, but they can be run independently:
+- records over max_turns fail
+- turns over max_tokens_per_turn fail
+- the collator tokenizes with truncation disabled
+- token padding is dynamic to the longest realized turn in each batch
+- the representation audit reports p95, p99 and max turn-token lengths
+- the audit reports whether any positive causal span would fall beyond the configured ceiling
 
-```bash
-python -m guardlens.evaluation.audit_model_window \
-  --train $HOME/staging/dataset_gen_output/naacl_splits/train.jsonl \
-  --dev $HOME/staging/dataset_gen_output/naacl_splits/dev.jsonl \
-  --test $HOME/staging/dataset_gen_output/naacl_splits/test.jsonl \
-  --max-turns 48 \
-  --output $HOME/work/results/guardlens_naacl/preflight/model_window.json
+The default max_tokens_per_turn value is 512. It is a hard ceiling, not a padding length.
 
-python -m guardlens.evaluation.eval_length_probe_preflight \
-  --train $HOME/staging/dataset_gen_output/naacl_splits/train.jsonl \
-  --dev $HOME/staging/dataset_gen_output/naacl_splits/dev.jsonl \
-  --output $HOME/work/results/guardlens_naacl/preflight/length_probe_dev.json
-```
+## Training schedule
 
-Do not train if the model-window audit fails or the train/dev length shortcut gate exceeds the locked threshold.
+Phase 1 is detection-only bootstrap.
 
-### 2. Mandatory one-GPU phase-3 memory smoke
+Phase 2 jointly trains detection, evidence-turn localization and span localization. Detection remains fully weighted while localization ramps from 0.25 to its configured weight.
 
-```bash
-sbatch smoke_naacl_window.slurm
-```
+Checkpoint selection is dev-only.
 
-This selects the longest malicious and longest benign training records and performs one phase-3 optimizer step, including attribution and counterfactual loss, using the locked 48-turn settings.
+- best_detection.pt uses dev detection F1
+- best_localization.pt uses the mean of dev turn and span AUPRC
+- best.pt selects the localization checkpoint when available
 
-Proceed only if the log ends with:
+Each checkpoint records the exact train/dev SHA-256 values.
 
-```text
-TRAINING WINDOW SMOKE PASSED
-```
+## Required order
 
-Any OOM is a hard failure. Reduce the microbatch and increase accumulation while keeping the effective batch fixed before retrying; never skip OOM batches.
+Run CPU preflight and training with:
 
-### 3. Full retraining
+    sbatch train_naacl.slurm
 
-```bash
-sbatch train_naacl.slurm
-```
+The launcher performs frozen SHA verification, representation coverage audit, train/dev length-shortcut probing and then training.
 
-The launcher retrains from scratch:
+Before a full run, execute the one-GPU architecture smoke:
 
-```text
-guardlens
-guardlens_no_fusion
-guardlens_no_cf
-turn_level
-conversation_deberta
-```
+    sbatch smoke_naacl_window.slurm
 
-Default hierarchical input window is 48 turns for every model so all methods receive the same realized conversation prefix before model-specific token flattening/truncation behavior.
+The smoke selects a localizable malicious record plus a benign record and exercises detection, evidence-turn localization and span localization in the joint phase.
 
-### 4. Final held-out evaluation
-
-```bash
-sbatch eval_naacl.slurm
-```
-
-The evaluation suite includes:
-
-- held-out length-only shortcut report
-- top-k evidence-turn hit rate
-- leave-one-turn-out baseline
-- deletion/intervention evidence evaluation
-- supervision-tier breakdown
-- utility grid
-- NoCF intervention/utility ablation
-- legacy benign stress FPR
-- frontier-authored hard-benign stress FPR
-
-The two benign stress sets are reported separately and never influence training or threshold selection.
-
-## Scientific interpretation
-
-The repaired experiment should be described as **fixed-user-trajectory counterfactual replay**. Later user turns are held fixed after an intervention. This supports evidence-localization claims under the observed/fixed trajectory but is not an adaptive causal simulation of how a user would have responded to a changed assistant message.
+Do not run the legacy evaluation launchers against redesigned checkpoints until the evaluation migration is complete.
