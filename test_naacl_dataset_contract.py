@@ -78,6 +78,7 @@ class NaaclDatasetContractTests(unittest.TestCase):
         record["evidence_turn_ids"] = [0, 2]
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertEqual(item["evidence_turn_labels"], [1, -1, 1])
+        self.assertEqual(item["evidence_turn_weights"], [0.70, 0.0, 0.70])
 
     def test_record_strong_tier_does_not_upgrade_weak_evidence_turn(self):
         record = base_record(1)
@@ -153,6 +154,28 @@ class NaaclDatasetContractTests(unittest.TestCase):
         }]
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertEqual(item["char_labels"][0], [1, 1, 1, 1, 1])
+
+    def test_overlapping_strong_and_weak_positive_spans_keep_strong_weight(self):
+        record = base_record(1)
+        record["turns"][0]["span_annotations"] = [
+            {
+                "causal_type": "causal",
+                "evidence_status": "supported_strong",
+                "supervision_tier": "cf_strong",
+                "char_start": 0,
+                "char_end": 5,
+            },
+            {
+                "causal_type": "causal",
+                "evidence_status": "supported_weak",
+                "supervision_tier": "cf_weak",
+                "char_start": 1,
+                "char_end": 4,
+            },
+        ]
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertEqual(item["char_labels"][0], [1, 1, 1, 1, 1])
+        self.assertEqual(item["char_tier_weights"][0], [1.0] * 5)
 
     def test_semantic_construction_mask_is_fail_closed(self):
         record = base_record(1)
