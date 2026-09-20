@@ -1,20 +1,13 @@
-"""
-GuardLens: Multi-turn adversarial prompt detection with causal token attribution.
+"""GuardLens causal-localization package.
 
-Usage:
-    python -m guardlens.train --data data.jsonl --output ./checkpoints
-    python -m guardlens.train --data data.jsonl --output ./checkpoints --model turn_level
-    python -m guardlens.evaluate --data data.jsonl --checkpoint ./checkpoints/best.pt
+The NAACL redesign exposes the canonical GuardLens model and the two retained
+legacy detection baselines. Fusion/NoCF ablations from the EMNLP architecture
+are intentionally not part of the canonical model registry.
 """
 
 from guardlens.config import GuardLensConfig
 from guardlens.models.guardlens import GuardLens
-from guardlens.models.baselines import (
-    TurnLevelClassifier,
-    ConversationDeBERTa,
-    GuardLensNoFusion,
-    GuardLensNoCF,
-)
+from guardlens.models.baselines import TurnLevelClassifier, ConversationDeBERTa
 from guardlens.data.dataset import GuardLensDataset, GuardLensCollator
 from guardlens.training.loss import GuardLensLoss
 
@@ -23,8 +16,6 @@ __all__ = [
     "GuardLens",
     "TurnLevelClassifier",
     "ConversationDeBERTa",
-    "GuardLensNoFusion",
-    "GuardLensNoCF",
     "GuardLensDataset",
     "GuardLensCollator",
     "GuardLensLoss",
