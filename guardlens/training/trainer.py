@@ -586,7 +586,7 @@ def train(
     )
 
     from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
+    tokenizer = AutoTokenizer.from_pretrained(config.backbone_name, use_fast=True)
     collator = (
         FlatConversationCollator(tokenizer, config)
         if model_name == "conversation_deberta"
