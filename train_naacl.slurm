@@ -19,8 +19,9 @@ BASE_OUTPUT="${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl_redesign/checkpoi
 PRECHECK_DIR="${PRECHECK_DIR:-$HOME/work/results/guardlens_naacl_redesign/preflight}"
 MAX_LENGTH_AUC="${MAX_LENGTH_AUC:-0.65}"
 MAX_TURNS="${MAX_TURNS:-48}"
-MAX_TOKENS="${MAX_TOKENS:-512}"
+MAX_TOKENS="${MAX_TOKENS:-8192}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
+BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 GRAD_ACCUMULATION="${GRAD_ACCUMULATION:-8}"
 EPOCHS="${EPOCHS:-20}"
 LOCALIZATION_RAMP_EPOCHS="${LOCALIZATION_RAMP_EPOCHS:-5}"
@@ -91,6 +92,7 @@ echo " Train:   $TRAIN_PATH"
 echo " Dev:     $DEV_PATH"
 echo " Test:    NOT ACCESSED"
 echo " Model:   $MODEL"
+echo " Backbone:$BACKBONE"
 echo " Window:  turns=$MAX_TURNS hard_token_ceiling=$MAX_TOKENS"
 echo " Batch:   micro=$BATCH_SIZE accumulation=$GRAD_ACCUMULATION"
 echo " Schedule: phase1=5 localization_ramp_epochs=$LOCALIZATION_RAMP_EPOCHS"
@@ -106,7 +108,7 @@ python -m guardlens.data.verify_freeze \
 python -m guardlens.data.audit_representation \
   --train "$TRAIN_PATH" \
   --dev "$DEV_PATH" \
-  --backbone microsoft/deberta-v3-base \
+  --backbone $BACKBONE \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --output "$PRECHECK_DIR/representation_coverage.json"
@@ -137,7 +139,7 @@ python -m guardlens.train \
   --dev-path "$DEV_PATH" \
   --output "$OUTPUT" \
   --model "$MODEL" \
-  --backbone microsoft/deberta-v3-base \
+  --backbone $BACKBONE \
   --batch-size "$BATCH_SIZE" \
   --grad-accumulation "$GRAD_ACCUMULATION" \
   --lr 2e-4 \
