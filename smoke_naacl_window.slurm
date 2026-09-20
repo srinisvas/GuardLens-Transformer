@@ -21,6 +21,8 @@ MAX_TURNS="${MAX_TURNS:-48}"
 MAX_TOKENS="${MAX_TOKENS:-8192}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
+BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
+BACKBONE_TURN_MICROBATCH="${BACKBONE_TURN_MICROBATCH:-8}"
 
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -64,6 +66,7 @@ echo "========================================================"
 echo " GuardLens joint architecture GPU smoke"
 echo " Train: $TRAIN_PATH"
 echo " Backbone: $BACKBONE"
+echo " Revision: $BACKBONE_REVISION"
 echo " max_turns=$MAX_TURNS max_tokens=$MAX_TOKENS batch=$BATCH_SIZE"
 echo "========================================================"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader || true
@@ -71,6 +74,8 @@ nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader
 python -m guardlens.evaluation.smoke_training_window \
   --train "$TRAIN_PATH" \
   --backbone "$BACKBONE" \
+  --backbone-revision "$BACKBONE_REVISION" \
+  --backbone-turn-microbatch "$BACKBONE_TURN_MICROBATCH" \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --batch-size "$BATCH_SIZE" \
