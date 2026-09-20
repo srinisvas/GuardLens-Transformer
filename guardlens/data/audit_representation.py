@@ -185,8 +185,8 @@ def main():
     ):
         raise RuntimeError(
             f"max-tokens={args.max_tokens} exceeds backbone "
-            f"max_position_embeddings={backbone_limit}; use chunking/windowing "
-            "rather than overextending the backbone"
+            f"max_position_embeddings={backbone_limit}; select a backbone with "
+            "native context coverage rather than truncating the turn"
         )
     if not getattr(tokenizer, "is_fast", False):
         raise RuntimeError(
