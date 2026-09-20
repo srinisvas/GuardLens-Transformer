@@ -240,6 +240,12 @@ Detection `pos_weight` is derived from weighted detection mass rather than raw
 record count, so the optional 0.25-weight auxiliary outcomes do not silently
 change class balancing.
 
+Evidence-turn BCE also balances labeled positive versus labeled negative turn
+mass after applying strong/weak confidence weights. Untested turns do not enter
+that balance. Span BCE uses only explicit positive/negative span targets and
+their intervention-confidence weights; there is no additional span class
+reweighting in the canonical recipe.
+
 ## 6. Training objective and schedule
 
 The canonical joint objective is:
@@ -266,6 +272,10 @@ and ramps linearly to full weight at the final joint epoch.
 There is no Phase 3 in the canonical recipe.
 
 There is no weighted CF sampler.
+
+The canonical schedule runs all configured epochs by default so the localization
+ramp actually reaches full weight. Early stopping is disabled by default;
+`patience > 0` exists only as an explicit non-canonical override.
 
 ## 7. Representation and truncation contract
 
@@ -376,7 +386,10 @@ The trainer saves:
 `best.pt` resolves to `best_joint.pt` when it exists. Localization-only and
 detection-only checkpoints remain diagnostics.
 
-Early stopping in the joint phase follows the same joint selection score.
+The canonical run does not early-stop; all 20 default epochs execute and the
+joint dev score selects the checkpoint afterward. If early stopping is
+explicitly enabled as a non-canonical override, it follows the same joint
+selection score.
 
 Every checkpoint records:
 
@@ -566,6 +579,8 @@ assumptions:
     DEV_PATH before defining them
 23. the evaluation package eagerly re-exported legacy causal-evaluation
     semantics, making accidental use easier on the redesign branch
+24. the old default early-stopping patience could terminate Phase 2 before the
+    scheduled localization ramp reached full weight
 
 All of the above are addressed in the current redesign branch.
 
