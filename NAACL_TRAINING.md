@@ -561,6 +561,11 @@ assumptions:
     semantics
 21. the generic evaluation entry point imported a trainer evaluation function
     that no longer exists after the redesign
+22. the first rewritten SLURM launchers contained literal escaped shell
+    expansions (\${...}); the smoke launcher also referenced REPORT_PATH and
+    DEV_PATH before defining them
+23. the evaluation package eagerly re-exported legacy causal-evaluation
+    semantics, making accidental use easier on the redesign branch
 
 All of the above are addressed in the current redesign branch.
 
@@ -600,9 +605,13 @@ Do not submit a test/evaluation job yet. Evaluation migration is the next module
 
 ## 18. Current readiness status
 
-Code review:
+Static/manual code review:
 
     completed
+
+Runtime test execution:
+
+    still required on HPC
 
 Architecture redesign:
 
