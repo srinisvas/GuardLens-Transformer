@@ -14,6 +14,7 @@ from guardlens.models.components import (
 )
 from guardlens.models.guardlens import GuardLens
 from guardlens.training.loss import GuardLensLoss
+from guardlens.training.schedule import get_lambda_schedule
 
 
 def tiny_config():
@@ -87,6 +88,22 @@ class CausalLocalizationArchitectureTests(unittest.TestCase):
             compute_localization=True,
         )
         self.assertLess(float(out["turn_probs"][0, 1]), 1e-8)
+
+    def test_localization_ramp_reaches_full_weight_early_and_plateaus(self):
+        config = GuardLensConfig(
+            max_epochs=20,
+            phase1_epochs=5,
+            localization_ramp_epochs=5,
+            localization_ramp_start=0.25,
+            lambda_detection=1.0,
+            lambda_turn=1.0,
+            lambda_span=1.0,
+        )
+        self.assertEqual(get_lambda_schedule(4, config), (1.0, 0.0, 0.0))
+        self.assertEqual(get_lambda_schedule(5, config), (1.0, 0.25, 0.25))
+        self.assertEqual(get_lambda_schedule(9, config), (1.0, 1.0, 1.0))
+        self.assertEqual(get_lambda_schedule(15, config), (1.0, 1.0, 1.0))
+        self.assertEqual(get_lambda_schedule(19, config), (1.0, 1.0, 1.0))
 
     def test_joint_loss_accepts_multiple_positive_turns(self):
         config = tiny_config()
