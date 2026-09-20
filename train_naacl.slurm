@@ -61,6 +61,12 @@ for path in "$REPORT_PATH" "$TRAIN_PATH" "$DEV_PATH"; do
   [[ -f "$path" ]] || { echo "ERROR: missing required file: $path"; exit 2; }
 done
 
+if [[ "$MODEL" != "guardlens" ]]; then
+  echo "ERROR: canonical launcher currently permits MODEL=guardlens only."
+  echo "Baseline training will be re-enabled after the evaluation/baseline migration."
+  exit 2
+fi
+
 echo "========================================================"
 echo " GuardLens causal-localization training"
 echo " Variant: $TRAIN_VARIANT"
