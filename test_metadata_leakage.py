@@ -79,6 +79,13 @@ class TrainingMetadataLeakageTests(unittest.TestCase):
         self.assertEqual(
             item_a["char_tier_weights"], item_b["char_tier_weights"]
         )
+        self.assertEqual(
+            item_a["evidence_turn_labels"], item_b["evidence_turn_labels"]
+        )
+        self.assertEqual(
+            item_a["evidence_turn_weights"], item_b["evidence_turn_weights"]
+        )
+        self.assertEqual(item_a["detection_weight"], item_b["detection_weight"])
 
         # The metadata may remain available separately for auditing/reporting.
         self.assertNotEqual(item_a["conversation_id"], item_b["conversation_id"])
