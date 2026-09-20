@@ -101,11 +101,22 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens):
             max_tokens_seen = max(max_tokens_seen, length)
 
             supervised_spans = []
+            role = str(turn.get("role", "")).lower()
             for span in turn.get("span_annotations", []) or []:
                 target = span_supervision_target(span)
                 if target is None:
                     ignored_spans += 1
-                elif target[0] == 1:
+                    continue
+
+                if role != "user":
+                    errors.append(
+                        f"{cid}: turn {t_idx} role={role!r} contains "
+                        "target-bearing span supervision; causal span "
+                        "localization is user-turn-only"
+                    )
+                    continue
+
+                if target[0] == 1:
                     positive_spans += 1
                     supervised_spans.append(span)
                 else:
