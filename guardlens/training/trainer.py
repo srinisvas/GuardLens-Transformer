@@ -450,7 +450,7 @@ def _checkpoint_payload(
     score_name,
 ):
     return {
-        "architecture_version": "causal_localization_v1",
+        "architecture_version": "causal_localization_v2",
         "epoch": epoch,
         "phase": phase,
         "model_name": model_name,
@@ -830,7 +830,7 @@ def train(
     shutil.copy2(chosen, os.path.join(output_dir, "best.pt"))
     summary = {
         "status": "completed",
-        "architecture_version": "causal_localization_v1",
+        "architecture_version": "causal_localization_v2",
         "model_name": model_name,
         "best_checkpoint": os.path.basename(chosen),
         "best_detection_f1": best_detection,
