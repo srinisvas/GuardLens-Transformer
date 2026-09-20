@@ -16,18 +16,14 @@ For a clean rebuild:
 
 The setup script installs the complete canonical training/preflight dependency
 set from `requirements.txt`, verifies dependency consistency with `pip check`,
-requires a CUDA-enabled PyTorch build, verifies the DeBERTa-v3 fast tokenizer
-and offset mappings, verifies `max_position_embeddings=512`, and imports the
+requires a CUDA-enabled PyTorch build, verifies the ModernBERT-large fast
+tokenizer and offset mappings, verifies `max_position_embeddings=8192` and
+`hidden_size=1024`, caches the canonical backbone snapshot, and imports the
 redesigned GuardLens package/training schedule.
 
-`sentencepiece` and `protobuf` are mandatory. Microsoft DeBERTa-v3-base
-ships a SentencePiece `spm.model`; `tiktoken` is not a substitute.
-Transformers constructs the fast DeBERTa tokenizer through
-`DebertaV2Converter`, which also requires protobuf. The old environment setup
-script did not install the full tokenizer dependency chain, and its unquoted
-shell expressions such as `transformers>=4.40.0` could be parsed as shell
-redirections rather than version constraints. The redesigned setup script
-installs from the requirements file instead.
+The canonical backbone is `answerdotai/ModernBERT-large`. Transformers 4.48+
+is required for native ModernBERT support. The setup script installs from the
+requirements file rather than duplicating package lists in shell commands.
 
 Heavy evaluation backends such as vLLM and bitsandbytes remain optional and are
 not installed by the canonical training environment until their corresponding
@@ -39,9 +35,10 @@ architecture and training module on branch:
     naacl-causal-localization-redesign
 
 The branch starts from the complete `naacl-validity-repair` tip
-`e6c432c37635ea7af34b390cbfa971173c9b5f43`. All validity-repair work is
-therefore inherited. The redesign then replaces the EMNLP-era single-pivot,
-gated-fusion, Phase-3 self-counterfactual and CF-oversampling recipe.
+`e6c432c37635ea7af34b390cbfa971173c9b5f43`, so the frozen-data validity work
+is inherited. Model and baseline choices are otherwise optimized for the NAACL
+paper itself. Historical EMNLP architecture compatibility is not a scientific
+constraint.
 
 Do not infer readiness from this document alone. The module is code-reviewed,
 but the current branch still requires the CPU contract tests, frozen-data
@@ -137,7 +134,7 @@ The main model is:
     realized turn text
         |
         v
-    frozen DeBERTa-v3-base per turn
+    frozen ModernBERT-large per turn (native 8,192-token context)
         |
         +--> token representations -----------------------------+
         |                                                       |
@@ -160,14 +157,32 @@ The main model is:
 
 The turn-context Transformer operates over T turn vectors rather than flattening
 T x S tokens into one global self-attention sequence. Cross-turn attention is
-therefore O(T^2), while DeBERTa continues to model within-turn token context.
+therefore O(T^2), while ModernBERT models the complete within-turn token
+context natively.
 
 The contextual span head combines each raw token representation with the
 conversation-aware representation of the containing turn.
 
-### Removed from the canonical model
+### Backbone choice
 
-The following EMNLP-era mechanisms are intentionally absent:
+The canonical backbone is `answerdotai/ModernBERT-large`:
+
+- encoder-only and bidirectional, which matches token/span localization
+- native 8,192-token context, covering the observed train/dev turn lengths
+  without truncation or within-turn chunking
+- 1,024-dimensional token states for the contextual span head
+- local/global alternating attention suitable for long inputs
+- fast-tokenizer offset mappings required by the span supervision contract
+
+The frozen train/dev representation audit showed that a 512-token encoder is
+structurally mismatched to this corpus: p95 is about 700 tokens, p99 about 1.15K,
+and observed maxima are 3,491 train / 2,113 dev. The model therefore preserves
+each realized turn as one native encoder sequence instead of splitting it into
+overlapping chunks. This keeps cross-token dependencies within the turn intact.
+
+### Excluded from the canonical model
+
+The following mechanisms are intentionally absent:
 
 - single softmax pivot head
 - pivot-kind classifier
@@ -353,19 +368,18 @@ The collator:
 Default values are:
 
     max_turns = 48
-    max_tokens_per_turn = 512
+    max_tokens_per_turn = 8192
 
-The 512 value is a hard ceiling, not a fixed padding length and not yet an
-empirical claim that the corpus fits. The representation audit must establish
-that.
+The 8,192-token value is the native ModernBERT-large position capacity. It is a
+hard architectural ceiling, not a padding length. Dynamic padding still uses
+the longest realized turn in the current batch.
 
-The model also checks the backbone's `max_position_embeddings`. The configured
-turn-token ceiling may not exceed the backbone's actual position limit. If a
-frozen turn is longer than the backbone supports, the solution is an explicit
-chunking/windowing design. Increasing the number past the backbone limit is not
-allowed.
+The train/dev audit observed a maximum of 3,491 tokens, so the canonical
+backbone covers the complete observed turn distribution without chunking.
+If a future frozen/test turn exceeds 8,192 tokens, evaluation must fail closed;
+the response is not silent truncation.
 
-Padded turns are not sent through DeBERTa. Only realized turns enter the
+Padded turns are not sent through ModernBERT. Only realized turns enter the
 backbone.
 
 ## 8. Frozen artifact verification
@@ -391,9 +405,9 @@ Run:
     python -m guardlens.data.audit_representation \
       --train "$FREEZE/splits_primary/train.jsonl" \
       --dev "$FREEZE/splits_primary/dev.jsonl" \
-      --backbone microsoft/deberta-v3-base \
+      --backbone answerdotai/ModernBERT-large \
       --max-turns 48 \
-      --max-tokens 512 \
+      --max-tokens 8192 \
       --output /tmp/guardlens_representation_audit.json
 
 The audit is train/dev only and reports:
@@ -458,7 +472,7 @@ selection score.
 
 Every checkpoint records:
 
-- architecture_version=causal_localization_v1
+- architecture_version=causal_localization_v2
 - exact training-code Git SHA
 - exact train SHA-256
 - exact dev SHA-256
@@ -518,34 +532,46 @@ The following historical launchers are intentionally disabled on this branch:
 `guardlens.evaluate` also fails closed for redesigned checkpoints until the
 evaluation migration is complete.
 
-This is intentional. Old EMNLP evaluators use stale pivot/construction semantics
-and must not silently run against `causal_localization_v1`.
+This is intentional. The pre-redesign evaluators use stale target and
+representation semantics and must not silently run against
+`causal_localization_v2`.
 
 ## 14. Baseline status
 
-The old baseline source files remain for migration/reference, but baseline
-training is not part of the canonical launcher yet.
+NAACL baselines are defined against the current scientific model, not against
+historical EMNLP checkpoints.
 
-The previous flat ConversationDeBERTa baseline has a 2,048-token flattening cap
-and therefore does not currently provide a fair full-context architecture
-comparison.
+Every paper baseline must use the same native full-turn ModernBERT coverage so a
+result cannot be explained by one model seeing more of the input.
 
-The baseline migration must provide matched input coverage before paper runs.
+Planned matched-coverage baselines:
 
-Planned fair comparison:
+- ModernBERT pooled-turn detector: encode each full turn, pool turns directly,
+  no turn-context Transformer
+- ModernBERT independent-turn detector: classify turns independently and
+  aggregate conversation risk
+- canonical GuardLens: full-turn ModernBERT + turn-context Transformer +
+  evidence-turn/span supervision
 
-- pooled-turn detection baseline with identical per-turn DeBERTa coverage but no
-  turn-context Transformer
-- independent turn-level detector
-- canonical GuardLens
+Primary ablations:
 
-Fusion and SelfCF return only as explicit ablations if implemented.
+- no turn-context encoder
+- no span supervision
+- no turn supervision
+- frozen versus selectively fine-tuned backbone if dev evidence justifies it
+- auxiliary detection-only on/off
+- optional +SelfCF
+- optional +Fusion
+
+There is no requirement to reproduce the old DeBERTa architecture in the NAACL
+paper.
 
 ## 15. Evaluation migration contract
 
-No existing evaluation capability may be silently dropped.
+The NAACL evaluation suite must preserve every scientifically useful capability,
+but it does not need to preserve historical checkpoint compatibility.
 
-Each existing evaluation must be either:
+Each prior evaluation must be either:
 
 - migrated to the new causal target contract
 - retained unchanged only when its semantics remain valid
@@ -613,9 +639,9 @@ Ablations:
 - optional +Fusion
 - auxiliary detection-only on/off
 
-Old `NoCF` and `NoFusion` must not be treated as canonical-reference models.
-If reintroduced, they become `+SelfCF` and `+Fusion` comparisons against the
-new canonical GuardLens.
+`NoCF` and `NoFusion` are not reference models for NAACL. If those ideas are
+reintroduced, they appear only as `+SelfCF` and `+Fusion` ablations against
+the native-long-context canonical GuardLens.
 
 ## 16. Code-review findings fixed on this branch
 
@@ -679,9 +705,12 @@ assumptions:
 34. the environment setup omitted the mandatory SentencePiece dependency and
     duplicated only a subset of `requirements.txt`; unquoted package version
     constraints in shell were also unsafe
-35. the repaired environment still lacked protobuf, which is required by
-    Transformers' `DebertaV2Converter` when constructing the fast
-    DeBERTa-v3 tokenizer from its SentencePiece model
+35. the repaired DeBERTa environment still lacked protobuf, which exposed an
+    incomplete tokenizer setup
+36. the 512-token backbone itself was structurally mismatched to the frozen
+    corpus: roughly 9% of train/dev turns exceeded 512, with train/dev maxima of
+    3,491 / 2,113 tokens. The canonical architecture now uses native 8K
+    ModernBERT-large full-turn encoding instead of truncation or chunking.
 
 All of the above are addressed in the current redesign branch.
 
@@ -748,7 +777,8 @@ Frozen-data SHA verification code:
 
 Representation/truncation audit:
 
-    implemented, execution still required on HPC
+    512-token DeBERTa audit executed and failed as intended
+    native-8K ModernBERT audit must now be rerun
 
 CPU unit/contract suite:
 
