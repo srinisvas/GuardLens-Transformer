@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Regression tests for the redesigned NAACL representation contract."""
+import json
+import os
+import tempfile
 import unittest
 
 from guardlens.config import GuardLensConfig
 from guardlens.data.dataset import GuardLensCollator, GuardLensDataset
+from guardlens.data.audit_representation import audit_split
 from guardlens.data.training_contract import training_label
 
 
@@ -244,6 +248,41 @@ class NaaclDatasetContractTests(unittest.TestCase):
             GuardLensDataset(
                 [record], GuardLensConfig(max_turns=3)
             )[0]
+
+    def test_representation_audit_reports_turn_overflow_without_traceback(self):
+        record = base_record(1)
+        record["turns"] = [
+            {
+                "turn_id": i,
+                "role": "user",
+                "text": "x",
+                "span_annotations": [],
+            }
+            for i in range(4)
+        ]
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".jsonl",
+                delete=False,
+                encoding="utf-8",
+            ) as handle:
+                path = handle.name
+                handle.write(json.dumps(record) + "\n")
+            result = audit_split(
+                "train",
+                path,
+                _FakeTokenizer(),
+                max_turns=3,
+                max_tokens=20,
+            )
+            self.assertTrue(
+                any("exceed max_turns=3" in error for error in result["errors"])
+            )
+        finally:
+            if path and os.path.exists(path):
+                os.unlink(path)
 
     def test_collator_refuses_silent_token_truncation(self):
         record = base_record(0)
