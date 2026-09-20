@@ -125,6 +125,10 @@ class GuardLensCollator:
     """
 
     def __init__(self, tokenizer, config: GuardLensConfig):
+        if hasattr(tokenizer, "is_fast") and not tokenizer.is_fast:
+            raise RuntimeError(
+                "GuardLensCollator requires a fast tokenizer with offset mappings"
+            )
         self.tokenizer = tokenizer
         self.config = config
         self.pad_token_id = (
