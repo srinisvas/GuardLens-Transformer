@@ -576,6 +576,7 @@ def train(
     os.makedirs(output_dir, exist_ok=True)
     best_detection = -1.0
     best_localization = -1.0
+    best_joint = -1.0
     best_threshold = config.default_threshold
     patience_counter = 0
     last_phase = 1
@@ -660,9 +661,9 @@ def train(
 
         loc_score = dev_metrics["localization_score"]
         if phase >= 2 and loc_score is not None:
-            if float(loc_score) > best_localization:
-                best_localization = float(loc_score)
-                patience_counter = 0
+            loc_score = float(loc_score)
+            if loc_score > best_localization:
+                best_localization = loc_score
                 payload = _checkpoint_payload(
                     model=model,
                     config=config,
@@ -672,26 +673,59 @@ def train(
                     threshold=best_threshold,
                     dev_metrics=dev_metrics,
                     data_sha256=data_sha256,
-                    score=float(loc_score),
+                    score=loc_score,
                     score_name="mean_dev_turn_span_auprc",
                 )
                 torch.save(
                     payload, os.path.join(output_dir, "best_localization.pt")
                 )
-            else:
-                patience_counter += 1
-                if patience_counter >= config.patience:
-                    print(
-                        f"Early stop after {config.patience} "
-                        "joint-phase evaluations without localization improvement"
-                    )
-                    break
 
+            # Canonical checkpoint selection is joint, not localization-only.
+            # Detection F1, turn AUPRC and span AUPRC are all bounded [0,1],
+            # so an equal-weight mean is transparent and avoids selecting a
+            # localization peak that materially sacrifices detection.
+            turn_ap = dev_metrics.get("turn_auprc")
+            span_ap = dev_metrics.get("span_auprc")
+            if turn_ap is not None and span_ap is not None:
+                joint_score = float(np.mean([
+                    det_score, float(turn_ap), float(span_ap)
+                ]))
+                dev_metrics["joint_selection_score"] = joint_score
+                if joint_score > best_joint:
+                    best_joint = joint_score
+                    patience_counter = 0
+                    payload = _checkpoint_payload(
+                        model=model,
+                        config=config,
+                        model_name=model_name,
+                        epoch=epoch,
+                        phase=phase,
+                        threshold=best_threshold,
+                        dev_metrics=dev_metrics,
+                        data_sha256=data_sha256,
+                        score=joint_score,
+                        score_name="mean_dev_detection_f1_turn_auprc_span_auprc",
+                    )
+                    torch.save(
+                        payload, os.path.join(output_dir, "best_joint.pt")
+                    )
+                else:
+                    patience_counter += 1
+                    if patience_counter >= config.patience:
+                        print(
+                            f"Early stop after {config.patience} "
+                            "joint-phase evaluations without joint-score improvement"
+                        )
+                        break
+
+    joint_ckpt = os.path.join(output_dir, "best_joint.pt")
     localization_ckpt = os.path.join(
         output_dir, "best_localization.pt"
     )
     detection_ckpt = os.path.join(output_dir, "best_detection.pt")
-    if os.path.exists(localization_ckpt):
+    if os.path.exists(joint_ckpt):
+        chosen = joint_ckpt
+    elif os.path.exists(localization_ckpt):
         chosen = localization_ckpt
     elif os.path.exists(detection_ckpt):
         chosen = detection_ckpt
@@ -708,6 +742,7 @@ def train(
         "best_localization_auprc": (
             best_localization if best_localization >= 0 else None
         ),
+        "best_joint_score": best_joint if best_joint >= 0 else None,
         "data_sha256": data_sha256,
         "train_records": len(train_records),
         "dev_records": len(dev_records),
