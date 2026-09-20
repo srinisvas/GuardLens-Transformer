@@ -71,13 +71,13 @@ def _validate_turn_id(
         )
 
 
-def _positive_weight_from_spans(turn: Dict, default: float) -> float:
+def _positive_weight_from_spans(turn: Dict) -> Optional[float]:
     weights = []
     for span in turn.get("span_annotations", []) or []:
         target = span_supervision_target(span)
         if target is not None and target[0] == 1:
             weights.append(float(target[1]))
-    return max(weights) if weights else float(default)
+    return max(weights) if weights else None
 
 
 def build_evidence_turn_targets(
@@ -167,13 +167,26 @@ def build_evidence_turn_targets(
         seen.add(tid)
 
         status = status_by_turn.get(tid)
+        span_weight = _positive_weight_from_spans(turns[tid])
         if status in TURN_POSITIVE_STATUS:
             weight = TURN_POSITIVE_STATUS[status]
+        elif status in TURN_NEGATIVE_STATUS:
+            if span_weight is None:
+                raise RuntimeError(
+                    f"{cid}: evidence_turn_ids contains turn {tid} but its "
+                    f"tested turn intervention is {status!r} and no independently "
+                    "supported positive span exists on that turn"
+                )
+            # Independent span intervention evidence may override a negative
+            # whole-turn intervention result.
+            weight = span_weight
+        elif span_weight is not None:
+            weight = span_weight
         else:
             # evidence_turn_ids is itself intervention-backed membership, but
             # without turn-local status/span evidence we do not inherit the
             # record-level tier. Fall back conservatively to weak confidence.
-            weight = _positive_weight_from_spans(turns[tid], 0.70)
+            weight = 0.70
         labels[tid] = 1
         weights[tid] = max(weights[tid], weight)
 
