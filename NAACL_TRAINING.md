@@ -622,6 +622,11 @@ Then submit:
 
     sbatch smoke_naacl_window.slurm
 
+The smoke is pinned to the frozen primary hashes and selects a localizable
+malicious record plus a benign record with explicit negative span supervision.
+It requires positive evidence-turn targets, positive causal-span targets and
+explicit negative span targets before performing the joint optimizer step.
+
 Proceed to full training only when the smoke ends with:
 
     TRAINING ARCHITECTURE SMOKE PASSED
