@@ -26,17 +26,28 @@ def load_jsonl(path):
         return [json.loads(line) for line in handle if line.strip()]
 
 
-def footprint(record):
-    turns = record.get("turns", [])
-    texts = [str(t.get("text", "")) for t in turns]
+def token_footprint(record, tokenizer):
+    lengths = [
+        len(tokenizer(
+            str(turn.get("text", "")),
+            truncation=False,
+            add_special_tokens=True,
+        )["input_ids"])
+        for turn in record.get("turns", []) or []
+    ]
+    max_len = max(lengths or [0])
+    # First key approximates the dense post-backbone tensor footprint used by
+    # the current hierarchical heads; later keys break ties toward more real
+    # tokens and more turns.
     return (
-        len(turns),
-        sum(len(text) for text in texts),
-        max([len(text) for text in texts] or [0]),
+        max_len * len(lengths),
+        max_len,
+        sum(lengths),
+        len(lengths),
     )
 
 
-def select_smoke_records(records, batch_size):
+def select_smoke_records(records, batch_size, tokenizer):
     primary = [
         r for r in records if not is_auxiliary_detection_record(r)
     ]
@@ -68,17 +79,41 @@ def select_smoke_records(records, batch_size):
         )
 
     selected = [
-        max(localizable_positive, key=footprint),
-        max(negatives, key=footprint),
+        max(localizable_positive, key=lambda r: token_footprint(r, tokenizer)),
+        max(negatives, key=lambda r: token_footprint(r, tokenizer)),
     ]
     if batch_size > 2:
         used = {str(r.get("conversation_id", "")) for r in selected}
         remaining = [
-            r for r in sorted(primary, key=footprint, reverse=True)
+            r for r in sorted(primary, key=lambda r: token_footprint(r, tokenizer), reverse=True)
             if str(r.get("conversation_id", "")) not in used
         ]
         selected.extend(remaining[: batch_size - 2])
     return selected[:batch_size]
+
+
+def select_worst_case_records(records, batch_size, tokenizer):
+    primary = [
+        r for r in records if not is_auxiliary_detection_record(r)
+    ]
+    return sorted(
+        primary,
+        key=lambda r: token_footprint(r, tokenizer),
+        reverse=True,
+    )[:batch_size]
+
+
+def make_loader(records, config, tokenizer):
+    dataset = GuardLensDataset(records, config)
+    collator = GuardLensCollator(tokenizer, config)
+    return DataLoader(
+        dataset,
+        batch_size=len(records),
+        shuffle=False,
+        collate_fn=collator,
+        num_workers=0,
+        drop_last=False,
+    )
 
 
 def main():
@@ -102,7 +137,6 @@ def main():
         raise ValueError("batch-size must be >=2")
 
     records = load_jsonl(args.train)
-    selected = select_smoke_records(records, args.batch_size)
 
     config = GuardLensConfig(
         backbone_name=args.backbone,
@@ -125,16 +159,14 @@ def main():
         revision=config.backbone_revision,
         use_fast=True,
     )
-    dataset = GuardLensDataset(selected, config)
-    collator = GuardLensCollator(tokenizer, config)
-    loader = DataLoader(
-        dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        collate_fn=collator,
-        num_workers=0,
-        drop_last=False,
+    selected = select_smoke_records(
+        records, args.batch_size, tokenizer
     )
+    worst_case = select_worst_case_records(
+        records, args.batch_size, tokenizer
+    )
+    loader = make_loader(selected, config, tokenizer)
+    worst_loader = make_loader(worst_case, config, tokenizer)
     batch = next(iter(loader))
     if int((batch["turn_labels"] == 1).sum()) == 0:
         raise RuntimeError("smoke batch has no positive evidence-turn target")
@@ -175,34 +207,44 @@ def main():
         weight_decay=config.weight_decay,
     )
 
-    torch.cuda.reset_peak_memory_stats()
-    metrics = train_epoch(
-        model,
-        loader,
-        optimizer,
-        None,
-        loss_fn,
-        config,
-        epoch=config.phase1_epochs,
-        device=torch.device("cuda"),
-    )
-    torch.cuda.synchronize()
-    peak_gib = torch.cuda.max_memory_allocated() / (1024 ** 3)
+    def run_batch(name, records_for_batch, batch_loader):
+        torch.cuda.reset_peak_memory_stats()
+        metrics = train_epoch(
+            model,
+            batch_loader,
+            optimizer,
+            None,
+            loss_fn,
+            config,
+            epoch=config.phase1_epochs,
+            device=torch.device("cuda"),
+        )
+        torch.cuda.synchronize()
+        peak_gib = torch.cuda.max_memory_allocated() / (1024 ** 3)
+        print(f"=== {name} ===")
+        for record in records_for_batch:
+            footprint = token_footprint(record, tokenizer)
+            print(
+                f"{record.get('conversation_id')} "
+                f"label={training_label(record)} "
+                f"turns={len(record.get('turns', []))} "
+                f"max_turn_tokens={footprint[1]} "
+                f"dense_token_slots={footprint[0]} "
+                f"tier={record.get('supervision_tier')}"
+            )
+        print(
+            f"phase={metrics['phase']} loss={metrics['loss']:.6f} "
+            f"turn_loss={metrics['turn_loss']:.6f} "
+            f"span_loss={metrics['span_loss']:.6f}"
+        )
+        print(f"peak_cuda_memory_allocated_gib={peak_gib:.2f}")
+        return peak_gib
 
     print("=== GuardLens causal-localization training smoke ===")
-    for record in selected:
-        print(
-            f"{record.get('conversation_id')} "
-            f"label={training_label(record)} "
-            f"turns={len(record.get('turns', []))} "
-            f"tier={record.get('supervision_tier')}"
-        )
-    print(
-        f"phase={metrics['phase']} loss={metrics['loss']:.6f} "
-        f"turn_loss={metrics['turn_loss']:.6f} "
-        f"span_loss={metrics['span_loss']:.6f}"
-    )
-    print(f"peak_cuda_memory_allocated_gib={peak_gib:.2f}")
+    joint_peak = run_batch("joint-supervision batch", selected, loader)
+    worst_peak = run_batch("worst-token-footprint batch", worst_case, worst_loader)
+    print(f"joint_peak_gib={joint_peak:.2f}")
+    print(f"worst_case_peak_gib={worst_peak:.2f}")
     print("TRAINING ARCHITECTURE SMOKE PASSED")
 
 
