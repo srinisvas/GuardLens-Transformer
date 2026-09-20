@@ -18,8 +18,9 @@ REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
 TRAIN_PATH="${TRAIN_PATH:-$FREEZE_DIR/splits_primary/train.jsonl}"
 DEV_PATH="${DEV_PATH:-$FREEZE_DIR/splits_primary/dev.jsonl}"
 MAX_TURNS="${MAX_TURNS:-48}"
-MAX_TOKENS="${MAX_TOKENS:-512}"
+MAX_TOKENS="${MAX_TOKENS:-8192}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
+BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -63,13 +64,14 @@ python -m guardlens.data.verify_freeze \
 echo "========================================================"
 echo " GuardLens joint architecture GPU smoke"
 echo " Train: $TRAIN_PATH"
+echo " Backbone: $BACKBONE"
 echo " max_turns=$MAX_TURNS max_tokens=$MAX_TOKENS batch=$BATCH_SIZE"
 echo "========================================================"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader || true
 
 python -m guardlens.evaluation.smoke_training_window \
   --train "$TRAIN_PATH" \
-  --backbone microsoft/deberta-v3-base \
+  --backbone $BACKBONE \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --batch-size "$BATCH_SIZE" \
