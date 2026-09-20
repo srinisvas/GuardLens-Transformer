@@ -1,23 +1,32 @@
-"""Training and evaluation loops — v11 dataset compatible."""
+"""Training loop for the NAACL causal-localization redesign.
 
+The trainer reads frozen train/dev partitions only. Held-out test evaluation is
+intentionally a separate pipeline and cannot be triggered from this module.
+"""
+from __future__ import annotations
+
+import hashlib
 import json
 import math
 import os
 import random
+import shutil
 from collections import Counter
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 
 from guardlens.config import GuardLensConfig
 from guardlens.data.dataset import (
-    GuardLensDataset, GuardLensCollator, FlatConversationCollator,
-    build_weighted_sampler,
+    FlatConversationCollator,
+    GuardLensCollator,
+    GuardLensDataset,
 )
 from guardlens.data.training_contract import (
+    classification_loss_weight,
     is_auxiliary_detection_record,
     training_label,
 )
@@ -26,9 +35,144 @@ from guardlens.training.loss import GuardLensLoss
 from guardlens.training.schedule import get_current_phase, get_lambda_schedule
 
 
-# =========================================================
-# Training epoch
-# =========================================================
+def load_records(path: str) -> List[Dict]:
+    records = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"invalid JSON at {path}:{line_no}: {exc}"
+                ) from exc
+    if not records:
+        raise RuntimeError(f"empty dataset: {path}")
+    return records
+
+
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _assert_train_dev_disjoint(train_records: Sequence[Dict], dev_records: Sequence[Dict]):
+    train_ids = {
+        str(r.get("conversation_id", ""))
+        for r in train_records if r.get("conversation_id")
+    }
+    dev_ids = {
+        str(r.get("conversation_id", ""))
+        for r in dev_records if r.get("conversation_id")
+    }
+    overlap = train_ids & dev_ids
+    if overlap:
+        raise RuntimeError(
+            f"train/dev conversation leakage: {len(overlap)} shared ids"
+        )
+    if any(is_auxiliary_detection_record(r) for r in dev_records):
+        raise RuntimeError("dev must remain primary-only; auxiliary records are train-only")
+
+
+def _weighted_detection_balance(records: Sequence[Dict]) -> Tuple[int, int, float, float]:
+    n_pos = n_neg = 0
+    pos_mass = neg_mass = 0.0
+    for record in records:
+        label = training_label(record)
+        weight = classification_loss_weight(record)
+        if label == 1:
+            n_pos += 1
+            pos_mass += weight
+        else:
+            n_neg += 1
+            neg_mass += weight
+    return n_pos, n_neg, pos_mass, neg_mass
+
+
+def _turn_supervision_balance(dataset: GuardLensDataset) -> Tuple[int, int, float, float]:
+    n_pos = n_neg = 0
+    pos_mass = neg_mass = 0.0
+    for idx in range(len(dataset)):
+        item = dataset[idx]
+        for label, weight in zip(
+            item["evidence_turn_labels"], item["evidence_turn_weights"]
+        ):
+            if label == 1 and weight > 0:
+                n_pos += 1
+                pos_mass += float(weight)
+            elif label == 0 and weight > 0:
+                n_neg += 1
+                neg_mass += float(weight)
+    return n_pos, n_neg, pos_mass, neg_mass
+
+
+def find_best_threshold(probs: Sequence[float], labels: Sequence[int]) -> float:
+    best_f1 = -1.0
+    best_thresh = 0.5
+    for thresh in np.linspace(0.05, 0.95, 181):
+        metrics = _binary_metrics(probs, labels, float(thresh))
+        if metrics["f1"] > best_f1:
+            best_f1 = metrics["f1"]
+            best_thresh = float(thresh)
+    return best_thresh
+
+
+def _binary_metrics(
+    probs: Sequence[float],
+    labels: Sequence[int],
+    threshold: float,
+) -> Dict[str, float]:
+    tp = fp = fn = tn = 0
+    for prob, label in zip(probs, labels):
+        pred = 1 if float(prob) >= threshold else 0
+        if pred == 1 and label == 1:
+            tp += 1
+        elif pred == 1 and label == 0:
+            fp += 1
+        elif pred == 0 and label == 1:
+            fn += 1
+        else:
+            tn += 1
+    precision = tp / max(1, tp + fp)
+    recall = tp / max(1, tp + fn)
+    f1 = 2 * precision * recall / max(1e-12, precision + recall)
+    accuracy = (tp + tn) / max(1, tp + tn + fp + fn)
+    return {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "tn": tn,
+        "threshold": float(threshold),
+    }
+
+
+def _average_precision(scores: Sequence[float], labels: Sequence[int]) -> Optional[float]:
+    if not scores:
+        return None
+    positives = sum(int(x) == 1 for x in labels)
+    negatives = sum(int(x) == 0 for x in labels)
+    if positives == 0 or negatives == 0:
+        return None
+    order = sorted(
+        range(len(scores)),
+        key=lambda i: (-float(scores[i]), i),
+    )
+    tp = 0
+    precision_sum = 0.0
+    for rank, idx in enumerate(order, 1):
+        if int(labels[idx]) == 1:
+            tp += 1
+            precision_sum += tp / rank
+    return precision_sum / positives
+
 
 def train_epoch(
     model: nn.Module,
@@ -41,21 +185,18 @@ def train_epoch(
     device: torch.device,
 ) -> Dict[str, float]:
     model.train()
-    if config.freeze_backbone and hasattr(model, "backbone") and model.backbone is not None:
+    if config.freeze_backbone and getattr(model, "backbone", None) is not None:
         model.backbone.eval()
 
     phase = get_current_phase(epoch, config)
-    lambda_cls, lambda_attr, lambda_cf = get_lambda_schedule(epoch, config)
+    lambda_detection, lambda_turn, lambda_span = get_lambda_schedule(
+        epoch, config
+    )
 
-    total_loss = 0.0
-    total_cls_loss = 0.0
-    total_attr_loss = 0.0
-    total_cf_loss = 0.0
-    total_pivot_loss = 0.0
-    n_batches = 0
+    totals = Counter()
     correct = 0
-    total = 0
-
+    seen = 0
+    n_batches = 0
     accumulation = max(1, int(config.gradient_accumulation))
     loader_steps = len(loader)
     if loader_steps <= 0:
@@ -69,16 +210,8 @@ def train_epoch(
         turn_mask = batch["turn_mask"].to(device)
         role_ids = batch["role_ids"].to(device)
         token_labels = batch["token_labels"].to(device)
-        span_weights = batch["span_weights"].to(device)
         labels = batch["labels"].to(device)
-        sample_weights = batch["sample_weights"].to(device)
-        cf_loss_eligible = batch["cf_loss_eligible"].to(device)
-        pivot_labels = batch["pivot_labels"].to(device)
-        pivot_kind_labels = batch["pivot_kind_labels"].to(device)
 
-        # A final accumulation group may contain fewer than `accumulation`
-        # microbatches. Scale that whole group by its actual size so its update
-        # is not artificially shrunk and ensure it is stepped at epoch end.
         group_start = (step // accumulation) * accumulation
         group_size = min(accumulation, loader_steps - group_start)
 
@@ -88,41 +221,22 @@ def train_epoch(
                 attention_mask=attention_mask,
                 turn_mask=turn_mask,
                 role_ids=role_ids,
-                compute_attribution=(phase >= 2),
+                compute_localization=(phase >= 2),
             )
-
             losses = loss_fn(
-                outputs, labels, token_labels,
-                span_weights=span_weights,
-                sample_weights=sample_weights,
-                pivot_labels=pivot_labels,
-                pivot_kind_labels=pivot_kind_labels,
+                outputs,
+                labels,
+                token_labels,
+                span_weights=batch["span_weights"].to(device),
+                detection_weights=batch["detection_weights"].to(device),
+                turn_labels=batch["turn_labels"].to(device),
+                turn_weights=batch["turn_weights"].to(device),
                 phase=phase,
-                lambda_cls=lambda_cls,
-                lambda_attr=lambda_attr,
-                lambda_cf=lambda_cf,
-                lambda_pivot=config.lambda_pivot,
+                lambda_detection=lambda_detection,
+                lambda_turn=lambda_turn,
+                lambda_span=lambda_span,
             )
             loss = losses["total"]
-
-            # Counterfactual loss (phase 3, only for models with attribution)
-            if (phase >= 3 and lambda_cf > 0
-                    and outputs.get("attr_probs") is not None
-                    and hasattr(model, "forward_cf")):
-                phase3_start = config.phase1_epochs + config.phase2_epochs
-                cf_progress = min(1.0, (epoch - phase3_start) / max(1, config.phase3_epochs))
-
-                l_cf = loss_fn.counterfactual_loss(model, {
-                    "attention_mask": attention_mask,
-                    "turn_mask": turn_mask,
-                    "role_ids": role_ids,
-                    "labels": labels,
-                    "cf_loss_eligible": cf_loss_eligible,
-                }, outputs, cf_progress=cf_progress)
-                loss = loss + lambda_cf * l_cf
-                total_cf_loss += l_cf.item()
-
-            unscaled_loss = loss
             (loss / group_size).backward()
         except RuntimeError as exc:
             if "out of memory" in str(exc).lower():
@@ -133,362 +247,303 @@ def train_epoch(
                     f"CUDA OOM at epoch={epoch} step={step} with "
                     f"batch_size={config.batch_size}, max_turns={config.max_turns}, "
                     f"max_tokens_per_turn={config.max_tokens_per_turn}. "
-                    "Aborting instead of silently skipping a training batch."
+                    "Aborting instead of silently skipping a batch."
                 ) from exc
             raise
 
-        should_step = (
+        if (
             (step + 1) % accumulation == 0
             or (step + 1) == loader_steps
-        )
-        if should_step:
+        ):
             nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
             optimizer.step()
             if scheduler is not None:
                 scheduler.step()
             optimizer.zero_grad(set_to_none=True)
 
-        total_loss += unscaled_loss.detach().item()
-        total_cls_loss += losses["cls"].item()
-        if "attr" in losses:
-            total_attr_loss += losses["attr"].item()
-        if "pivot" in losses:
-            total_pivot_loss += losses["pivot"].item()
+        totals["loss"] += float(losses["total"].detach())
+        totals["detection_loss"] += float(losses["detection"].detach())
+        if "turn" in losses:
+            totals["turn_loss"] += float(losses["turn"].detach())
+        if "span" in losses:
+            totals["span_loss"] += float(losses["span"].detach())
 
-        preds = (torch.sigmoid(outputs["cls_logits"]) > 0.5).long()
-        correct += (preds == labels).sum().item()
-        total += labels.size(0)
+        preds = (torch.sigmoid(outputs["cls_logits"]) >= 0.5).long()
+        correct += int((preds == labels).sum().item())
+        seen += int(labels.numel())
         n_batches += 1
 
     return {
-        "loss": total_loss / max(1, n_batches),
-        "cls_loss": total_cls_loss / max(1, n_batches),
-        "attr_loss": total_attr_loss / max(1, n_batches),
-        "cf_loss": total_cf_loss / max(1, n_batches),
-        "pivot_loss": total_pivot_loss / max(1, n_batches),
-        "accuracy": correct / max(1, total),
+        "loss": totals["loss"] / max(1, n_batches),
+        "detection_loss": totals["detection_loss"] / max(1, n_batches),
+        "turn_loss": totals["turn_loss"] / max(1, n_batches),
+        "span_loss": totals["span_loss"] / max(1, n_batches),
+        "accuracy": correct / max(1, seen),
         "phase": phase,
-        "lambda_cls": lambda_cls,
-        "lambda_attr": lambda_attr,
-        "lambda_cf": lambda_cf,
+        "lambda_detection": lambda_detection,
+        "lambda_turn": lambda_turn,
+        "lambda_span": lambda_span,
     }
 
 
-# =========================================================
-# Evaluation
-# =========================================================
-
-def find_best_threshold(probs: List[float], labels: List[int]) -> float:
-    """Find classification threshold that maximizes F1 on dev set."""
-    best_f1 = 0.0
-    best_thresh = 0.5
-    for thresh in [i / 100.0 for i in range(20, 80)]:
-        preds = [1 if p > thresh else 0 for p in probs]
-        tp = sum(1 for p, l in zip(preds, labels) if p == 1 and l == 1)
-        fp = sum(1 for p, l in zip(preds, labels) if p == 1 and l == 0)
-        fn = sum(1 for p, l in zip(preds, labels) if p == 0 and l == 1)
-        prec = tp / max(1, tp + fp)
-        rec = tp / max(1, tp + fn)
-        f1 = 2 * prec * rec / max(1e-8, prec + rec)
-        if f1 > best_f1:
-            best_f1 = f1
-            best_thresh = thresh
-    return best_thresh
+@torch.no_grad()
+def _collect_detection_probs(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+) -> Tuple[List[float], List[int]]:
+    probs: List[float] = []
+    labels: List[int] = []
+    model.eval()
+    for batch in loader:
+        outputs = model(
+            input_ids=batch["input_ids"].to(device),
+            attention_mask=batch["attention_mask"].to(device),
+            turn_mask=batch["turn_mask"].to(device),
+            role_ids=batch["role_ids"].to(device),
+            compute_localization=False,
+        )
+        probs.extend(torch.sigmoid(outputs["cls_logits"]).cpu().tolist())
+        labels.extend(batch["labels"].tolist())
+    return probs, labels
 
 
 @torch.no_grad()
-def evaluate(
+def evaluate_dev(
     model: nn.Module,
     loader: DataLoader,
     loss_fn: GuardLensLoss,
     config: GuardLensConfig,
     device: torch.device,
-    threshold: float = 0.5,
-) -> Dict:
+    threshold: float,
+) -> Dict[str, object]:
+    """Dev-only metrics for checkpoint selection. Not the paper evaluation."""
     model.eval()
 
-    all_preds = []
-    all_labels = []
-    all_probs = []
-    all_meta = []
+    det_probs: List[float] = []
+    det_labels: List[int] = []
+    span_probs: List[float] = []
+    span_labels: List[int] = []
+    turn_probs: List[float] = []
+    turn_labels: List[int] = []
     total_loss = 0.0
     n_batches = 0
 
-    attr_tp = attr_fp = attr_fn = attr_tn = 0
-    # Per-tier attribution stats
-    tier_attr_stats = {}
-
-    pivot_correct = 0
-    pivot_total = 0
-    pivot_mal_correct = 0
-    pivot_mal_total = 0
-
     for batch in loader:
-        input_ids = batch["input_ids"].to(device)
-        attention_mask = batch["attention_mask"].to(device)
-        turn_mask = batch["turn_mask"].to(device)
-        role_ids = batch["role_ids"].to(device)
-        token_labels = batch["token_labels"].to(device)
         labels = batch["labels"].to(device)
-
+        token_labels = batch["token_labels"].to(device)
         outputs = model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            turn_mask=turn_mask,
-            role_ids=role_ids,
-            compute_attribution=True,
+            input_ids=batch["input_ids"].to(device),
+            attention_mask=batch["attention_mask"].to(device),
+            turn_mask=batch["turn_mask"].to(device),
+            role_ids=batch["role_ids"].to(device),
+            compute_localization=True,
         )
-
         losses = loss_fn(
-            outputs, labels, token_labels,
+            outputs,
+            labels,
+            token_labels,
             span_weights=batch["span_weights"].to(device),
-            sample_weights=batch["sample_weights"].to(device),
-            pivot_labels=batch["pivot_labels"].to(device),
-            pivot_kind_labels=batch["pivot_kind_labels"].to(device),
-            phase=3,
+            detection_weights=batch["detection_weights"].to(device),
+            turn_labels=batch["turn_labels"].to(device),
+            turn_weights=batch["turn_weights"].to(device),
+            phase=2,
+            lambda_detection=config.lambda_detection,
+            lambda_turn=config.lambda_turn,
+            lambda_span=config.lambda_span,
         )
-        total_loss += losses["total"].item()
+        total_loss += float(losses["total"].item())
         n_batches += 1
 
-        probs = torch.sigmoid(outputs["cls_logits"])
-        preds = (probs > threshold).long()
+        det_probs.extend(torch.sigmoid(outputs["cls_logits"]).cpu().tolist())
+        det_labels.extend(labels.cpu().tolist())
 
-        all_preds.extend(preds.cpu().tolist())
-        all_labels.extend(labels.cpu().tolist())
-        all_probs.extend(probs.cpu().tolist())
-        all_meta.extend(batch["metadata"])
+        if outputs.get("attr_probs") is not None:
+            span_valid = (
+                (batch["token_labels"] >= 0)
+                & (batch["span_weights"] > 0)
+            )
+            if span_valid.any():
+                span_probs.extend(
+                    outputs["attr_probs"].cpu()[span_valid].tolist()
+                )
+                span_labels.extend(batch["token_labels"][span_valid].tolist())
 
-        # Attribution metrics
-        if outputs["attr_probs"] is not None:
-            ap = (outputs["attr_probs"] > 0.5).long()
-            valid = token_labels >= 0
-            if valid.any():
-                a_pred = ap[valid]
-                a_true = token_labels[valid]
-                attr_tp += ((a_pred == 1) & (a_true == 1)).sum().item()
-                attr_fp += ((a_pred == 1) & (a_true == 0)).sum().item()
-                attr_fn += ((a_pred == 0) & (a_true == 1)).sum().item()
-                attr_tn += ((a_pred == 0) & (a_true == 0)).sum().item()
+        if outputs.get("turn_probs") is not None:
+            turn_valid = (
+                (batch["turn_labels"] >= 0)
+                & (batch["turn_weights"] > 0)
+            )
+            if turn_valid.any():
+                turn_probs.extend(
+                    outputs["turn_probs"].cpu()[turn_valid].tolist()
+                )
+                turn_labels.extend(batch["turn_labels"][turn_valid].tolist())
 
-        # Pivot accuracy
-        if outputs.get("pivot_logits") is not None:
-            pivot_preds = outputs["pivot_logits"].argmax(dim=1)
-            pivot_gt = batch["pivot_labels"].to(device)
-            valid_pivot = pivot_gt >= 0  # Exclude truncated (-1)
-            if valid_pivot.any():
-                pivot_correct += (pivot_preds[valid_pivot] == pivot_gt[valid_pivot]).sum().item()
-                pivot_total += valid_pivot.sum().item()
-                # Malicious-only
-                mal_mask = valid_pivot & (labels == 1)
-                if mal_mask.any():
-                    pivot_mal_correct += (pivot_preds[mal_mask] == pivot_gt[mal_mask]).sum().item()
-                    pivot_mal_total += mal_mask.sum().item()
-
-    # Classification metrics
-    preds_t = torch.tensor(all_preds)
-    labels_t = torch.tensor(all_labels)
-    tp = ((preds_t == 1) & (labels_t == 1)).sum().item()
-    fp = ((preds_t == 1) & (labels_t == 0)).sum().item()
-    fn = ((preds_t == 0) & (labels_t == 1)).sum().item()
-    tn = ((preds_t == 0) & (labels_t == 0)).sum().item()
-
-    accuracy = (tp + tn) / max(1, tp + fp + fn + tn)
-    precision = tp / max(1, tp + fp)
-    recall = tp / max(1, tp + fn)
-    f1 = 2 * precision * recall / max(1e-8, precision + recall)
-
-    # Attribution F1
-    attr_precision = attr_tp / max(1, attr_tp + attr_fp)
-    attr_recall = attr_tp / max(1, attr_tp + attr_fn)
-    attr_f1 = 2 * attr_precision * attr_recall / max(1e-8, attr_precision + attr_recall)
-
-    # Per-difficulty accuracy
-    diff_acc = {}
-    for diff in ["easy", "medium", "hard"]:
-        idx = [i for i, m in enumerate(all_meta) if m["difficulty"] == diff]
-        if idx:
-            c = sum(1 for i in idx if all_preds[i] == all_labels[i])
-            diff_acc[diff] = c / len(idx)
-
-    # Per-family accuracy
-    fam_acc = {}
-    for fam in set(m["family"] for m in all_meta):
-        idx = [i for i, m in enumerate(all_meta) if m["family"] == fam]
-        if len(idx) >= 5:
-            c = sum(1 for i in idx if all_preds[i] == all_labels[i])
-            fam_acc[fam] = round(c / len(idx), 3)
-
-    # Per-transfer-tier accuracy (v11)
-    tier_acc = {}
-    for tier in ["transfer_success", "target_only", "cross_only", "no_jailbreak", "benign"]:
-        idx = [i for i, m in enumerate(all_meta) if m.get("transfer_tier") == tier]
-        if idx:
-            c = sum(1 for i in idx if all_preds[i] == all_labels[i])
-            tier_acc[tier] = round(c / len(idx), 3)
-
-    # Per-benign-status accuracy (v11)
-    benign_acc = {}
-    for status in ["clean_benign", "validated_benign_twin"]:
-        idx = [i for i, m in enumerate(all_meta) if m.get("benign_status") == status]
-        if idx:
-            c = sum(1 for i in idx if all_preds[i] == all_labels[i])
-            benign_acc[status] = round(c / len(idx), 3)
-
-    # Per-supervision-tier accuracy (v11)
-    sup_acc = {}
-    for tier in ["cf_strong", "cf_weak", "llm_confirmed", "construction", "benign_validated"]:
-        idx = [i for i, m in enumerate(all_meta) if m.get("supervision_tier") == tier]
-        if idx:
-            c = sum(1 for i in idx if all_preds[i] == all_labels[i])
-            sup_acc[tier] = round(c / len(idx), 3)
+    detection = _binary_metrics(det_probs, det_labels, threshold)
+    span = _binary_metrics(span_probs, span_labels, 0.5) if span_probs else None
+    turn = _binary_metrics(turn_probs, turn_labels, 0.5) if turn_probs else None
+    span_ap = _average_precision(span_probs, span_labels)
+    turn_ap = _average_precision(turn_probs, turn_labels)
+    aps = [x for x in (span_ap, turn_ap) if x is not None]
+    localization_score = float(np.mean(aps)) if aps else None
 
     return {
         "loss": total_loss / max(1, n_batches),
-        "accuracy": accuracy,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-        "tp": tp, "fp": fp, "fn": fn, "tn": tn,
-        "threshold": threshold,
-        "difficulty_accuracy": diff_acc,
-        "family_accuracy": fam_acc,
-        "transfer_tier_accuracy": tier_acc,
-        "benign_accuracy": benign_acc,
-        "supervision_tier_accuracy": sup_acc,
-        "attr_precision": attr_precision,
-        "attr_recall": attr_recall,
-        "attr_f1": attr_f1,
-        "pivot_accuracy": pivot_correct / max(1, pivot_total),
-        "pivot_accuracy_malicious": pivot_mal_correct / max(1, pivot_mal_total),
+        "detection": detection,
+        "span": span,
+        "turn": turn,
+        "span_auprc": span_ap,
+        "turn_auprc": turn_ap,
+        "localization_score": localization_score,
+        "n_span_targets": len(span_labels),
+        "n_turn_targets": len(turn_labels),
     }
 
 
-# =========================================================
-# Main training function
-# =========================================================
-
-def load_records(path: str) -> List[Dict]:
-    records = []
-    with open(path) as f:
-        for line in f:
-            if line.strip():
-                records.append(json.loads(line))
-    return records
+def _checkpoint_payload(
+    *,
+    model,
+    config,
+    model_name,
+    epoch,
+    phase,
+    threshold,
+    dev_metrics,
+    data_sha256,
+    score,
+    score_name,
+):
+    return {
+        "architecture_version": "causal_localization_v1",
+        "epoch": epoch,
+        "phase": phase,
+        "model_name": model_name,
+        "model_state_dict": model.state_dict(),
+        "config": config,
+        "dev_metrics": dev_metrics,
+        "threshold": threshold,
+        "score": score,
+        "score_name": score_name,
+        "data_sha256": data_sha256,
+    }
 
 
 def train(
     config: GuardLensConfig,
-    data_path: str,
     output_dir: str,
     model_name: str = "guardlens",
 ):
-    """Full training pipeline — v11 dataset compatible."""
     random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(config.seed)
 
-    device = torch.device(config.device if torch.cuda.is_available() else "cpu")
+    if not config.train_path or not config.dev_path:
+        raise RuntimeError(
+            "frozen --train-path and --dev-path are required; "
+            "internal re-splitting is disabled"
+        )
+    for path in (config.train_path, config.dev_path):
+        if not os.path.isfile(path):
+            raise FileNotFoundError(path)
+
+    train_records = load_records(config.train_path)
+    dev_records = load_records(config.dev_path)
+    _assert_train_dev_disjoint(train_records, dev_records)
+
+    device = torch.device(
+        config.device if torch.cuda.is_available() else "cpu"
+    )
     print(f"Device: {device}")
+    print(f"Train: {len(train_records)}  Dev: {len(dev_records)}")
+    print("Held-out test: NOT LOADED")
 
-    # ---- Load pre-split data ----
-    if config.train_path and config.dev_path and config.test_path:
-        print("Loading pre-split data...")
-        train_records = load_records(config.train_path)
-        val_records = load_records(config.dev_path)
-        test_records = load_records(config.test_path)
-        print(f"  Train: {len(train_records)}, Dev: {len(val_records)}, Test: {len(test_records)}")
-    else:
-        # Fallback: load single file and split
-        print(f"Loading data from {data_path}...")
-        records = load_records(data_path)
-        print(f"  {len(records)} records")
-        from guardlens.data.splits import pair_aware_split
-        train_idx, val_idx, test_idx = pair_aware_split(records, seed=config.seed)
-        train_records = [records[i] for i in train_idx]
-        val_records = [records[i] for i in val_idx]
-        test_records = [records[i] for i in test_idx]
-        print(f"  Train: {len(train_records)}, Dev: {len(val_records)}, Test: {len(test_records)}")
+    data_sha256 = {
+        "train": _sha256(config.train_path),
+        "dev": _sha256(config.dev_path),
+    }
+    print(f"Train SHA256: {data_sha256['train']}")
+    print(f"Dev SHA256:   {data_sha256['dev']}")
 
-    # ---- Compute class balance ----
-    n_pos = sum(1 for r in train_records if training_label(r) == 1)
-    n_neg = len(train_records) - n_pos
+    n_pos, n_neg, pos_mass, neg_mass = _weighted_detection_balance(
+        train_records
+    )
     if config.pos_weight <= 0:
-        config.pos_weight = n_neg / max(1, n_pos)
-    print(f"  Class balance: {n_pos} pos, {n_neg} neg (pos_weight={config.pos_weight:.2f})")
+        config.pos_weight = neg_mass / max(1e-8, pos_mass)
+    print(
+        f"Detection balance raw={n_pos} pos/{n_neg} neg; "
+        f"weighted={pos_mass:.2f} pos/{neg_mass:.2f} neg; "
+        f"pos_weight={config.pos_weight:.4f}"
+    )
 
-    # ---- Print tier distribution ----
-    tier_dist = Counter(r.get("supervision_tier", "?") for r in train_records)
-    print(f"  Supervision tiers: {dict(tier_dist.most_common())}")
-    aux_count = sum(is_auxiliary_detection_record(r) for r in train_records)
-    if aux_count:
-        print(f"  Detection-only auxiliary training records: {aux_count}")
+    tier_dist = Counter(
+        str(r.get("supervision_tier", "?")) for r in train_records
+    )
+    aux_count = sum(
+        is_auxiliary_detection_record(r) for r in train_records
+    )
+    print(f"Supervision tiers: {dict(tier_dist.most_common())}")
+    print(f"Detection-only auxiliary records: {aux_count}")
 
-    # ---- Datasets ----
     train_dataset = GuardLensDataset(train_records, config)
-    val_dataset = GuardLensDataset(val_records, config)
-    test_dataset = GuardLensDataset(test_records, config)
+    dev_dataset = GuardLensDataset(dev_records, config)
+
+    turn_pos, turn_neg, turn_pos_mass, turn_neg_mass = (
+        _turn_supervision_balance(train_dataset)
+    )
+    turn_pos_weight = turn_neg_mass / max(1e-8, turn_pos_mass)
+    print(
+        f"Turn supervision={turn_pos} pos/{turn_neg} neg; "
+        f"weighted={turn_pos_mass:.2f}/{turn_neg_mass:.2f}; "
+        f"pos_weight={turn_pos_weight:.4f}"
+    )
 
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
-
-    if model_name == "conversation_deberta":
-        collator = FlatConversationCollator(tokenizer, config)
-    else:
-        collator = GuardLensCollator(tokenizer, config)
-
-    # ---- Sampler (oversample CF records in phase 2+) ----
-    if config.oversample_cf:
-        sampler = build_weighted_sampler(train_records, config)
-        train_loader = DataLoader(
-            train_dataset, batch_size=config.batch_size,
-            sampler=sampler,
-            collate_fn=collator, num_workers=config.num_workers,
-            pin_memory=True, drop_last=True,
-        )
-    else:
-        train_loader = DataLoader(
-            train_dataset, batch_size=config.batch_size,
-            shuffle=True,
-            collate_fn=collator, num_workers=config.num_workers,
-            pin_memory=True, drop_last=True,
-        )
-
-    val_loader = DataLoader(
-        val_dataset, batch_size=config.batch_size * 2,
-        collate_fn=collator, num_workers=config.num_workers,
-    )
-    test_loader = DataLoader(
-        test_dataset, batch_size=config.batch_size * 2,
-        collate_fn=collator, num_workers=config.num_workers,
+    collator = (
+        FlatConversationCollator(tokenizer, config)
+        if model_name == "conversation_deberta"
+        else GuardLensCollator(tokenizer, config)
     )
 
-    # ---- Model-specific config overrides ----
-    if model_name == "guardlens_no_cf":
-        config.phase3_epochs = 0
-        config.max_epochs = config.phase1_epochs + config.phase2_epochs
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=config.batch_size,
+        shuffle=True,
+        collate_fn=collator,
+        num_workers=config.num_workers,
+        pin_memory=True,
+        drop_last=False,
+    )
+    dev_loader = DataLoader(
+        dev_dataset,
+        batch_size=max(1, config.batch_size * 2),
+        shuffle=False,
+        collate_fn=collator,
+        num_workers=config.num_workers,
+        pin_memory=True,
+        drop_last=False,
+    )
 
-    if model_name in ("turn_level", "conversation_deberta"):
-        # Baselines don't have attribution, pivot, or CF heads
-        config.phase3_epochs = 0
-        config.max_epochs = config.phase1_epochs + config.phase2_epochs
-        config.lambda_attr = 0.0
-        config.lambda_cf = 0.0
-        config.lambda_pivot = 0.0
-        config.use_pivot_head = False
-
-    model_cls = MODEL_REGISTRY.get(model_name, MODEL_REGISTRY["guardlens"])
-    print(f"\nBuilding model: {model_name} ({model_cls.__name__})...")
-    model = model_cls(config)
+    if model_name not in MODEL_REGISTRY:
+        raise RuntimeError(
+            f"unknown model {model_name!r}; available={sorted(MODEL_REGISTRY)}"
+        )
+    model = MODEL_REGISTRY[model_name](config)
     model.setup_backbone()
     model = model.to(device)
 
-    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    trainable = sum(
+        p.numel() for p in model.parameters() if p.requires_grad
+    )
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"  Total: {total_params:,}  Trainable: {trainable:,}  Frozen: {total_params - trainable:,}")
+    print(
+        f"Model={model_name} total={total_params:,} "
+        f"trainable={trainable:,} frozen={total_params-trainable:,}"
+    )
 
-    # ---- Optimizer + scheduler ----
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
         lr=config.learning_rate,
@@ -497,176 +552,175 @@ def train(
     optimizer_steps_per_epoch = math.ceil(
         len(train_loader) / max(1, int(config.gradient_accumulation))
     )
-    total_steps = optimizer_steps_per_epoch * config.max_epochs
+    total_steps = max(1, optimizer_steps_per_epoch * config.max_epochs)
     pct_start = min(
         0.99,
-        max(1.0 / max(1, total_steps), config.warmup_steps / max(1, total_steps)),
+        max(
+            1.0 / total_steps,
+            config.warmup_steps / total_steps,
+        ),
     )
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=config.learning_rate,
-        total_steps=max(1, total_steps),
+        total_steps=total_steps,
         pct_start=pct_start,
         anneal_strategy="cos",
     )
 
     loss_fn = GuardLensLoss(config)
     loss_fn.set_pos_weight(config.pos_weight)
-    os.makedirs(output_dir, exist_ok=True)
+    if turn_pos > 0 and turn_neg > 0:
+        loss_fn.set_turn_pos_weight(turn_pos_weight)
 
-    # ---- Training loop ----
-    best_det_score = 0.0  # Best detection (classification F1)
-    best_attr_score = 0.0  # Best attribution (attr F1)
+    os.makedirs(output_dir, exist_ok=True)
+    best_detection = -1.0
+    best_localization = -1.0
     best_threshold = config.default_threshold
     patience_counter = 0
     last_phase = 1
+    last_dev_metrics = None
 
-    print(f"\nTraining {config.max_epochs} epochs:")
-    print(f"  Phase 1 (cls):   0-{config.phase1_epochs - 1}")
-    print(f"  Phase 2 (+attr): {config.phase1_epochs}-{config.phase1_epochs + config.phase2_epochs - 1}")
-    if config.phase3_epochs > 0:
-        print(f"  Phase 3 (+cf):   {config.phase1_epochs + config.phase2_epochs}-{config.max_epochs - 1}")
+    print(
+        f"Training {config.max_epochs} epochs: "
+        f"phase1 detection-only 0-{config.phase1_epochs-1}; "
+        f"phase2 joint {config.phase1_epochs}-{config.max_epochs-1}"
+    )
 
     for epoch in range(config.max_epochs):
         train_metrics = train_epoch(
-            model, train_loader, optimizer, scheduler,
-            loss_fn, config, epoch, device,
+            model,
+            train_loader,
+            optimizer,
+            scheduler,
+            loss_fn,
+            config,
+            epoch,
+            device,
         )
 
-        if (epoch + 1) % config.eval_every == 0:
-            # Tune threshold on dev set
-            if config.tune_threshold:
-                # Quick pass to get probs
-                model.eval()
-                dev_probs, dev_labels = [], []
-                with torch.no_grad():
-                    for batch in val_loader:
-                        out = model(
-                            input_ids=batch["input_ids"].to(device),
-                            attention_mask=batch["attention_mask"].to(device),
-                            turn_mask=batch["turn_mask"].to(device),
-                            role_ids=batch["role_ids"].to(device),
-                            compute_attribution=False,
-                        )
-                        dev_probs.extend(torch.sigmoid(out["cls_logits"]).cpu().tolist())
-                        dev_labels.extend(batch["labels"].tolist())
-                best_threshold = find_best_threshold(dev_probs, dev_labels)
+        if (epoch + 1) % config.eval_every != 0:
+            continue
 
-            val_metrics = evaluate(
-                model, val_loader, loss_fn, config, device,
+        if config.tune_threshold:
+            probs, labels = _collect_detection_probs(
+                model, dev_loader, device
+            )
+            best_threshold = find_best_threshold(probs, labels)
+
+        dev_metrics = evaluate_dev(
+            model,
+            dev_loader,
+            loss_fn,
+            config,
+            device,
+            best_threshold,
+        )
+        last_dev_metrics = dev_metrics
+        phase = train_metrics["phase"]
+        span_f1 = (
+            dev_metrics["span"]["f1"]
+            if dev_metrics["span"] is not None else float("nan")
+        )
+        turn_f1 = (
+            dev_metrics["turn"]["f1"]
+            if dev_metrics["turn"] is not None else float("nan")
+        )
+        print(
+            f"Ep {epoch:02d} P{phase} "
+            f"loss={train_metrics['loss']:.4f} "
+            f"detF1={dev_metrics['detection']['f1']:.3f} "
+            f"spanF1={span_f1:.3f} turnF1={turn_f1:.3f} "
+            f"locAP={dev_metrics['localization_score']} "
+            f"thr={best_threshold:.3f}"
+        )
+
+        if phase != last_phase:
+            patience_counter = 0
+            last_phase = phase
+
+        det_score = float(dev_metrics["detection"]["f1"])
+        if det_score > best_detection:
+            best_detection = det_score
+            payload = _checkpoint_payload(
+                model=model,
+                config=config,
+                model_name=model_name,
+                epoch=epoch,
+                phase=phase,
                 threshold=best_threshold,
+                dev_metrics=dev_metrics,
+                data_sha256=data_sha256,
+                score=det_score,
+                score_name="dev_detection_f1",
+            )
+            torch.save(
+                payload, os.path.join(output_dir, "best_detection.pt")
             )
 
-            phase = train_metrics["phase"]
-            print(
-                f"Ep {epoch:3d} P{phase} | "
-                f"loss {train_metrics['loss']:.4f} acc {train_metrics['accuracy']:.3f} | "
-                f"val F1 {val_metrics['f1']:.3f} acc {val_metrics['accuracy']:.3f} | "
-                f"attr F1 {val_metrics['attr_f1']:.3f} pivot {val_metrics['pivot_accuracy']:.3f} | "
-                f"thr {best_threshold:.2f}"
-            )
-
-            if val_metrics.get("transfer_tier_accuracy"):
-                parts = [f"{k}={v:.3f}" for k, v in val_metrics["transfer_tier_accuracy"].items()]
-                print(f"       tiers: {' '.join(parts)}")
-
-            # Reset patience on phase change
-            if phase != last_phase:
+        loc_score = dev_metrics["localization_score"]
+        if phase >= 2 and loc_score is not None:
+            if float(loc_score) > best_localization:
+                best_localization = float(loc_score)
                 patience_counter = 0
-                last_phase = phase
+                payload = _checkpoint_payload(
+                    model=model,
+                    config=config,
+                    model_name=model_name,
+                    epoch=epoch,
+                    phase=phase,
+                    threshold=best_threshold,
+                    dev_metrics=dev_metrics,
+                    data_sha256=data_sha256,
+                    score=float(loc_score),
+                    score_name="mean_dev_turn_span_auprc",
+                )
+                torch.save(
+                    payload, os.path.join(output_dir, "best_localization.pt")
+                )
+            else:
+                patience_counter += 1
+                if patience_counter >= config.patience:
+                    print(
+                        f"Early stop after {config.patience} "
+                        "joint-phase evaluations without localization improvement"
+                    )
+                    break
 
-            # Save best detection checkpoint
-            det_score = val_metrics["f1"]
-            if det_score > best_det_score:
-                best_det_score = det_score
-                torch.save({
-                    "epoch": epoch, "phase": phase,
-                    "model_name": model_name,
-                    "model_state_dict": model.state_dict(),
-                    "config": config,
-                    "val_metrics": val_metrics,
-                    "threshold": best_threshold,
-                    "score": det_score,
-                }, os.path.join(output_dir, "best_detection.pt"))
-                print(f"       saved best_detection.pt (F1={det_score:.4f})")
+    localization_ckpt = os.path.join(
+        output_dir, "best_localization.pt"
+    )
+    detection_ckpt = os.path.join(output_dir, "best_detection.pt")
+    if os.path.exists(localization_ckpt):
+        chosen = localization_ckpt
+    elif os.path.exists(detection_ckpt):
+        chosen = detection_ckpt
+    else:
+        raise RuntimeError("training produced no checkpoint")
 
-            # Save best attribution checkpoint (phase 2+)
-            if phase >= 2:
-                attr_score = val_metrics["attr_f1"]
-                if attr_score > best_attr_score:
-                    best_attr_score = attr_score
-                    patience_counter = 0
-                    torch.save({
-                        "epoch": epoch, "phase": phase,
-                        "model_name": model_name,
-                        "model_state_dict": model.state_dict(),
-                        "config": config,
-                        "val_metrics": val_metrics,
-                        "threshold": best_threshold,
-                        "score": attr_score,
-                    }, os.path.join(output_dir, "best_attribution.pt"))
-                    print(f"       saved best_attribution.pt (attrF1={attr_score:.4f})")
-                else:
-                    patience_counter += 1
-                    if patience_counter >= config.patience:
-                        print(f"       early stop (patience={config.patience})")
-                        break
+    shutil.copy2(chosen, os.path.join(output_dir, "best.pt"))
+    summary = {
+        "status": "completed",
+        "architecture_version": "causal_localization_v1",
+        "model_name": model_name,
+        "best_checkpoint": os.path.basename(chosen),
+        "best_detection_f1": best_detection,
+        "best_localization_auprc": (
+            best_localization if best_localization >= 0 else None
+        ),
+        "data_sha256": data_sha256,
+        "train_records": len(train_records),
+        "dev_records": len(dev_records),
+        "held_out_test_accessed": False,
+        "last_dev_metrics": last_dev_metrics,
+    }
+    with open(
+        os.path.join(output_dir, "training_summary.json"),
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(summary, handle, indent=2, sort_keys=True)
 
-    # ---- Final test evaluation ----
-    # Use attribution checkpoint (primary contribution)
-    best_ckpt = os.path.join(output_dir, "best_attribution.pt")
-    if not os.path.exists(best_ckpt):
-        best_ckpt = os.path.join(output_dir, "best_detection.pt")
-    if not os.path.exists(best_ckpt):
-        print("ERROR: No checkpoint found!")
-        return {}
-
-    import shutil
-    shutil.copy2(best_ckpt, os.path.join(output_dir, "best.pt"))
-
-    print("\n" + "=" * 60)
-    print(f"  Test evaluation ({model_name})")
-    print(f"  Checkpoint: {os.path.basename(best_ckpt)}")
-    print("=" * 60)
-
-    ckpt = torch.load(best_ckpt, weights_only=False)
-    model.load_state_dict(ckpt["model_state_dict"])
-    test_threshold = ckpt.get("threshold", 0.5)
-    print(f"  Loaded from epoch {ckpt['epoch']}, phase {ckpt['phase']}, threshold {test_threshold:.2f}")
-
-    test_metrics = evaluate(model, test_loader, loss_fn, config, device, threshold=test_threshold)
-
-    print(f"  Accuracy:       {test_metrics['accuracy']:.4f}")
-    print(f"  Precision:      {test_metrics['precision']:.4f}")
-    print(f"  Recall:         {test_metrics['recall']:.4f}")
-    print(f"  F1:             {test_metrics['f1']:.4f}")
-    print(f"  Attr F1:        {test_metrics['attr_f1']:.4f}")
-    print(f"  Pivot Accuracy: {test_metrics['pivot_accuracy']:.4f}")
-
-    if test_metrics.get("transfer_tier_accuracy"):
-        print("  By transfer tier:")
-        for k, v in test_metrics["transfer_tier_accuracy"].items():
-            print(f"    {k}: {v:.4f}")
-
-    if test_metrics.get("benign_accuracy"):
-        print("  By benign status:")
-        for k, v in test_metrics["benign_accuracy"].items():
-            print(f"    {k}: {v:.4f}")
-
-    if test_metrics.get("supervision_tier_accuracy"):
-        print("  By supervision tier:")
-        for k, v in test_metrics["supervision_tier_accuracy"].items():
-            print(f"    {k}: {v:.4f}")
-
-    if test_metrics.get("family_accuracy"):
-        print("  By family:")
-        for k, v in sorted(test_metrics["family_accuracy"].items(), key=lambda x: x[1]):
-            print(f"    {k}: {v:.4f}")
-
-    with open(os.path.join(output_dir, "test_results.json"), "w") as f:
-        json.dump(
-            {k: v for k, v in test_metrics.items() if not isinstance(v, torch.Tensor)},
-            f, indent=2,
-        )
-
-    return test_metrics
+    print(f"Best checkpoint: {chosen}")
+    print("Held-out test accessed: NO")
+    return summary
