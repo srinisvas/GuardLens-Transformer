@@ -27,6 +27,7 @@ def main():
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--phase1-epochs", type=int, default=5)
+    parser.add_argument("--localization-ramp-epochs", type=int, default=5)
     parser.add_argument("--max-turns", type=int, default=48)
     parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
@@ -39,6 +40,7 @@ def main():
         ("batch-size", args.batch_size),
         ("grad-accumulation", args.grad_accumulation),
         ("epochs", args.epochs),
+        ("localization-ramp-epochs", args.localization_ramp_epochs),
         ("max-turns", args.max_turns),
         ("max-tokens", args.max_tokens),
     ]:
@@ -54,6 +56,7 @@ def main():
         learning_rate=args.lr,
         max_epochs=args.epochs,
         phase1_epochs=args.phase1_epochs,
+        localization_ramp_epochs=args.localization_ramp_epochs,
         max_turns=args.max_turns,
         max_tokens_per_turn=args.max_tokens,
         seed=args.seed,
