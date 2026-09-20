@@ -148,6 +148,25 @@ class NaaclDatasetContractTests(unittest.TestCase):
         self.assertEqual(item["evidence_turn_labels"], [1, -1, -1])
         self.assertEqual(item["evidence_turn_weights"], [0.70, 0.0, 0.0])
 
+    def test_multiple_positive_turn_sources_keep_strongest_confidence(self):
+        record = base_record(1)
+        record["evidence_turn_ids"] = [0]
+        record["frontier_evidence_analysis"] = {
+            "turn_interventions": [
+                {"turn_id": 0, "status": "supported_weak"},
+            ]
+        }
+        record["turns"][0]["span_annotations"] = [{
+            "causal_type": "causal",
+            "evidence_status": "supported_strong",
+            "supervision_tier": "cf_strong",
+            "char_start": 0,
+            "char_end": 5,
+        }]
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertEqual(item["evidence_turn_labels"], [1, -1, -1])
+        self.assertEqual(item["evidence_turn_weights"], [1.0, 0.0, 0.0])
+
     def test_benign_user_turns_are_negative_and_assistant_ignored(self):
         item = GuardLensDataset([base_record(0)], GuardLensConfig())[0]
         self.assertEqual(item["evidence_turn_labels"], [0, -1, 0])
