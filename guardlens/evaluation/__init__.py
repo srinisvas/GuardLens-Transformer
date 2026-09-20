@@ -1,13 +1,7 @@
-from guardlens.evaluation.causal_eval import (
-    run_causal_evaluation,
-    print_comparison_table,
-    ATTRIBUTION_METHODS,
-)
-from guardlens.evaluation.eval_utils import (
-    load_test_data,
-    add_test_path_args,
-    partition_test_set_v11,
-    partition_by_supervision_tier,
-    results_to_latex_table,
-    comparison_to_latex,
-)
+"""GuardLens evaluation package.
+
+The causal-localization evaluation suite is being migrated separately. Legacy
+EMNLP evaluators remain in the repository for reference but are not re-exported
+from this package on the redesign branch, preventing accidental use of stale
+pivot/construction semantics.
+"""
