@@ -26,6 +26,7 @@ from guardlens.data.dataset import (
     GuardLensCollator,
     GuardLensDataset,
 )
+from guardlens.data.causal_targets import span_supervision_target
 from guardlens.data.training_contract import (
     classification_loss_weight,
     is_auxiliary_detection_record,
@@ -106,6 +107,23 @@ def _weighted_detection_balance(records: Sequence[Dict]) -> Tuple[int, int, floa
             n_neg += 1
             neg_mass += weight
     return n_pos, n_neg, pos_mass, neg_mass
+
+
+def _span_annotation_balance(records: Sequence[Dict]) -> Tuple[int, int]:
+    positive = negative = 0
+    for record in records:
+        if is_auxiliary_detection_record(record):
+            continue
+        for turn in record.get("turns", []) or []:
+            for span in turn.get("span_annotations", []) or []:
+                target = span_supervision_target(span)
+                if target is None:
+                    continue
+                if target[0] == 1:
+                    positive += 1
+                else:
+                    negative += 1
+    return positive, negative
 
 
 def _turn_supervision_balance(dataset: GuardLensDataset) -> Tuple[int, int, float, float]:
@@ -451,6 +469,12 @@ def train(
     output_dir: str,
     model_name: str = "guardlens",
 ):
+    if model_name != "guardlens":
+        raise RuntimeError(
+            "baseline training is intentionally disabled until the fair-context "
+            "baseline migration is complete"
+        )
+
     random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
@@ -489,6 +513,16 @@ def train(
     n_pos, n_neg, pos_mass, neg_mass = _weighted_detection_balance(
         train_records
     )
+    dev_pos = sum(training_label(r) == 1 for r in dev_records)
+    dev_neg = len(dev_records) - dev_pos
+    if n_pos == 0 or n_neg == 0:
+        raise RuntimeError(
+            f"train split must contain both detection classes, got pos={n_pos} neg={n_neg}"
+        )
+    if dev_pos == 0 or dev_neg == 0:
+        raise RuntimeError(
+            f"dev split must contain both detection classes, got pos={dev_pos} neg={dev_neg}"
+        )
     if config.pos_weight <= 0:
         config.pos_weight = neg_mass / max(1e-8, pos_mass)
     print(
@@ -512,11 +546,43 @@ def train(
     turn_pos, turn_neg, turn_pos_mass, turn_neg_mass = (
         _turn_supervision_balance(train_dataset)
     )
+    dev_turn_pos, dev_turn_neg, _, _ = _turn_supervision_balance(dev_dataset)
+    train_span_pos, train_span_neg = _span_annotation_balance(train_records)
+    dev_span_pos, dev_span_neg = _span_annotation_balance(dev_records)
+
+    missing = []
+    if turn_pos == 0 or turn_neg == 0:
+        missing.append(
+            f"train turn targets pos={turn_pos} neg={turn_neg}"
+        )
+    if dev_turn_pos == 0 or dev_turn_neg == 0:
+        missing.append(
+            f"dev turn targets pos={dev_turn_pos} neg={dev_turn_neg}"
+        )
+    if train_span_pos == 0 or train_span_neg == 0:
+        missing.append(
+            f"train span targets pos={train_span_pos} neg={train_span_neg}"
+        )
+    if dev_span_pos == 0 or dev_span_neg == 0:
+        missing.append(
+            f"dev span targets pos={dev_span_pos} neg={dev_span_neg}"
+        )
+    if missing:
+        raise RuntimeError(
+            "causal-localization supervision coverage is incomplete: "
+            + "; ".join(missing)
+        )
+
     turn_pos_weight = turn_neg_mass / max(1e-8, turn_pos_mass)
     print(
-        f"Turn supervision={turn_pos} pos/{turn_neg} neg; "
-        f"weighted={turn_pos_mass:.2f}/{turn_neg_mass:.2f}; "
+        f"Turn supervision train={turn_pos} pos/{turn_neg} neg; "
+        f"dev={dev_turn_pos} pos/{dev_turn_neg} neg; "
+        f"weighted train={turn_pos_mass:.2f}/{turn_neg_mass:.2f}; "
         f"pos_weight={turn_pos_weight:.4f}"
+    )
+    print(
+        f"Span annotation targets train={train_span_pos} pos/{train_span_neg} neg; "
+        f"dev={dev_span_pos} pos/{dev_span_neg} neg"
     )
 
     from transformers import AutoTokenizer
