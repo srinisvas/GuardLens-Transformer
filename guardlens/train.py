@@ -21,7 +21,7 @@ def main():
         choices=["guardlens"],
         help="Only the redesigned GuardLens is enabled until baseline migration.",
     )
-    parser.add_argument("--backbone", default="microsoft/deberta-v3-base")
+    parser.add_argument("--backbone", default="answerdotai/ModernBERT-large")
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--grad-accumulation", type=int, default=8)
     parser.add_argument("--lr", type=float, default=2e-4)
@@ -29,7 +29,7 @@ def main():
     parser.add_argument("--phase1-epochs", type=int, default=5)
     parser.add_argument("--localization-ramp-epochs", type=int, default=5)
     parser.add_argument("--max-turns", type=int, default=48)
-    parser.add_argument("--max-tokens", type=int, default=512)
+    parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--workers", type=int, default=4)
