@@ -3,6 +3,8 @@
 import unittest
 
 import torch
+import torch.nn as nn
+from types import SimpleNamespace
 
 from guardlens.config import GuardLensConfig
 from guardlens.models.components import (
@@ -88,6 +90,69 @@ class CausalLocalizationArchitectureTests(unittest.TestCase):
             compute_localization=True,
         )
         self.assertLess(float(out["turn_probs"][0, 1]), 1e-8)
+
+    def test_frozen_backbone_encodes_turns_in_length_local_microbatches(self):
+        config = tiny_config()
+        config.freeze_backbone = True
+        config.backbone_turn_microbatch = 2
+
+        class FakeBackbone(nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.dim = dim
+                self.calls = []
+
+            def forward(self, input_ids, attention_mask):
+                self.calls.append(tuple(input_ids.shape))
+                hidden = input_ids.float().unsqueeze(-1).repeat(
+                    1, 1, self.dim
+                )
+                return SimpleNamespace(last_hidden_state=hidden)
+
+        model = GuardLens(config)
+        fake = FakeBackbone(config.backbone_dim)
+        model.backbone = fake
+        model.backbone_loaded = True
+
+        input_ids = torch.tensor([[
+            [1, 2, 0, 0, 0, 0],
+            [1, 2, 3, 4, 5, 6],
+            [1, 2, 3, 0, 0, 0],
+        ]])
+        attention = torch.tensor([[
+            [1, 1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 0, 0, 0],
+        ]])
+
+        hidden = model.encode_turns(input_ids, attention)
+        self.assertEqual(tuple(hidden.shape), (1, 3, 6, config.backbone_dim))
+        self.assertEqual(fake.calls, [(2, 3), (1, 6)])
+        self.assertTrue(torch.all(hidden[0, 0, 2:] == 0))
+        self.assertTrue(torch.all(hidden[0, 2, 3:] == 0))
+
+    def test_span_head_masks_assistant_and_padding_tokens(self):
+        config = tiny_config()
+        model = GuardLens(config)
+        model.encode_turns = lambda input_ids, attention_mask: torch.randn(
+            input_ids.size(0),
+            input_ids.size(1),
+            input_ids.size(2),
+            config.backbone_dim,
+        )
+        input_ids = torch.ones(1, 2, 3, dtype=torch.long)
+        attention = torch.tensor([[[1, 1, 0], [1, 1, 1]]])
+        turn_mask = torch.ones(1, 2, dtype=torch.long)
+        roles = torch.tensor([[0, 1]], dtype=torch.long)
+        out = model(
+            input_ids=input_ids,
+            attention_mask=attention,
+            turn_mask=turn_mask,
+            role_ids=roles,
+            compute_localization=True,
+        )
+        self.assertLess(float(out["attr_probs"][0, 0, 2]), 1e-8)
+        self.assertTrue(torch.all(out["attr_probs"][0, 1] < 1e-8))
 
     def test_localization_ramp_reaches_full_weight_early_and_plateaus(self):
         config = GuardLensConfig(
