@@ -137,8 +137,24 @@ def main():
     if args.max_turns <= 0 or args.max_tokens <= 0:
         raise ValueError("max-turns and max-tokens must be positive")
 
-    from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(args.backbone)
+    from transformers import AutoConfig, AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(args.backbone, use_fast=True)
+    backbone_config = AutoConfig.from_pretrained(args.backbone)
+    backbone_limit = getattr(backbone_config, "max_position_embeddings", None)
+    if (
+        isinstance(backbone_limit, int)
+        and backbone_limit > 0
+        and args.max_tokens > backbone_limit
+    ):
+        raise RuntimeError(
+            f"max-tokens={args.max_tokens} exceeds backbone "
+            f"max_position_embeddings={backbone_limit}; use chunking/windowing "
+            "rather than overextending the backbone"
+        )
+    if not getattr(tokenizer, "is_fast", False):
+        raise RuntimeError(
+            "representation audit requires a fast tokenizer with offset mappings"
+        )
 
     summaries = [
         audit_split(
@@ -156,6 +172,7 @@ def main():
         "backbone": args.backbone,
         "max_turns": args.max_turns,
         "max_tokens": args.max_tokens,
+        "backbone_max_position_embeddings": backbone_limit,
         "held_out_test_accessed": False,
         "splits": {
             summary["split"]: {
