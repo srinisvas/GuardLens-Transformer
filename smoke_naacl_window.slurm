@@ -32,7 +32,11 @@ export HF_HUB_OFFLINE="\${HF_HUB_OFFLINE:-1}"
 mkdir -p "$TMPDIR" logs
 cd "$PROJECT_DIR"
 
-[[ -f "$TRAIN_PATH" ]] || { echo "ERROR: missing train split: $TRAIN_PATH"; exit 2; }
+for path in "$REPORT_PATH" "$TRAIN_PATH" "$DEV_PATH"; do
+  [[ -f "$path" ]] || { echo "ERROR: missing required file: $path"; exit 2; }
+done
+
+python -m guardlens.data.verify_freeze   --report "$REPORT_PATH"   --train "$TRAIN_PATH"   --dev "$DEV_PATH"   --variant primary
 
 echo "========================================================"
 echo " GuardLens joint architecture GPU smoke"
