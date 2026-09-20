@@ -7,8 +7,8 @@ from typing import Tuple
 @dataclass
 class GuardLensConfig:
     # Backbone
-    backbone_name: str = "microsoft/deberta-v3-base"
-    backbone_dim: int = 768
+    backbone_name: str = "answerdotai/ModernBERT-large"
+    backbone_dim: int = 1024
     freeze_backbone: bool = True
 
     # Hierarchical turn-context encoder
@@ -25,7 +25,7 @@ class GuardLensConfig:
     # max_tokens_per_turn is a hard, fail-closed ceiling. The collator uses
     # dynamic padding and never truncates a turn to fit this value.
     max_turns: int = 48
-    max_tokens_per_turn: int = 512
+    max_tokens_per_turn: int = 8192
     max_total_tokens: int = 2048  # legacy flat baseline only
 
     # Optimization
