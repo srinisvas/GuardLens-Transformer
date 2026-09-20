@@ -166,10 +166,13 @@ def build_evidence_turn_targets(
             continue
         seen.add(tid)
 
+        prev_label = labels[tid]
         status = status_by_turn.get(tid)
         span_weight = _positive_weight_from_spans(turns[tid])
         if status in TURN_POSITIVE_STATUS:
             weight = TURN_POSITIVE_STATUS[status]
+            if span_weight is not None:
+                weight = max(weight, span_weight)
         elif status in TURN_NEGATIVE_STATUS:
             if span_weight is None:
                 raise RuntimeError(
@@ -187,7 +190,16 @@ def build_evidence_turn_targets(
             # without turn-local status/span evidence we do not inherit the
             # record-level tier. Fall back conservatively to weak confidence.
             weight = 0.70
+
         labels[tid] = 1
-        weights[tid] = max(weights[tid], weight)
+        # Only combine confidences when the turn was already positive. If this
+        # evidence_turn_ids pass flips a previously negative/unset target to
+        # positive, stale negative confidence must not leak into the positive
+        # weight.
+        weights[tid] = (
+            max(weights[tid], weight)
+            if prev_label == 1
+            else weight
+        )
 
     return labels, weights
