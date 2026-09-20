@@ -155,6 +155,10 @@ def main():
     parser.add_argument("--train", required=True)
     parser.add_argument("--dev", required=True)
     parser.add_argument("--backbone", default="answerdotai/ModernBERT-large")
+    parser.add_argument(
+        "--backbone-revision",
+        default="45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
+    )
     parser.add_argument("--max-turns", type=int, default=48)
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--output", default="")
@@ -164,8 +168,15 @@ def main():
         raise ValueError("max-turns and max-tokens must be positive")
 
     from transformers import AutoConfig, AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(args.backbone, use_fast=True)
-    backbone_config = AutoConfig.from_pretrained(args.backbone)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.backbone,
+        revision=args.backbone_revision,
+        use_fast=True,
+    )
+    backbone_config = AutoConfig.from_pretrained(
+        args.backbone,
+        revision=args.backbone_revision,
+    )
     backbone_limit = getattr(backbone_config, "max_position_embeddings", None)
     if (
         isinstance(backbone_limit, int)
@@ -196,6 +207,7 @@ def main():
     payload = {
         "status": "failed" if all_errors else "passed",
         "backbone": args.backbone,
+        "backbone_revision": args.backbone_revision,
         "max_turns": args.max_turns,
         "max_tokens": args.max_tokens,
         "backbone_max_position_embeddings": backbone_limit,
