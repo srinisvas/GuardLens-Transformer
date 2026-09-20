@@ -9,6 +9,12 @@
 #SBATCH --output=logs/eval_naacl_%j.out
 #SBATCH --error=logs/eval_naacl_%j.err
 
+# Disabled on naacl-causal-localization-redesign.
+echo "ERROR: eval_naacl.slurm is a legacy EMNLP/v11 launcher and is intentionally disabled on this branch."
+echo "Use train_naacl.slurm for redesigned training. Evaluation launchers will be re-enabled after eval migration."
+exit 2
+
+
 # Targeted NAACL evaluation suite on repaired splits/checkpoints only.
 set -euo pipefail
 
