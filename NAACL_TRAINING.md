@@ -222,6 +222,12 @@ that turn. If `evidence_turn_ids` establishes turn membership but neither a
 turn-local intervention status nor a supported span is present, the turn uses a
 conservative weak-confidence weight of 0.70 independent of the record tier.
 
+If a turn is simultaneously listed in `evidence_turn_ids` and has an explicit
+`not_supported` whole-turn intervention, the record fails closed unless an
+independently supported positive span exists on that same turn. In that case,
+the supported span evidence may override the whole-turn negative result using
+its own strong/weak confidence.
+
 ## 5. Detection loss contract
 
 Primary records are behaviorally validated. Therefore:
@@ -626,6 +632,9 @@ assumptions:
     before the representation audit could emit its structured failed report
 31. shuffled training batches relied on the global Torch RNG rather than an
     explicit seed-bound DataLoader generator
+32. contradictory turn supervision could allow an `evidence_turn_ids` member to
+    overwrite an explicit `not_supported` turn intervention even when no
+    independent positive span evidence existed on that turn
 
 All of the above are addressed in the current redesign branch.
 
