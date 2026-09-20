@@ -18,7 +18,8 @@ def main():
     parser.add_argument(
         "--model",
         default="guardlens",
-        choices=["guardlens", "turn_level", "conversation_deberta"],
+        choices=["guardlens"],
+        help="Only the redesigned GuardLens is enabled until baseline migration.",
     )
     parser.add_argument("--backbone", default="microsoft/deberta-v3-base")
     parser.add_argument("--batch-size", type=int, default=2)
