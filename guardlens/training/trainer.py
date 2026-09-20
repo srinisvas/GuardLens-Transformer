@@ -21,11 +21,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from guardlens.config import GuardLensConfig
-from guardlens.data.dataset import (
-    FlatConversationCollator,
-    GuardLensCollator,
-    GuardLensDataset,
-)
+from guardlens.data.dataset import GuardLensCollator, GuardLensDataset
 from guardlens.data.causal_targets import span_supervision_target
 from guardlens.data.training_contract import (
     classification_loss_weight,
@@ -587,12 +583,12 @@ def train(
     )
 
     from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(config.backbone_name, use_fast=True)
-    collator = (
-        FlatConversationCollator(tokenizer, config)
-        if model_name == "conversation_deberta"
-        else GuardLensCollator(tokenizer, config)
+    tokenizer = AutoTokenizer.from_pretrained(
+        config.backbone_name,
+        revision=config.backbone_revision,
+        use_fast=True,
     )
+    collator = GuardLensCollator(tokenizer, config)
 
     train_generator = torch.Generator()
     train_generator.manual_seed(config.seed)
