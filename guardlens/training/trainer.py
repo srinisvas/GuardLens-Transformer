@@ -123,6 +123,8 @@ def _span_annotation_balance(records: Sequence[Dict]) -> Tuple[int, int]:
         if is_auxiliary_detection_record(record):
             continue
         for turn in record.get("turns", []) or []:
+            if str(turn.get("role", "")).lower() != "user":
+                continue
             for span in turn.get("span_annotations", []) or []:
                 target = span_supervision_target(span)
                 if target is None:
