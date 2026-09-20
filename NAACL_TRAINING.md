@@ -194,7 +194,11 @@ microbatch's local maximum length enters the backbone. The dense tensor is
 reconstructed afterward for the hierarchical heads.
 
 Assistant/padded turns are masked from evidence-turn output, and assistant or
-padding tokens are also masked from causal span output.
+padding tokens are also masked from causal span output. Span supervision is
+therefore user-turn-only end to end: the Dataset emits no assistant-turn span
+targets, the training coverage gate counts only user-turn span targets, and the
+representation audit fails closed if frozen data contains any target-bearing
+assistant span annotation.
 
 ### Excluded from the canonical model
 
@@ -750,8 +754,20 @@ assumptions:
 42. scientific checkpoints recorded code/data provenance but not exact runtime
     library versions; Python, PyTorch, Transformers and CUDA runtime versions
     are now stored.
+43. span logits were hard-masked on assistant turns while span supervision,
+    loss-coverage accounting and representation auditing still admitted
+    assistant-turn targets, creating an unlearnable positive-target failure
+    mode. Span supervision is now user-turn-only across Dataset, coverage gate
+    and audit, with the audit failing closed on target-bearing assistant spans.
+44. the unreachable legacy `FlatConversationCollator` still referenced the
+    removed `max_total_tokens` config field and could fail with an
+    AttributeError if accidentally reused; the dead collator was removed.
+45. some disabled legacy evaluator modules still reference removed historical
+    model-registry keys such as `conversation_deberta`. They remain outside the
+    canonical path and must be rewritten, not re-enabled as-is, during the
+    evaluation migration.
 
-All of the above are addressed in the current redesign branch.
+All of the above are addressed or explicitly quarantined in the current redesign branch.
 
 ## 17. Required validation before full training
 
