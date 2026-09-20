@@ -145,6 +145,30 @@ class NaaclDatasetContractTests(unittest.TestCase):
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertTrue(all(x == -1 for x in item["char_labels"][0]))
 
+    def test_cf_tier_without_matching_intervention_status_is_ignored(self):
+        record = base_record(1)
+        record["turns"][0]["span_annotations"] = [{
+            "causal_type": "causal",
+            "evidence_status": "not_supported",
+            "supervision_tier": "cf_strong",
+            "char_start": 0,
+            "char_end": 5,
+        }]
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertTrue(all(x == -1 for x in item["char_labels"][0]))
+
+    def test_benign_negative_incidental_span_is_explicit_negative(self):
+        record = base_record(0)
+        record["turns"][0]["span_annotations"] = [{
+            "causal_type": "incidental",
+            "evidence_status": "benign_negative",
+            "supervision_tier": "incidental",
+            "char_start": 0,
+            "char_end": 5,
+        }]
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertEqual(item["char_labels"][0], [0, 0, 0, 0, 0])
+
     def test_auxiliary_uses_detection_label_and_masks_localization(self):
         record = base_record(0)
         record.update({
