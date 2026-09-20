@@ -163,10 +163,24 @@ class GuardLensCollator:
             span_weights = char_weights[start_i:end_i]
             if not span_labels:
                 continue
-            max_label = max(span_labels)
-            if max_label >= 0:
-                token_labels[tok_idx] = max_label
-                token_weights[tok_idx] = max(span_weights) if span_weights else 0.0
+
+            # Positive evidence wins an overlap, but its confidence weight must
+            # come from positive characters only. Otherwise an overlapping
+            # incidental span could silently upgrade a weak positive to 1.0.
+            if 1 in span_labels:
+                token_labels[tok_idx] = 1
+                token_weights[tok_idx] = max(
+                    weight
+                    for label, weight in zip(span_labels, span_weights)
+                    if label == 1
+                )
+            elif 0 in span_labels:
+                token_labels[tok_idx] = 0
+                token_weights[tok_idx] = max(
+                    weight
+                    for label, weight in zip(span_labels, span_weights)
+                    if label == 0
+                )
 
         return {
             "ids": ids,
