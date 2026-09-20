@@ -57,7 +57,6 @@ done
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$HOME/work/.pip_cache}"
 export TMPDIR="${TMPDIR:-$HOME/work/.tmp}"
 export HF_HOME="${HF_HOME:-$HOME/work/hf_models}"
-export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/hub}"
 mkdir -p "$PIP_CACHE_DIR" "$TMPDIR" "$HF_HOME"
 
 echo "========================================================"
@@ -119,6 +118,7 @@ required = [
     "transformers",
     "accelerate",
     "sentencepiece",
+    "google.protobuf",
     "tiktoken",
     "numpy",
     "scipy",
