@@ -724,6 +724,7 @@ def train(
                         threshold=best_threshold,
                         dev_metrics=dev_metrics,
                         data_sha256=data_sha256,
+                        code_sha=code_sha,
                         score=joint_score,
                         score_name="mean_dev_detection_f1_turn_auprc_span_auprc",
                     )
