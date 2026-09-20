@@ -85,6 +85,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", required=True)
     parser.add_argument("--backbone", default="answerdotai/ModernBERT-large")
+    parser.add_argument(
+        "--backbone-revision",
+        default="45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
+    )
+    parser.add_argument("--backbone-turn-microbatch", type=int, default=8)
     parser.add_argument("--max-turns", type=int, default=48)
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--batch-size", type=int, default=2)
@@ -101,6 +106,8 @@ def main():
 
     config = GuardLensConfig(
         backbone_name=args.backbone,
+        backbone_revision=args.backbone_revision,
+        backbone_turn_microbatch=args.backbone_turn_microbatch,
         batch_size=args.batch_size,
         gradient_accumulation=8,
         max_turns=args.max_turns,
@@ -113,7 +120,11 @@ def main():
     )
 
     from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(config.backbone_name, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        config.backbone_name,
+        revision=config.backbone_revision,
+        use_fast=True,
+    )
     dataset = GuardLensDataset(selected, config)
     collator = GuardLensCollator(tokenizer, config)
     loader = DataLoader(
