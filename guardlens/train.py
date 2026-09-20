@@ -22,6 +22,11 @@ def main():
         help="Only the redesigned GuardLens is enabled until baseline migration.",
     )
     parser.add_argument("--backbone", default="answerdotai/ModernBERT-large")
+    parser.add_argument(
+        "--backbone-revision",
+        default="45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
+    )
+    parser.add_argument("--backbone-turn-microbatch", type=int, default=8)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--grad-accumulation", type=int, default=8)
     parser.add_argument("--lr", type=float, default=2e-4)
@@ -40,6 +45,7 @@ def main():
         ("batch-size", args.batch_size),
         ("grad-accumulation", args.grad_accumulation),
         ("epochs", args.epochs),
+        ("backbone-turn-microbatch", args.backbone_turn_microbatch),
         ("localization-ramp-epochs", args.localization_ramp_epochs),
         ("max-turns", args.max_turns),
         ("max-tokens", args.max_tokens),
@@ -51,6 +57,8 @@ def main():
 
     config = GuardLensConfig(
         backbone_name=args.backbone,
+        backbone_revision=args.backbone_revision,
+        backbone_turn_microbatch=args.backbone_turn_microbatch,
         batch_size=args.batch_size,
         gradient_accumulation=args.grad_accumulation,
         learning_rate=args.lr,
