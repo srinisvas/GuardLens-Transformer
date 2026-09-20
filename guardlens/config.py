@@ -43,6 +43,9 @@ class GuardLensConfig:
     lambda_turn: float = 1.0
     lambda_span: float = 1.0
     localization_ramp_start: float = 0.25
+    # Reach full localization weight early enough that OneCycleLR is still
+    # materially high, then keep full weight for the remainder of Phase 2.
+    localization_ramp_epochs: int = 5
 
     # Detection class balance. <=0 means compute from weighted train mass.
     pos_weight: float = 0.0
