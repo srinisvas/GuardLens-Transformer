@@ -30,7 +30,6 @@ set -u
 
 export TMPDIR="${TMPDIR:-$HOME/work/.tmp}"
 export HF_HOME="${HF_HOME:-$HOME/work/hf_models}"
-export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/hub}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 mkdir -p "$TMPDIR" logs
 cd "$PROJECT_DIR"
@@ -71,7 +70,7 @@ nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader
 
 python -m guardlens.evaluation.smoke_training_window \
   --train "$TRAIN_PATH" \
-  --backbone $BACKBONE \
+  --backbone "$BACKBONE" \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --batch-size "$BATCH_SIZE" \
