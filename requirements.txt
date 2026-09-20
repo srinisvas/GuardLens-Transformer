@@ -14,17 +14,8 @@
 
 # Core training / inference
 torch>=2.2,<3
-transformers>=4.40,<5
+transformers>=4.48,<5
 accelerate>=0.28,<2
-
-# DeBERTa-v3 tokenizer.
-# This is REQUIRED: microsoft/deberta-v3-base ships an spm.model file.
-sentencepiece>=0.2,<1
-protobuf>=4.25,<7        # required by DebertaV2Converter for fast tokenizer construction
-
-# Useful for tokenizers/models that genuinely use TikToken. It is not a
-# substitute for SentencePiece for DeBERTa-v3.
-tiktoken>=0.7,<1
 
 # Numeric / evaluation utilities
 numpy>=1.24,<3
