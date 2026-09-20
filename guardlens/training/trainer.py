@@ -316,6 +316,7 @@ def train_epoch(
         "lambda_detection": lambda_detection,
         "lambda_turn": lambda_turn,
         "lambda_span": lambda_span,
+        "learning_rate": float(optimizer.param_groups[0]["lr"]),
     }
 
 
@@ -722,6 +723,8 @@ def train(
             f"detF1={dev_metrics['detection']['f1']:.3f} "
             f"spanF1={span_f1:.3f} turnF1={turn_f1:.3f} "
             f"locAP={dev_metrics['localization_score']} "
+            f"lr={train_metrics['learning_rate']:.3e} "
+            f"lamLoc={train_metrics['lambda_span']:.3f} "
             f"thr={best_threshold:.3f}"
         )
 
