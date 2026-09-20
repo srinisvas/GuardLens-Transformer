@@ -84,9 +84,9 @@ def select_smoke_records(records, batch_size):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", required=True)
-    parser.add_argument("--backbone", default="microsoft/deberta-v3-base")
+    parser.add_argument("--backbone", default="answerdotai/ModernBERT-large")
     parser.add_argument("--max-turns", type=int, default=48)
-    parser.add_argument("--max-tokens", type=int, default=512)
+    parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
