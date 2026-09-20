@@ -11,6 +11,7 @@ import math
 import os
 import random
 import shutil
+import subprocess
 from collections import Counter
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -50,6 +51,20 @@ def load_records(path: str) -> List[Dict]:
     if not records:
         raise RuntimeError(f"empty dataset: {path}")
     return records
+
+
+def _code_revision() -> str:
+    env_sha = os.environ.get("GUARDLENS_CODE_SHA", "").strip()
+    if env_sha:
+        return env_sha
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return "unknown"
 
 
 def _sha256(path: str) -> str:
@@ -411,6 +426,7 @@ def _checkpoint_payload(
     threshold,
     dev_metrics,
     data_sha256,
+    code_sha,
     score,
     score_name,
 ):
@@ -426,6 +442,7 @@ def _checkpoint_payload(
         "score": score,
         "score_name": score_name,
         "data_sha256": data_sha256,
+        "code_sha": code_sha,
     }
 
 
@@ -464,8 +481,10 @@ def train(
         "train": _sha256(config.train_path),
         "dev": _sha256(config.dev_path),
     }
+    code_sha = _code_revision()
     print(f"Train SHA256: {data_sha256['train']}")
     print(f"Dev SHA256:   {data_sha256['dev']}")
+    print(f"Code SHA:     {code_sha}")
 
     n_pos, n_neg, pos_mass, neg_mass = _weighted_detection_balance(
         train_records
@@ -652,6 +671,7 @@ def train(
                 threshold=best_threshold,
                 dev_metrics=dev_metrics,
                 data_sha256=data_sha256,
+                code_sha=code_sha,
                 score=det_score,
                 score_name="dev_detection_f1",
             )
@@ -673,6 +693,7 @@ def train(
                     threshold=best_threshold,
                     dev_metrics=dev_metrics,
                     data_sha256=data_sha256,
+                    code_sha=code_sha,
                     score=loc_score,
                     score_name="mean_dev_turn_span_auprc",
                 )
@@ -744,6 +765,7 @@ def train(
         ),
         "best_joint_score": best_joint if best_joint >= 0 else None,
         "data_sha256": data_sha256,
+        "code_sha": code_sha,
         "train_records": len(train_records),
         "dev_records": len(dev_records),
         "held_out_test_accessed": False,
