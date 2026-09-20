@@ -23,7 +23,10 @@ def get_lambda_schedule(
 
     joint_epochs = max(1, config.max_epochs - config.phase1_epochs)
     joint_index = epoch - config.phase1_epochs
-    progress = min(1.0, (joint_index + 1) / joint_epochs)
+    if joint_epochs == 1:
+        progress = 1.0
+    else:
+        progress = min(1.0, joint_index / (joint_epochs - 1))
     start = float(config.localization_ramp_start)
     scale = start + (1.0 - start) * progress
     return (
