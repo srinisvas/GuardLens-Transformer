@@ -1,0 +1,22 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test / type-check / notebook caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Runtime and SLURM logs
+logs/
+*.out
+*.err
+
+# Local environments and transient files
+.venv/
+venv/
+env/
+.env
+.DS_Store
