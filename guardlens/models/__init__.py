@@ -8,10 +8,7 @@ from guardlens.models.components import (
     ContextualSpanHead,
     AttributionHead,
 )
-from guardlens.models.baselines import TurnLevelClassifier, ConversationDeBERTa
 
 MODEL_REGISTRY = {
     "guardlens": GuardLens,
-    "turn_level": TurnLevelClassifier,
-    "conversation_deberta": ConversationDeBERTa,
 }
