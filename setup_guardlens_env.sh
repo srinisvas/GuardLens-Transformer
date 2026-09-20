@@ -132,10 +132,17 @@ for name in required:
     print(f"  {name:14s} {version}")
 
 import torch
+print(f"  torch CUDA build:     {torch.version.cuda}")
 print(f"  torch CUDA available: {torch.cuda.is_available()}")
+if torch.version.cuda is None:
+    raise RuntimeError(
+        "CPU-only PyTorch build detected; GuardLens canonical training requires "
+        "a CUDA-enabled PyTorch wheel"
+    )
 if torch.cuda.is_available():
-    print(f"  torch CUDA version:   {torch.version.cuda}")
     print(f"  GPU:                  {torch.cuda.get_device_name(0)}")
+else:
+    print("  GPU visibility:       none on this node (acceptable for login-node setup)")
 PY
 
 echo
