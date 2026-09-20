@@ -12,6 +12,7 @@ import os
 import random
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -62,6 +63,17 @@ def _code_revision() -> str:
         ).strip()
     except Exception:
         return "unknown"
+
+
+def _runtime_versions() -> Dict[str, str]:
+    import transformers
+
+    return {
+        "python": sys.version.split()[0],
+        "torch": torch.__version__,
+        "transformers": transformers.__version__,
+        "cuda_runtime": str(torch.version.cuda),
+    }
 
 
 def _sha256(path: str) -> str:
@@ -444,6 +456,7 @@ def _checkpoint_payload(
     code_sha,
     score,
     score_name,
+    runtime_versions,
 ):
     return {
         "architecture_version": "causal_localization_v2",
@@ -458,6 +471,7 @@ def _checkpoint_payload(
         "score_name": score_name,
         "data_sha256": data_sha256,
         "code_sha": code_sha,
+        "runtime_versions": runtime_versions,
     }
 
 
@@ -503,9 +517,11 @@ def train(
         "dev": _sha256(config.dev_path),
     }
     code_sha = _code_revision()
+    runtime_versions = _runtime_versions()
     print(f"Train SHA256: {data_sha256['train']}")
     print(f"Dev SHA256:   {data_sha256['dev']}")
     print(f"Code SHA:     {code_sha}")
+    print(f"Runtime:      {runtime_versions}")
 
     n_pos, n_neg, pos_mass, neg_mass = _weighted_detection_balance(
         train_records
@@ -743,6 +759,7 @@ def train(
                 code_sha=code_sha,
                 score=det_score,
                 score_name="dev_detection_f1",
+                runtime_versions=runtime_versions,
             )
             torch.save(
                 payload, os.path.join(output_dir, "best_detection.pt")
@@ -765,6 +782,7 @@ def train(
                     code_sha=code_sha,
                     score=loc_score,
                     score_name="mean_dev_turn_span_auprc",
+                    runtime_versions=runtime_versions,
                 )
                 torch.save(
                     payload, os.path.join(output_dir, "best_localization.pt")
@@ -796,6 +814,7 @@ def train(
                         code_sha=code_sha,
                         score=joint_score,
                         score_name="mean_dev_detection_f1_turn_auprc_span_auprc",
+                        runtime_versions=runtime_versions,
                     )
                     torch.save(
                         payload, os.path.join(output_dir, "best_joint.pt")
@@ -836,6 +855,7 @@ def train(
         "best_joint_score": best_joint if best_joint >= 0 else None,
         "data_sha256": data_sha256,
         "code_sha": code_sha,
+        "runtime_versions": runtime_versions,
         "train_records": len(train_records),
         "dev_records": len(dev_records),
         "held_out_test_accessed": False,
