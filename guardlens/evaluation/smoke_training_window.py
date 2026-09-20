@@ -99,7 +99,7 @@ def main():
     )
 
     from transformers import AutoTokenizer
-    tokenizer = AutoTokenizer.from_pretrained(config.backbone_name)
+    tokenizer = AutoTokenizer.from_pretrained(config.backbone_name, use_fast=True)
     dataset = GuardLensDataset(selected, config)
     collator = GuardLensCollator(tokenizer, config)
     loader = DataLoader(
