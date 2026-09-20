@@ -355,6 +355,11 @@ The audit is train/dev only and reports:
 
 A positive causal span beyond the representation ceiling is a hard failure.
 
+The trainer independently fails if either train or dev lacks both detection
+classes, both positive/negative evidence-turn targets, or both
+positive/negative span targets. This prevents a target-extraction regression
+from silently turning a joint run into a one-class or detection-only run.
+
 ## 10. Shortcut gate
 
 `train_naacl.slurm` retains the repaired train/dev-only length probe.
@@ -394,6 +399,7 @@ selection score.
 Every checkpoint records:
 
 - architecture_version=causal_localization_v1
+- exact training-code Git SHA
 - exact train SHA-256
 - exact dev SHA-256
 - dev threshold
@@ -431,6 +437,10 @@ Canonical:
 
 The canonical training launcher permits only `MODEL=guardlens` until baseline
 migration is complete.
+
+Both canonical launchers require the checked-out branch to be
+`naacl-causal-localization-redesign`, reject tracked uncommitted changes, and
+export the exact Git commit SHA into the training process.
 
 The smoke launcher is pinned to the frozen primary train/dev hashes before it
 touches the GPU.
@@ -581,6 +591,10 @@ assumptions:
     semantics, making accidental use easier on the redesign branch
 24. the old default early-stopping patience could terminate Phase 2 before the
     scheduled localization ramp reached full weight
+25. the trainer did not fail closed if strict target extraction accidentally
+    produced one-class or empty turn/span localization supervision
+26. training checkpoints recorded frozen data hashes but not the exact model
+    code revision used to produce them
 
 All of the above are addressed in the current redesign branch.
 
