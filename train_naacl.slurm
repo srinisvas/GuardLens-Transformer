@@ -11,31 +11,31 @@
 
 set -euo pipefail
 
-PROJECT_DIR="\${SLURM_SUBMIT_DIR:-$(pwd)}"
-CONDA_ENV="\${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
-FREEZE_DIR="\${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze}"
-TRAIN_VARIANT="\${TRAIN_VARIANT:-primary}"
-BASE_OUTPUT="\${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl_redesign/checkpoints}"
-PRECHECK_DIR="\${PRECHECK_DIR:-$HOME/work/results/guardlens_naacl_redesign/preflight}"
-MAX_LENGTH_AUC="\${MAX_LENGTH_AUC:-0.65}"
-MAX_TURNS="\${MAX_TURNS:-48}"
-MAX_TOKENS="\${MAX_TOKENS:-512}"
-BATCH_SIZE="\${BATCH_SIZE:-2}"
-GRAD_ACCUMULATION="\${GRAD_ACCUMULATION:-8}"
-EPOCHS="\${EPOCHS:-20}"
-MODEL="\${MODEL:-guardlens}"
+PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
+CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
+FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze}"
+TRAIN_VARIANT="${TRAIN_VARIANT:-primary}"
+BASE_OUTPUT="${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl_redesign/checkpoints}"
+PRECHECK_DIR="${PRECHECK_DIR:-$HOME/work/results/guardlens_naacl_redesign/preflight}"
+MAX_LENGTH_AUC="${MAX_LENGTH_AUC:-0.65}"
+MAX_TURNS="${MAX_TURNS:-48}"
+MAX_TOKENS="${MAX_TOKENS:-512}"
+BATCH_SIZE="${BATCH_SIZE:-2}"
+GRAD_ACCUMULATION="${GRAD_ACCUMULATION:-8}"
+EPOCHS="${EPOCHS:-20}"
+MODEL="${MODEL:-guardlens}"
 
-REPORT_PATH="\${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
+REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
 
 case "$TRAIN_VARIANT" in
   primary)
-    TRAIN_PATH="\${TRAIN_PATH:-$FREEZE_DIR/splits_primary/train.jsonl}"
-    DEV_PATH="\${DEV_PATH:-$FREEZE_DIR/splits_primary/dev.jsonl}"
+    TRAIN_PATH="${TRAIN_PATH:-$FREEZE_DIR/splits_primary/train.jsonl}"
+    DEV_PATH="${DEV_PATH:-$FREEZE_DIR/splits_primary/dev.jsonl}"
     VERIFY_VARIANT="primary"
     ;;
   primary_plus_auxiliary)
-    TRAIN_PATH="\${TRAIN_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/train.jsonl}"
-    DEV_PATH="\${DEV_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/dev.jsonl}"
+    TRAIN_PATH="${TRAIN_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/train.jsonl}"
+    DEV_PATH="${DEV_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/dev.jsonl}"
     VERIFY_VARIANT="primary_plus_auxiliary"
     ;;
   *)
@@ -50,10 +50,10 @@ source "$CONDA_BASE/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV"
 set -u
 
-export TMPDIR="\${TMPDIR:-$HOME/work/.tmp}"
-export HF_HOME="\${HF_HOME:-$HOME/work/hf_models}"
-export TRANSFORMERS_CACHE="\${TRANSFORMERS_CACHE:-$HF_HOME/hub}"
-export HF_HUB_OFFLINE="\${HF_HUB_OFFLINE:-1}"
+export TMPDIR="${TMPDIR:-$HOME/work/.tmp}"
+export HF_HOME="${HF_HOME:-$HOME/work/hf_models}"
+export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/hub}"
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 mkdir -p "$TMPDIR" "$BASE_OUTPUT" "$PRECHECK_DIR" logs
 cd "$PROJECT_DIR"
 
