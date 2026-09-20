@@ -53,6 +53,34 @@ def main() -> None:
     dev_probs = predict_proba(x_dev, weights, mean, std)
     threshold = tune_threshold(y_dev, dev_probs)
 
+    def fit_subset(columns):
+        xtr = x_train[:, columns]
+        xdv = x_dev[:, columns]
+        w, m, s = fit_logistic(
+            xtr, y_train,
+            steps=args.steps,
+            learning_rate=args.learning_rate,
+            l2=args.l2,
+        )
+        ptr = predict_proba(xtr, w, m, s)
+        pdv = predict_proba(xdv, w, m, s)
+        th = tune_threshold(y_dev, pdv)
+        return {
+            "train": metrics(y_train, ptr, th),
+            "dev": metrics(y_dev, pdv, th),
+        }
+
+    single_feature = {
+        FEATURE_NAMES[i]: fit_subset([i])
+        for i in range(len(FEATURE_NAMES))
+    }
+    leave_one_out = {
+        FEATURE_NAMES[i]: fit_subset(
+            [j for j in range(len(FEATURE_NAMES)) if j != i]
+        )
+        for i in range(len(FEATURE_NAMES))
+    }
+
     result = {
         "probe": "logistic_regression_length_only_preflight",
         "features": FEATURE_NAMES,
@@ -63,6 +91,8 @@ def main() -> None:
             "train": distribution_summary(train_records),
             "dev": distribution_summary(dev_records),
         },
+        "single_feature_probes": single_feature,
+        "leave_one_feature_out_probes": leave_one_out,
         "held_out_test_accessed": False,
     }
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
@@ -75,6 +105,18 @@ def main() -> None:
         f"balanced_acc={result['dev']['balanced_accuracy']:.3f} "
         f"F1={result['dev']['f1']:.3f}"
     )
+    print("Single-feature dev AUC:")
+    for name in FEATURE_NAMES:
+        print(
+            f"  {name}: "
+            f"{result['single_feature_probes'][name]['dev']['roc_auc']:.3f}"
+        )
+    print("Leave-one-feature-out dev AUC:")
+    for name in FEATURE_NAMES:
+        print(
+            f"  without {name}: "
+            f"{result['leave_one_feature_out_probes'][name]['dev']['roc_auc']:.3f}"
+        )
     print("Held-out test accessed: NO")
     print(f"Wrote: {args.output}")
 
