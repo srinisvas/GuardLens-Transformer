@@ -20,12 +20,14 @@ requires a CUDA-enabled PyTorch build, verifies the DeBERTa-v3 fast tokenizer
 and offset mappings, verifies `max_position_embeddings=512`, and imports the
 redesigned GuardLens package/training schedule.
 
-`sentencepiece` is mandatory. Microsoft DeBERTa-v3-base ships a SentencePiece
-`spm.model`; `tiktoken` is not a substitute. The old environment setup script
-did not install `sentencepiece` even though `requirements.txt` listed it, and
-its unquoted shell expressions such as `transformers>=4.40.0` could be parsed
-as shell redirections rather than version constraints. The redesigned setup
-script installs from the requirements file instead.
+`sentencepiece` and `protobuf` are mandatory. Microsoft DeBERTa-v3-base
+ships a SentencePiece `spm.model`; `tiktoken` is not a substitute.
+Transformers constructs the fast DeBERTa tokenizer through
+`DebertaV2Converter`, which also requires protobuf. The old environment setup
+script did not install the full tokenizer dependency chain, and its unquoted
+shell expressions such as `transformers>=4.40.0` could be parsed as shell
+redirections rather than version constraints. The redesigned setup script
+installs from the requirements file instead.
 
 Heavy evaluation backends such as vLLM and bitsandbytes remain optional and are
 not installed by the canonical training environment until their corresponding
@@ -677,6 +679,9 @@ assumptions:
 34. the environment setup omitted the mandatory SentencePiece dependency and
     duplicated only a subset of `requirements.txt`; unquoted package version
     constraints in shell were also unsafe
+35. the repaired environment still lacked protobuf, which is required by
+    Transformers' `DebertaV2Converter` when constructing the fast
+    DeBERTa-v3 tokenizer from its SentencePiece model
 
 All of the above are addressed in the current redesign branch.
 
