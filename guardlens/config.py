@@ -1,6 +1,6 @@
 """Configuration for the NAACL causal-localization redesign."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Tuple
 
 
@@ -43,19 +43,6 @@ class GuardLensConfig:
     lambda_turn: float = 1.0
     lambda_span: float = 1.0
     localization_ramp_start: float = 0.25
-
-    # Counterfactual evidence weights. Unknown/legacy tiers fail closed at 0.
-    span_tier_weights: dict = field(default_factory=lambda: {
-        "cf_strong": 1.00,
-        "cf_weak": 0.70,
-        "incidental": 1.00,
-        "ignore": 0.00,
-    })
-    turn_tier_weights: dict = field(default_factory=lambda: {
-        "supported_strong": 1.00,
-        "supported_weak": 0.70,
-        "not_supported": 1.00,
-    })
 
     # Detection class balance. <=0 means compute from weighted train mass.
     pos_weight: float = 0.0
