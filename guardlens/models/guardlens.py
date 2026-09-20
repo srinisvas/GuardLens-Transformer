@@ -43,6 +43,17 @@ class GuardLens(nn.Module):
             self.config.backbone_name,
             output_hidden_states=False,
         )
+        max_positions = getattr(self.backbone.config, "max_position_embeddings", None)
+        if (
+            isinstance(max_positions, int)
+            and max_positions > 0
+            and self.config.max_tokens_per_turn > max_positions
+        ):
+            raise RuntimeError(
+                f"max_tokens_per_turn={self.config.max_tokens_per_turn} exceeds "
+                f"backbone max_position_embeddings={max_positions}; use a "
+                "chunking/window strategy instead of silently overextending the backbone"
+            )
         if self.config.freeze_backbone:
             for param in self.backbone.parameters():
                 param.requires_grad = False
@@ -55,6 +66,9 @@ class GuardLens(nn.Module):
         batch_size, turns, seq_len = input_ids.shape
         flat_ids = input_ids.reshape(batch_size * turns, seq_len)
         flat_mask = attention_mask.reshape(batch_size * turns, seq_len)
+        realized = flat_mask.sum(dim=1) > 0
+        if not realized.any():
+            raise RuntimeError("batch contains no realized turns")
 
         ctx = (
             torch.no_grad()
@@ -63,11 +77,19 @@ class GuardLens(nn.Module):
         )
         with ctx:
             outputs = self.backbone(
-                input_ids=flat_ids,
-                attention_mask=flat_mask,
+                input_ids=flat_ids[realized],
+                attention_mask=flat_mask[realized],
             )
-            hidden = outputs.last_hidden_state
+            realized_hidden = outputs.last_hidden_state
 
+        # Padded turns never enter the backbone. This both avoids needless
+        # compute and avoids relying on model behavior for all-zero masks.
+        hidden = realized_hidden.new_zeros(
+            batch_size * turns,
+            seq_len,
+            realized_hidden.size(-1),
+        )
+        hidden[realized] = realized_hidden
         return hidden.reshape(
             batch_size, turns, seq_len, -1
         ).float()
@@ -110,7 +132,9 @@ class GuardLens(nn.Module):
 
         if compute_localization:
             turn_logits = self.turn_head(turn_context)
-            turn_logits = turn_logits.masked_fill(turn_mask == 0, -1e9)
+            # Causal evidence turns are defined only over realized user turns.
+            invalid_turn = (turn_mask == 0) | (role_ids != 0)
+            turn_logits = turn_logits.masked_fill(invalid_turn, -1e9)
             turn_probs = torch.sigmoid(turn_logits)
 
             attr_logits = self.attr_head(token_embeds, turn_context)
