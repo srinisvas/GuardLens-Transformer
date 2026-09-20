@@ -91,8 +91,8 @@ Construction-language visibility is class-symmetric in Dataset B primary:
 
 Primary frozen SHA-256 values:
 
-    train  164a6327f54adedd8268d30c71d10ba56484f4984321505af33cbf3bb205ad1e
-    dev    659394391b035fa5fa06607f304bd118872e44e61388704288cf27684034dbd0
+    train  7ba829d3acd0699b76012c477426504301694e215a7755e97341b196d5bf9011
+    dev    e024e52ffa2ab1820fbf190a1389ebeec3e364256c45d701fb87082e622257f6
     test   82771ea6ddef43a73f02de05e66d774f2c2f694bfb552929d28379c5a331cf45
 
 The test hash is documented for provenance only. Training must not open the test
@@ -816,7 +816,7 @@ Static/manual code review:
 
 Runtime test execution:
 
-    still required on HPC
+    CPU contracts, frozen verification, representation audit and GPU architecture smoke passed on HPC
 
 Architecture redesign:
 
@@ -833,19 +833,23 @@ Frozen-data SHA verification code:
 Representation/truncation audit:
 
     512-token DeBERTa audit executed and failed as intended
-    native-8K ModernBERT audit must now be rerun
+    native-8K ModernBERT audit passed
+    train max=3364 tokens, dev max=2026, over_cap=0
+    positive_spans_beyond_cap=0
 
 CPU unit/contract suite:
 
-    execution still required on HPC
+    passed on HPC
 
 GPU architecture smoke:
 
-    execution still required
+    passed on HPC at code SHA ca437870a08faed105ebf157246efd239c82abbf
+    joint peak CUDA allocation 2.38 GiB
+    worst-token-footprint peak CUDA allocation 1.81 GiB
 
 Full training:
 
-    not yet authorized
+    authorized; not yet completed
 
 Evaluation migration:
 
