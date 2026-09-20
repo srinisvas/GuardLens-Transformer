@@ -149,8 +149,11 @@ python - <<'PY'
 from transformers import AutoConfig, AutoTokenizer
 
 name = "answerdotai/ModernBERT-large"
-tokenizer = AutoTokenizer.from_pretrained(name, use_fast=True)
-config = AutoConfig.from_pretrained(name)
+revision = "45bb4654a4d5aaff24dd11d4781fa46d39bf8c13"
+tokenizer = AutoTokenizer.from_pretrained(
+    name, revision=revision, use_fast=True
+)
+config = AutoConfig.from_pretrained(name, revision=revision)
 
 if not getattr(tokenizer, "is_fast", False):
     raise RuntimeError("ModernBERT tokenizer is not fast; offset mapping is required")
@@ -189,6 +192,7 @@ from huggingface_hub import snapshot_download
 
 snapshot_download(
     repo_id="answerdotai/ModernBERT-large",
+    revision="45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
     allow_patterns=[
         "*.json",
         "*.safetensors",
@@ -209,6 +213,7 @@ from guardlens.training.schedule import get_lambda_schedule
 
 cfg = GuardLensConfig()
 assert cfg.backbone_name == "answerdotai/ModernBERT-large"
+assert cfg.backbone_revision == "45bb4654a4d5aaff24dd11d4781fa46d39bf8c13"
 assert cfg.backbone_dim == 1024
 assert cfg.max_tokens_per_turn == 8192
 assert get_lambda_schedule(5, cfg)[1] == 0.25
