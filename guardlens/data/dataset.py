@@ -82,9 +82,24 @@ class GuardLensDataset(Dataset):
                             f"for text length {len(text)}"
                         )
                     for char_idx in range(cs, ce):
-                        # Positive evidence wins only if overlapping annotations disagree.
-                        if token_label == 1 or char_labels[char_idx] == -1:
-                            char_labels[char_idx] = token_label
+                        current_label = char_labels[char_idx]
+                        current_weight = char_weights[char_idx]
+
+                        if token_label == 1:
+                            # Positive evidence wins label conflicts, and
+                            # overlapping positive spans retain the strongest
+                            # intervention confidence independent of annotation
+                            # ordering.
+                            char_labels[char_idx] = 1
+                            if current_label == 1:
+                                char_weights[char_idx] = max(
+                                    float(current_weight),
+                                    float(tier_weight),
+                                )
+                            else:
+                                char_weights[char_idx] = float(tier_weight)
+                        elif current_label == -1:
+                            char_labels[char_idx] = 0
                             char_weights[char_idx] = float(tier_weight)
 
             char_labels_per_turn.append(char_labels)
