@@ -34,6 +34,22 @@ export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 mkdir -p "$TMPDIR" logs
 cd "$PROJECT_DIR"
 
+EXPECTED_BRANCH="naacl-causal-localization-redesign"
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+CODE_SHA=$(git rev-parse HEAD)
+if [[ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]]; then
+  echo "ERROR: expected git branch $EXPECTED_BRANCH, got $CURRENT_BRANCH"
+  exit 2
+fi
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "ERROR: tracked working-tree changes detected; commit or stash them before a scientific run"
+  exit 2
+fi
+export GUARDLENS_CODE_SHA="$CODE_SHA"
+echo "Code branch: $CURRENT_BRANCH"
+echo "Code SHA:    $CODE_SHA"
+
+
 for path in "$REPORT_PATH" "$TRAIN_PATH" "$DEV_PATH"; do
   [[ -f "$path" ]] || { echo "ERROR: missing required file: $path"; exit 2; }
 done
