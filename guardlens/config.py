@@ -56,7 +56,7 @@ class GuardLensConfig:
     device: str = "cuda"
     num_workers: int = 4
     eval_every: int = 1
-    patience: int = 8
+    patience: int = 0  # canonical schedule runs all epochs; >0 enables optional early stop
 
     # Frozen input paths. Training intentionally has no test-path contract.
     train_path: str = ""
