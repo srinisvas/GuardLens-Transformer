@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from guardlens.config import GuardLensConfig
+import guardlens.data.dataset as dataset_module
 from guardlens.data.dataset import GuardLensCollator, GuardLensDataset
 from guardlens.data.audit_representation import audit_split
 from guardlens.data.training_contract import training_label
@@ -266,6 +267,58 @@ class NaaclDatasetContractTests(unittest.TestCase):
         }]
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertEqual(item["char_labels"][0], [0, 0, 0, 0, 0])
+
+    def test_assistant_span_supervision_is_ignored_by_dataset(self):
+        record = base_record(1)
+        record["turns"][1]["span_annotations"] = [{
+            "causal_type": "causal",
+            "evidence_status": "supported_strong",
+            "supervision_tier": "cf_strong",
+            "char_start": 0,
+            "char_end": 4,
+        }]
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertTrue(all(x == -1 for x in item["char_labels"][1]))
+        self.assertTrue(all(x == 0.0 for x in item["char_tier_weights"][1]))
+
+    def test_representation_audit_rejects_target_bearing_assistant_span(self):
+        record = base_record(1)
+        record["turns"][1]["span_annotations"] = [{
+            "causal_type": "causal",
+            "evidence_status": "supported_strong",
+            "supervision_tier": "cf_strong",
+            "char_start": 0,
+            "char_end": 4,
+        }]
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".jsonl",
+                delete=False,
+                encoding="utf-8",
+            ) as handle:
+                path = handle.name
+                handle.write(json.dumps(record) + "\n")
+            result = audit_split(
+                "train",
+                path,
+                _FakeTokenizer(),
+                max_turns=48,
+                max_tokens=20,
+            )
+            self.assertTrue(
+                any(
+                    "target-bearing span supervision" in error
+                    for error in result["errors"]
+                )
+            )
+        finally:
+            if path and os.path.exists(path):
+                os.unlink(path)
+
+    def test_legacy_flat_collator_is_removed(self):
+        self.assertFalse(hasattr(dataset_module, "FlatConversationCollator"))
 
     def test_auxiliary_uses_detection_label_and_masks_localization(self):
         record = base_record(0)
