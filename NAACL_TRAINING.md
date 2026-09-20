@@ -226,7 +226,11 @@ If a turn is simultaneously listed in `evidence_turn_ids` and has an explicit
 `not_supported` whole-turn intervention, the record fails closed unless an
 independently supported positive span exists on that same turn. In that case,
 the supported span evidence may override the whole-turn negative result using
-its own strong/weak confidence.
+its own strong/weak confidence. When a previously negative or unset turn is
+flipped to positive, its positive confidence is taken only from the positive
+evidence source; the stale negative confidence is discarded. Confidence values
+are combined with `max` only when the turn was already positive from another
+positive source.
 
 ## 5. Detection loss contract
 
@@ -635,6 +639,10 @@ assumptions:
 32. contradictory turn supervision could allow an `evidence_turn_ids` member to
     overwrite an explicit `not_supported` turn intervention even when no
     independent positive span evidence existed on that turn
+33. when a supported span legitimately overrode a `not_supported` whole-turn
+    result, the previous negative confidence weight 1.0 could leak through a
+    final `max()` and silently upgrade weak 0.70 positive evidence to full
+    confidence
 
 All of the above are addressed in the current redesign branch.
 
