@@ -66,6 +66,28 @@ class CausalLocalizationArchitectureTests(unittest.TestCase):
         self.assertFalse(hasattr(config, "lambda_cf"))
         self.assertFalse(hasattr(config, "test_path"))
 
+    def test_evidence_turn_head_masks_assistant_turns(self):
+        config = tiny_config()
+        model = GuardLens(config)
+        model.encode_turns = lambda input_ids, attention_mask: torch.randn(
+            input_ids.size(0),
+            input_ids.size(1),
+            input_ids.size(2),
+            config.backbone_dim,
+        )
+        input_ids = torch.ones(1, 3, 2, dtype=torch.long)
+        attention = torch.ones_like(input_ids)
+        turn_mask = torch.ones(1, 3, dtype=torch.long)
+        roles = torch.tensor([[0, 1, 0]], dtype=torch.long)
+        out = model(
+            input_ids=input_ids,
+            attention_mask=attention,
+            turn_mask=turn_mask,
+            role_ids=roles,
+            compute_localization=True,
+        )
+        self.assertLess(float(out["turn_probs"][0, 1]), 1e-8)
+
     def test_joint_loss_accepts_multiple_positive_turns(self):
         config = tiny_config()
         loss_fn = GuardLensLoss(config)
