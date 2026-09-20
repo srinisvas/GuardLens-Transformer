@@ -15,9 +15,13 @@ from guardlens.data.training_contract import (
 )
 
 SPAN_POSITIVE_TIERS = {"cf_strong": 1.0, "cf_weak": 0.70}
+SPAN_POSITIVE_STATUS_BY_TIER = {
+    "cf_strong": "supported_strong",
+    "cf_weak": "supported_weak",
+}
 TURN_POSITIVE_STATUS = {"supported_strong": 1.0, "supported_weak": 0.70}
 TURN_NEGATIVE_STATUS = {"not_supported": 1.0}
-SPAN_NEGATIVE_STATUS = {"negative_control_supported"}
+SPAN_NEGATIVE_STATUS = {"negative_control_supported", "benign_negative"}
 
 
 def span_supervision_target(span: Dict) -> Optional[Tuple[int, float]]:
@@ -29,15 +33,17 @@ def span_supervision_target(span: Dict) -> Optional[Tuple[int, float]]:
     causal_type = str(span.get("causal_type", "unvalidated"))
     evidence_status = str(span.get("evidence_status", "unassessed"))
 
-    if tier in SPAN_POSITIVE_TIERS and (
-        causal_type == "causal"
-        or evidence_status in TURN_POSITIVE_STATUS
+    if (
+        tier in SPAN_POSITIVE_TIERS
+        and causal_type == "causal"
+        and evidence_status == SPAN_POSITIVE_STATUS_BY_TIER[tier]
     ):
         return 1, SPAN_POSITIVE_TIERS[tier]
 
-    if tier == "incidental" and (
-        causal_type == "incidental"
-        or evidence_status in SPAN_NEGATIVE_STATUS
+    if (
+        tier == "incidental"
+        and causal_type == "incidental"
+        and evidence_status in SPAN_NEGATIVE_STATUS
     ):
         return 0, 1.0
 
@@ -66,12 +72,12 @@ def _validate_turn_id(
 
 
 def _positive_weight_from_spans(turn: Dict, default: float) -> float:
-    weight = default
+    weights = []
     for span in turn.get("span_annotations", []) or []:
         target = span_supervision_target(span)
         if target is not None and target[0] == 1:
-            weight = max(weight, float(target[1]))
-    return weight
+            weights.append(float(target[1]))
+    return max(weights) if weights else float(default)
 
 
 def build_evidence_turn_targets(
@@ -112,7 +118,11 @@ def build_evidence_turn_targets(
     legacy_analysis = record.get("evidence_analysis") or {}
     legacy_anchor = legacy_analysis.get("anchor_turn_intervention")
     legacy_anchor_tid = legacy_analysis.get("fresh_anchor_turn_id")
-    if isinstance(legacy_anchor, dict) and isinstance(legacy_anchor_tid, int):
+    if (
+        isinstance(legacy_anchor, dict)
+        and isinstance(legacy_anchor_tid, int)
+        and not isinstance(legacy_anchor_tid, bool)
+    ):
         interventions.append({
             "turn_id": legacy_anchor_tid,
             "status": legacy_anchor.get("status", ""),
@@ -124,8 +134,6 @@ def build_evidence_turn_targets(
     for intervention in interventions:
         tid = intervention.get("turn_id")
         status = str(intervention.get("status", ""))
-        if not isinstance(tid, int) or isinstance(tid, bool):
-            continue
         source = str(intervention.get("_source", "turn_interventions"))
         _validate_turn_id(
             tid, turns, conversation_id=cid, source=source
