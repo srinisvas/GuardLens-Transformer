@@ -170,9 +170,10 @@ def build_evidence_turn_targets(
         if status in TURN_POSITIVE_STATUS:
             weight = TURN_POSITIVE_STATUS[status]
         else:
-            record_tier = str(record.get("supervision_tier", ""))
-            default = 1.0 if record_tier == "cf_strong" else 0.70
-            weight = _positive_weight_from_spans(turns[tid], default)
+            # evidence_turn_ids is itself intervention-backed membership, but
+            # without turn-local status/span evidence we do not inherit the
+            # record-level tier. Fall back conservatively to weak confidence.
+            weight = _positive_weight_from_spans(turns[tid], 0.70)
         labels[tid] = 1
         weights[tid] = max(weights[tid], weight)
 
