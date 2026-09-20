@@ -44,6 +44,12 @@ class GuardLens(nn.Module):
             output_hidden_states=False,
         )
         max_positions = getattr(self.backbone.config, "max_position_embeddings", None)
+        hidden_size = getattr(self.backbone.config, "hidden_size", None)
+        if hidden_size != self.config.backbone_dim:
+            raise RuntimeError(
+                f"configured backbone_dim={self.config.backbone_dim} does not match "
+                f"{self.config.backbone_name} hidden_size={hidden_size}"
+            )
         if (
             isinstance(max_positions, int)
             and max_positions > 0
@@ -51,8 +57,8 @@ class GuardLens(nn.Module):
         ):
             raise RuntimeError(
                 f"max_tokens_per_turn={self.config.max_tokens_per_turn} exceeds "
-                f"backbone max_position_embeddings={max_positions}; use a "
-                "chunking/window strategy instead of silently overextending the backbone"
+                f"backbone max_position_embeddings={max_positions}; select a "
+                "backbone with native context coverage rather than truncating the turn"
             )
         if self.config.freeze_backbone:
             for param in self.backbone.parameters():
