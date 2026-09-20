@@ -23,6 +23,7 @@ MAX_TOKENS="${MAX_TOKENS:-512}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 GRAD_ACCUMULATION="${GRAD_ACCUMULATION:-8}"
 EPOCHS="${EPOCHS:-20}"
+LOCALIZATION_RAMP_EPOCHS="${LOCALIZATION_RAMP_EPOCHS:-5}"
 MODEL="${MODEL:-guardlens}"
 
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
@@ -92,6 +93,7 @@ echo " Test:    NOT ACCESSED"
 echo " Model:   $MODEL"
 echo " Window:  turns=$MAX_TURNS hard_token_ceiling=$MAX_TOKENS"
 echo " Batch:   micro=$BATCH_SIZE accumulation=$GRAD_ACCUMULATION"
+echo " Schedule: phase1=5 localization_ramp_epochs=$LOCALIZATION_RAMP_EPOCHS"
 echo "========================================================"
 
 python -m guardlens.data.verify_freeze \
@@ -141,6 +143,7 @@ python -m guardlens.train \
   --lr 2e-4 \
   --epochs "$EPOCHS" \
   --phase1-epochs 5 \
+  --localization-ramp-epochs "$LOCALIZATION_RAMP_EPOCHS" \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --seed 42
