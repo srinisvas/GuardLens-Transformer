@@ -55,10 +55,14 @@ conda activate "$CONDA_ENV"
 set -u
 
 export TMPDIR="${TMPDIR:-$HOME/work/.tmp}"
-export HF_HOME="${HF_HOME:-$HOME/work/hf_models}"
-export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
-mkdir -p "$TMPDIR" "$BASE_OUTPUT" "$PRECHECK_DIR" logs
+export HF_HOME="${GUARDLENS_HF_HOME:-$HOME/work/hf_models}"
+export HF_HUB_CACHE="$HF_HOME/hub"
+unset TRANSFORMERS_CACHE HUGGINGFACE_HUB_CACHE
+export HF_HUB_OFFLINE=1
+mkdir -p "$TMPDIR" "$HF_HUB_CACHE" "$BASE_OUTPUT" "$PRECHECK_DIR" logs
 cd "$PROJECT_DIR"
+echo "HF_HOME:      $HF_HOME"
+echo "HF_HUB_CACHE: $HF_HUB_CACHE"
 
 EXPECTED_BRANCH="naacl-causal-localization-redesign"
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
