@@ -709,7 +709,7 @@ def train(
                     torch.save(
                         payload, os.path.join(output_dir, "best_joint.pt")
                     )
-                else:
+                elif config.patience > 0:
                     patience_counter += 1
                     if patience_counter >= config.patience:
                         print(
