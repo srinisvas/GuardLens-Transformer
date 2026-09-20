@@ -80,7 +80,9 @@ class TurnContextEncoder(nn.Module):
         padding_mask = turn_mask == 0
         x = self.transformer(x, src_key_padding_mask=padding_mask)
         x = self.layer_norm(x)
-        return x * turn_mask.unsqueeze(-1).float()
+        # Use masked_fill rather than multiplication so a pathological NaN in
+        # a padded query position cannot survive as NaN * 0.
+        return x.masked_fill(turn_mask.unsqueeze(-1) == 0, 0.0)
 
 
 class ConversationPooler(nn.Module):
