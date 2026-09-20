@@ -22,6 +22,8 @@ MAX_TURNS="${MAX_TURNS:-48}"
 MAX_TOKENS="${MAX_TOKENS:-8192}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
+BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
+BACKBONE_TURN_MICROBATCH="${BACKBONE_TURN_MICROBATCH:-8}"
 GRAD_ACCUMULATION="${GRAD_ACCUMULATION:-8}"
 EPOCHS="${EPOCHS:-20}"
 LOCALIZATION_RAMP_EPOCHS="${LOCALIZATION_RAMP_EPOCHS:-5}"
@@ -92,6 +94,7 @@ echo " Dev:     $DEV_PATH"
 echo " Test:    NOT ACCESSED"
 echo " Model:   $MODEL"
 echo " Backbone:$BACKBONE"
+echo " Revision:$BACKBONE_REVISION"
 echo " Window:  turns=$MAX_TURNS hard_token_ceiling=$MAX_TOKENS"
 echo " Batch:   micro=$BATCH_SIZE accumulation=$GRAD_ACCUMULATION"
 echo " Schedule: phase1=5 localization_ramp_epochs=$LOCALIZATION_RAMP_EPOCHS"
@@ -108,6 +111,7 @@ python -m guardlens.data.audit_representation \
   --train "$TRAIN_PATH" \
   --dev "$DEV_PATH" \
   --backbone "$BACKBONE" \
+  --backbone-revision "$BACKBONE_REVISION" \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --output "$PRECHECK_DIR/representation_coverage.json"
