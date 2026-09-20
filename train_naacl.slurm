@@ -9,26 +9,40 @@
 #SBATCH --output=logs/train_naacl_%j.out
 #SBATCH --error=logs/train_naacl_%j.err
 
-# Retrain GuardLens and existing baselines from scratch on validity-repaired
-# NAACL splits. The 48-turn primary window covers every repaired Dataset A/B
-# primary record; training aborts on model-window mismatch or CUDA OOM.
-
 set -euo pipefail
 
-PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
-CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
-SPLIT_DIR="${SPLIT_DIR:-$HOME/staging/dataset_gen_output/naacl_splits}"
-BASE_OUTPUT="${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl/checkpoints}"
-PRECHECK_DIR="${PRECHECK_DIR:-$HOME/work/results/guardlens_naacl/preflight}"
-MAX_LENGTH_AUC="${MAX_LENGTH_AUC:-0.65}"
-MAX_TURNS="${MAX_TURNS:-48}"
-MAX_TOKENS="${MAX_TOKENS:-192}"
-BATCH_SIZE="${BATCH_SIZE:-2}"
-GRAD_ACCUMULATION="${GRAD_ACCUMULATION:-8}"
+PROJECT_DIR="\${SLURM_SUBMIT_DIR:-$(pwd)}"
+CONDA_ENV="\${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
+FREEZE_DIR="\${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze}"
+TRAIN_VARIANT="\${TRAIN_VARIANT:-primary}"
+BASE_OUTPUT="\${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl_redesign/checkpoints}"
+PRECHECK_DIR="\${PRECHECK_DIR:-$HOME/work/results/guardlens_naacl_redesign/preflight}"
+MAX_LENGTH_AUC="\${MAX_LENGTH_AUC:-0.65}"
+MAX_TURNS="\${MAX_TURNS:-48}"
+MAX_TOKENS="\${MAX_TOKENS:-512}"
+BATCH_SIZE="\${BATCH_SIZE:-2}"
+GRAD_ACCUMULATION="\${GRAD_ACCUMULATION:-8}"
+EPOCHS="\${EPOCHS:-20}"
+MODEL="\${MODEL:-guardlens}"
 
-TRAIN_PATH="$SPLIT_DIR/train.jsonl"
-DEV_PATH="$SPLIT_DIR/dev.jsonl"
-TEST_PATH="$SPLIT_DIR/test.jsonl"
+REPORT_PATH="\${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
+
+case "$TRAIN_VARIANT" in
+  primary)
+    TRAIN_PATH="\${TRAIN_PATH:-$FREEZE_DIR/splits_primary/train.jsonl}"
+    DEV_PATH="\${DEV_PATH:-$FREEZE_DIR/splits_primary/dev.jsonl}"
+    VERIFY_VARIANT="primary"
+    ;;
+  primary_plus_auxiliary)
+    TRAIN_PATH="\${TRAIN_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/train.jsonl}"
+    DEV_PATH="\${DEV_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/dev.jsonl}"
+    VERIFY_VARIANT="primary_plus_auxiliary"
+    ;;
+  *)
+    echo "ERROR: TRAIN_VARIANT must be primary or primary_plus_auxiliary"
+    exit 2
+    ;;
+esac
 
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -36,117 +50,47 @@ source "$CONDA_BASE/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV"
 set -u
 
-export TMPDIR="${TMPDIR:-$HOME/work/.tmp}"
-export HF_HOME="${HF_HOME:-$HOME/work/hf_models}"
-export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/hub}"
-export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+export TMPDIR="\${TMPDIR:-$HOME/work/.tmp}"
+export HF_HOME="\${HF_HOME:-$HOME/work/hf_models}"
+export TRANSFORMERS_CACHE="\${TRANSFORMERS_CACHE:-$HF_HOME/hub}"
+export HF_HUB_OFFLINE="\${HF_HUB_OFFLINE:-1}"
 mkdir -p "$TMPDIR" "$BASE_OUTPUT" "$PRECHECK_DIR" logs
 cd "$PROJECT_DIR"
 
-for path in "$TRAIN_PATH" "$DEV_PATH" "$TEST_PATH"; do
-    if [[ ! -f "$path" ]]; then
-        echo "ERROR: missing split: $path"
-        exit 2
-    fi
+for path in "$REPORT_PATH" "$TRAIN_PATH" "$DEV_PATH"; do
+  [[ -f "$path" ]] || { echo "ERROR: missing required file: $path"; exit 2; }
 done
 
-if [[ "$MAX_TURNS" -le 0 || "$MAX_TOKENS" -le 0 || "$BATCH_SIZE" -le 0 || "$GRAD_ACCUMULATION" -le 0 ]]; then
-    echo "ERROR: MAX_TURNS, MAX_TOKENS, BATCH_SIZE, and GRAD_ACCUMULATION must be positive"
-    exit 2
-fi
-
 echo "========================================================"
-echo " GuardLens NAACL validity-repair retraining"
-echo " Train:  $TRAIN_PATH"
-echo " Dev:    $DEV_PATH"
-echo " Test:   $TEST_PATH"
-echo " Output: $BASE_OUTPUT"
-echo " Window: max_turns=$MAX_TURNS max_tokens_per_turn=$MAX_TOKENS"
-echo " Batch:  micro=$BATCH_SIZE accumulation=$GRAD_ACCUMULATION effective=$((BATCH_SIZE*GRAD_ACCUMULATION))"
+echo " GuardLens causal-localization training"
+echo " Variant: $TRAIN_VARIANT"
+echo " Train:   $TRAIN_PATH"
+echo " Dev:     $DEV_PATH"
+echo " Test:    NOT ACCESSED"
+echo " Model:   $MODEL"
+echo " Window:  turns=$MAX_TURNS hard_token_ceiling=$MAX_TOKENS"
+echo " Batch:   micro=$BATCH_SIZE accumulation=$GRAD_ACCUMULATION"
 echo "========================================================"
 
-# Verify split linkage before training. This reads identifiers/labels only for
-# structural sanity and does not tune anything on the held-out test split.
-python3 - "$TRAIN_PATH" "$DEV_PATH" "$TEST_PATH" <<'PY'
-import json, sys
-from guardlens.data.training_contract import is_auxiliary_detection_record, training_label
-paths = dict(zip(("train", "dev", "test"), sys.argv[1:]))
-data = {}
-for name, path in paths.items():
-    rows = [json.loads(x) for x in open(path, encoding="utf-8") if x.strip()]
-    if not rows:
-        raise SystemExit(f"ERROR: {name} split is empty")
-    labels = {training_label(r) for r in rows}
-    if not {0, 1}.issubset(labels):
-        raise SystemExit(f"ERROR: {name} split does not contain both detection labels: {labels}")
-    if name in {"dev", "test"} and any(is_auxiliary_detection_record(r) for r in rows):
-        raise SystemExit(f"ERROR: {name} must remain primary-only for the auxiliary ablation")
-    data[name] = rows
+python -m guardlens.data.verify_freeze \
+  --report "$REPORT_PATH" \
+  --train "$TRAIN_PATH" \
+  --dev "$DEV_PATH" \
+  --variant "$VERIFY_VARIANT" \
+  --output "$PRECHECK_DIR/freeze_verification.json"
 
-for a, b in (("train", "dev"), ("train", "test"), ("dev", "test")):
-    ids_a = {str(r.get("conversation_id", "")) for r in data[a]}
-    ids_b = {str(r.get("conversation_id", "")) for r in data[b]}
-    dup_ids = (ids_a & ids_b) - {""}
-    if dup_ids:
-        raise SystemExit(f"ERROR: conversation leakage {a}<->{b}: {len(dup_ids)} ids")
-    pairs_a = {str(r.get("pair_id", "")) for r in data[a] if r.get("pair_id")}
-    pairs_b = {str(r.get("pair_id", "")) for r in data[b] if r.get("pair_id")}
-    dup_pairs = pairs_a & pairs_b
-    if dup_pairs:
-        raise SystemExit(f"ERROR: pair leakage {a}<->{b}: {len(dup_pairs)} pair_ids")
+python -m guardlens.data.audit_representation \
+  --train "$TRAIN_PATH" \
+  --dev "$DEV_PATH" \
+  --backbone microsoft/deberta-v3-base \
+  --max-turns "$MAX_TURNS" \
+  --max-tokens "$MAX_TOKENS" \
+  --output "$PRECHECK_DIR/representation_coverage.json"
 
-    groups_a = {
-        str((r.get("metadata") or {}).get("consolidated_split_group", ""))
-        for r in data[a]
-        if (r.get("metadata") or {}).get("consolidated_split_group")
-    }
-    groups_b = {
-        str((r.get("metadata") or {}).get("consolidated_split_group", ""))
-        for r in data[b]
-        if (r.get("metadata") or {}).get("consolidated_split_group")
-    }
-    dup_groups = groups_a & groups_b
-    if dup_groups:
-        raise SystemExit(
-            f"ERROR: consolidated split-group leakage {a}<->{b}: {len(dup_groups)} groups"
-        )
-
-    hashes_a = {
-        str((r.get("metadata") or {}).get("normalized_user_trajectory_hash", ""))
-        for r in data[a]
-        if (r.get("metadata") or {}).get("normalized_user_trajectory_hash")
-    }
-    hashes_b = {
-        str((r.get("metadata") or {}).get("normalized_user_trajectory_hash", ""))
-        for r in data[b]
-        if (r.get("metadata") or {}).get("normalized_user_trajectory_hash")
-    }
-    dup_hashes = hashes_a & hashes_b
-    if dup_hashes:
-        raise SystemExit(
-            f"ERROR: exact user-trajectory leakage {a}<->{b}: {len(dup_hashes)} hashes"
-        )
-
-print("Split leakage/class preflight: PASS")
-for name, rows in data.items():
-    print(name, len(rows), {k: sum(training_label(r) == k for r in rows) for k in (0,1)})
-PY
-
-# Primary model-window gate. This opens all three already-frozen partitions only
-# to assert representation compatibility; it does not compute/tune a test metric.
-python -m guardlens.evaluation.audit_model_window \
-    --train "$TRAIN_PATH" \
-    --dev "$DEV_PATH" \
-    --test "$TEST_PATH" \
-    --max-turns "$MAX_TURNS" \
-    --output "$PRECHECK_DIR/model_window.json"
-
-# Shortcut gate uses TRAIN + DEV ONLY. The held-out test split is deliberately
-# not opened by this probe. Full test AUC is reported later by eval_naacl.slurm.
 python -m guardlens.evaluation.eval_length_probe_preflight \
-    --train "$TRAIN_PATH" \
-    --dev "$DEV_PATH" \
-    --output "$PRECHECK_DIR/length_probe_dev.json"
+  --train "$TRAIN_PATH" \
+  --dev "$DEV_PATH" \
+  --output "$PRECHECK_DIR/length_probe_dev.json"
 
 python3 - "$PRECHECK_DIR/length_probe_dev.json" "$MAX_LENGTH_AUC" <<'PY'
 import json, sys
@@ -157,42 +101,30 @@ bal = float(r["dev"]["balanced_accuracy"])
 print(f"Length shortcut preflight: dev AUC={auc:.3f}, balanced_acc={bal:.3f}, gate={limit:.3f}")
 if auc > limit:
     raise SystemExit(
-        f"ERROR: dev length-only AUC {auc:.3f} exceeds {limit:.3f}. "
-        "Do not train until the residual shortcut is understood."
+        f"ERROR: dev length-only AUC {auc:.3f} exceeds {limit:.3f}"
     )
 PY
 
-MODELS=("guardlens" "guardlens_no_fusion" "guardlens_no_cf" "turn_level" "conversation_deberta")
-EPOCHS=(25 20 20 20 20)
+OUTPUT="$BASE_OUTPUT/$TRAIN_VARIANT/$MODEL"
+mkdir -p "$OUTPUT"
 
-for i in "${!MODELS[@]}"; do
-    MODEL="${MODELS[$i]}"
-    EP="${EPOCHS[$i]}"
-    OUTPUT="$BASE_OUTPUT/$MODEL"
-    mkdir -p "$OUTPUT"
+python -m guardlens.train \
+  --train-path "$TRAIN_PATH" \
+  --dev-path "$DEV_PATH" \
+  --output "$OUTPUT" \
+  --model "$MODEL" \
+  --backbone microsoft/deberta-v3-base \
+  --batch-size "$BATCH_SIZE" \
+  --grad-accumulation "$GRAD_ACCUMULATION" \
+  --lr 2e-4 \
+  --epochs "$EPOCHS" \
+  --phase1-epochs 5 \
+  --max-turns "$MAX_TURNS" \
+  --max-tokens "$MAX_TOKENS" \
+  --seed 42
 
-    EXTRA_FLAGS=()
-    if [[ "$MODEL" == "conversation_deberta" || "$MODEL" == "turn_level" ]]; then
-        EXTRA_FLAGS+=("--no-pivot-head")
-    fi
-
-    echo ""
-    echo "Training $MODEL at $(date)"
-    python -m guardlens.train \
-        --train-path "$TRAIN_PATH" \
-        --dev-path "$DEV_PATH" \
-        --test-path "$TEST_PATH" \
-        --output "$OUTPUT" \
-        --model "$MODEL" \
-        --backbone microsoft/deberta-v3-base \
-        --batch-size "$BATCH_SIZE" \
-        --grad-accumulation "$GRAD_ACCUMULATION" \
-        --lr 2e-4 \
-        --epochs "$EP" \
-        --max-turns "$MAX_TURNS" \
-        --max-tokens "$MAX_TOKENS" \
-        --seed 42 \
-        "${EXTRA_FLAGS[@]}"
-done
-
-echo "NAACL retraining complete: $BASE_OUTPUT"
+echo "========================================================"
+echo "Training complete"
+echo "Checkpoint: $OUTPUT/best.pt"
+echo "Held-out test accessed: NO"
+echo "========================================================"
