@@ -593,10 +593,14 @@ def train(
         else GuardLensCollator(tokenizer, config)
     )
 
+    train_generator = torch.Generator()
+    train_generator.manual_seed(config.seed)
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=config.batch_size,
         shuffle=True,
+        generator=train_generator,
         collate_fn=collator,
         num_workers=config.num_workers,
         pin_memory=True,
