@@ -45,21 +45,47 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens):
     max_turns_seen = 0
 
     for idx, record in enumerate(records):
-        item = dataset[idx]
-        for target in item["evidence_turn_labels"]:
-            if target == 1:
-                turn_targets["positive"] += 1
-            elif target == 0:
-                turn_targets["negative"] += 1
-            else:
-                turn_targets["ignored"] += 1
         cid = str(record.get("conversation_id", "")) or "<missing>"
-        turns = record.get("turns", [])
+        turns = list(record.get("turns", []) or [])
         max_turns_seen = max(max_turns_seen, len(turns))
+
+        structural_errors = []
+        if not turns:
+            structural_errors.append(f"{cid}: empty realized trajectory")
         if len(turns) > max_turns:
-            errors.append(
+            structural_errors.append(
                 f"{cid}: {len(turns)} turns exceed max_turns={max_turns}"
             )
+        expected_ids = list(range(len(turns)))
+        realized_ids = [turn.get("turn_id") for turn in turns]
+        if turns and realized_ids != expected_ids:
+            structural_errors.append(
+                f"{cid}: realized turn_id values must equal indices 0..{len(turns)-1}"
+            )
+        for t_idx, turn in enumerate(turns):
+            role = str(turn.get("role", "")).lower()
+            if role not in {"user", "assistant"}:
+                structural_errors.append(
+                    f"{cid}: unsupported turn role {role!r} at turn {t_idx}"
+                )
+
+        if structural_errors:
+            errors.extend(structural_errors)
+        else:
+            try:
+                item = dataset[idx]
+            except RuntimeError as exc:
+                errors.append(f"{cid}: dataset contract failure: {exc}")
+                item = None
+
+            if item is not None:
+                for target in item["evidence_turn_labels"]:
+                    if target == 1:
+                        turn_targets["positive"] += 1
+                    elif target == 0:
+                        turn_targets["negative"] += 1
+                    else:
+                        turn_targets["ignored"] += 1
 
         for t_idx, turn in enumerate(turns):
             text = str(turn.get("text", ""))
