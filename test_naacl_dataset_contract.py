@@ -95,6 +95,16 @@ class NaaclDatasetContractTests(unittest.TestCase):
         item = GuardLensDataset([base_record(0)], GuardLensConfig())[0]
         self.assertEqual(item["evidence_turn_labels"], [0, -1, 0])
 
+    def test_legacy_anchor_intervention_can_supply_explicit_negative(self):
+        record = base_record(1)
+        record["supervision_tier"] = "llm_confirmed"
+        record["evidence_analysis"] = {
+            "fresh_anchor_turn_id": 0,
+            "anchor_turn_intervention": {"status": "not_supported"},
+        }
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertEqual(item["evidence_turn_labels"], [0, -1, -1])
+
     def test_llm_confirmed_causal_looking_span_is_ignored(self):
         record = base_record(1)
         record["supervision_tier"] = "llm_confirmed"
