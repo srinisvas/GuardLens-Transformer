@@ -20,11 +20,10 @@ def main():
 
     ckpt = torch.load(args.checkpoint, weights_only=False, map_location="cpu")
     architecture = ckpt.get("architecture_version", "legacy")
-    if architecture == "causal_localization_v1":
+    if str(architecture).startswith("causal_localization_"):
         raise SystemExit(
-            "Evaluation for causal_localization_v1 is not yet migrated on this "
-            "branch. Do not use legacy evaluators. Complete the NAACL evaluation "
-            "migration first."
+            f"Evaluation for {architecture} is not yet migrated on this branch. "
+            "Do not use legacy evaluators. Complete the NAACL evaluation migration first."
         )
     raise SystemExit(
         "This branch no longer supports the legacy evaluation entry point. "
