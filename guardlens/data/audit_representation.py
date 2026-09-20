@@ -37,12 +37,22 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens):
     errors = []
     over_token_cap = 0
     positive_spans = 0
+    negative_spans = 0
+    ignored_spans = 0
     positive_spans_beyond_cap = 0
+    turn_targets = {"positive": 0, "negative": 0, "ignored": 0}
     max_tokens_seen = 0
     max_turns_seen = 0
 
     for idx, record in enumerate(records):
-        _ = dataset[idx]
+        item = dataset[idx]
+        for target in item["evidence_turn_labels"]:
+            if target == 1:
+                turn_targets["positive"] += 1
+            elif target == 0:
+                turn_targets["negative"] += 1
+            else:
+                turn_targets["ignored"] += 1
         cid = str(record.get("conversation_id", "")) or "<missing>"
         turns = record.get("turns", [])
         max_turns_seen = max(max_turns_seen, len(turns))
@@ -67,9 +77,13 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens):
             supervised_spans = []
             for span in turn.get("span_annotations", []) or []:
                 target = span_supervision_target(span)
-                if target is not None and target[0] == 1:
+                if target is None:
+                    ignored_spans += 1
+                elif target[0] == 1:
                     positive_spans += 1
                     supervised_spans.append(span)
+                else:
+                    negative_spans += 1
 
             if length <= max_tokens:
                 continue
@@ -99,7 +113,12 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens):
         "p95_tokens_per_turn": float(np.percentile(arr, 95)) if len(arr) else 0.0,
         "p99_tokens_per_turn": float(np.percentile(arr, 99)) if len(arr) else 0.0,
         "turns_over_token_cap": over_token_cap,
-        "positive_spans": positive_spans,
+        "span_target_annotations": {
+            "positive": positive_spans,
+            "negative": negative_spans,
+            "ignored": ignored_spans,
+        },
+        "turn_targets": turn_targets,
         "positive_spans_beyond_token_cap": positive_spans_beyond_cap,
         "errors": errors,
     }
@@ -162,6 +181,8 @@ def main():
             f"token_p99={summary['p99_tokens_per_turn']:.1f} "
             f"token_max={summary['max_tokens_per_turn_seen']} "
             f"over_cap={summary['turns_over_token_cap']} "
+            f"turn_targets={summary['turn_targets']} "
+            f"span_targets={summary['span_target_annotations']} "
             f"positive_spans_beyond_cap="
             f"{summary['positive_spans_beyond_token_cap']}"
         )
