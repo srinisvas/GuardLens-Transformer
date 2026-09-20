@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 from guardlens.config import GuardLensConfig
 from guardlens.data.dataset import GuardLensCollator, GuardLensDataset
+from guardlens.data.causal_targets import span_supervision_target
 from guardlens.data.training_contract import (
     classification_loss_weight,
     is_auxiliary_detection_record,
@@ -47,10 +48,23 @@ def select_smoke_records(records, batch_size):
             or str(r.get("supervision_tier", "")) in {"cf_strong", "cf_weak"}
         )
     ]
-    negatives = [r for r in primary if training_label(r) == 0]
+    negatives = []
+    for record in primary:
+        if training_label(record) != 0:
+            continue
+        has_negative_span = any(
+            (target := span_supervision_target(span)) is not None
+            and target[0] == 0
+            for turn in record.get("turns", []) or []
+            for span in turn.get("span_annotations", []) or []
+        )
+        if has_negative_span:
+            negatives.append(record)
+
     if not localizable_positive or not negatives:
         raise RuntimeError(
-            "joint smoke requires a localizable malicious record and a benign record"
+            "joint smoke requires a localizable malicious record and a benign "
+            "record with explicit negative span supervision"
         )
 
     selected = [
@@ -115,6 +129,8 @@ def main():
         raise RuntimeError("smoke batch has no positive evidence-turn target")
     if int((batch["token_labels"] == 1).sum()) == 0:
         raise RuntimeError("smoke batch has no positive causal-span target")
+    if int((batch["token_labels"] == 0).sum()) == 0:
+        raise RuntimeError("smoke batch has no explicit negative span target")
 
     model = MODEL_REGISTRY["guardlens"](config)
     model.setup_backbone()
