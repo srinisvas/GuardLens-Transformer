@@ -1,9 +1,9 @@
 """Dev-only length shortcut preflight for the NAACL repair.
 
 This intentionally does not open the held-out test split. Fit the same simple
-length-only logistic probe on train, tune/report on dev, and use it only as a
-pre-training shortcut gate. The full eval_length_probe.py remains the final
-held-out report after the pipeline is frozen.
+length-only logistic probe on train and report/tune on dev as a pre-training
+diagnostic. It is not an arbitrary pass/fail gate. The full eval_length_probe.py
+remains the final held-out report after the pipeline is frozen.
 """
 
 from __future__ import annotations
