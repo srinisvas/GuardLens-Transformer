@@ -113,7 +113,7 @@ def main() -> None:
     parser.add_argument("--train", required=True)
     parser.add_argument("--dev", required=True)
     parser.add_argument("--test", required=True)
-    parser.add_argument("--max-turns", type=int, default=48)
+    parser.add_argument("--max-turns", type=int, default=64)
     parser.add_argument("--output", default="")
     args = parser.parse_args()
     if args.max_turns <= 0:
