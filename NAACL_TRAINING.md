@@ -454,7 +454,7 @@ classes, both positive/negative evidence-turn targets, or both
 positive/negative span targets. This prevents a target-extraction regression
 from silently turning a joint run into a one-class or detection-only run.
 
-## 10. Shortcut gate
+## 10. Shortcut diagnostic
 
 `train_naacl.slurm` retains the repaired train/dev-only length probe.
 
