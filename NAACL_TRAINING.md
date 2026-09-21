@@ -387,7 +387,7 @@ The collator:
 
 Default values are:
 
-    max_turns = 48
+    max_turns = 64
     max_tokens_per_turn = 8192
 
 The 8,192-token value is the native ModernBERT-large position capacity. It is a
@@ -426,7 +426,7 @@ Run:
       --train "$FREEZE/splits_primary/train.jsonl" \
       --dev "$FREEZE/splits_primary/dev.jsonl" \
       --backbone answerdotai/ModernBERT-large \
-      --max-turns 48 \
+      --max-turns 64 \
       --max-tokens 8192 \
       --output /tmp/guardlens_representation_audit.json
 
