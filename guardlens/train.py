@@ -33,7 +33,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--phase1-epochs", type=int, default=5)
     parser.add_argument("--localization-ramp-epochs", type=int, default=5)
-    parser.add_argument("--max-turns", type=int, default=48)
+    parser.add_argument("--max-turns", type=int, default=64)
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda")
