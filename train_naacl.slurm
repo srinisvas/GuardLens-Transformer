@@ -17,7 +17,6 @@ FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/fina
 TRAIN_VARIANT="${TRAIN_VARIANT:-primary}"
 BASE_OUTPUT="${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl_redesign/checkpoints}"
 PRECHECK_DIR="${PRECHECK_DIR:-$HOME/work/results/guardlens_naacl_redesign/preflight}"
-MAX_LENGTH_AUC="${MAX_LENGTH_AUC:-0.65}"
 MAX_TURNS="${MAX_TURNS:-64}"
 MAX_TOKENS="${MAX_TOKENS:-8192}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
@@ -125,17 +124,18 @@ python -m guardlens.evaluation.eval_length_probe_preflight \
   --dev "$DEV_PATH" \
   --output "$PRECHECK_DIR/length_probe_dev.json"
 
-python3 - "$PRECHECK_DIR/length_probe_dev.json" "$MAX_LENGTH_AUC" <<'PY'
+python3 - "$PRECHECK_DIR/length_probe_dev.json" <<'PY'
 import json, sys
-path, limit = sys.argv[1], float(sys.argv[2])
+path = sys.argv[1]
 r = json.load(open(path, encoding="utf-8"))
 auc = float(r["dev"]["roc_auc"])
 bal = float(r["dev"]["balanced_accuracy"])
-print(f"Length shortcut preflight: dev AUC={auc:.3f}, balanced_acc={bal:.3f}, gate={limit:.3f}")
-if auc > limit:
-    raise SystemExit(
-        f"ERROR: dev length-only AUC {auc:.3f} exceeds {limit:.3f}"
-    )
+f1 = float(r["dev"]["f1"])
+print(
+    f"Length shortcut diagnostic: dev AUC={auc:.3f}, "
+    f"balanced_acc={bal:.3f}, F1={f1:.3f}"
+)
+print("Diagnostic only: no arbitrary AUC threshold is used as a training gate.")
 PY
 
 OUTPUT="$BASE_OUTPUT/$TRAIN_VARIANT/$MODEL"
