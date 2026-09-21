@@ -125,7 +125,7 @@ def main():
         default="45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
     )
     parser.add_argument("--backbone-turn-microbatch", type=int, default=8)
-    parser.add_argument("--max-turns", type=int, default=48)
+    parser.add_argument("--max-turns", type=int, default=64)
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
