@@ -52,7 +52,7 @@ preflight and one-GPU smoke described below before full training.
 
 Canonical frozen artifacts live at:
 
-    $HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze
+    $HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze-restored-a
 
 Primary A+B corpus:
 
