@@ -26,7 +26,7 @@ class GuardLensConfig:
     # Representation limits
     # max_tokens_per_turn is a hard, fail-closed ceiling. The collator uses
     # dynamic padding and never truncates a turn to fit this value.
-    max_turns: int = 48
+    max_turns: int = 64
     max_tokens_per_turn: int = 8192
 
     # Optimization
