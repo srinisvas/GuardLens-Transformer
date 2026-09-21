@@ -13,7 +13,7 @@ set -euo pipefail
 
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
-FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze}"
+FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze-restored-a}"
 TRAIN_VARIANT="${TRAIN_VARIANT:-primary}"
 BASE_OUTPUT="${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl_redesign/checkpoints}"
 PRECHECK_DIR="${PRECHECK_DIR:-$HOME/work/results/guardlens_naacl_redesign/preflight}"
