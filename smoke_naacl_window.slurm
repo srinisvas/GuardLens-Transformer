@@ -15,14 +15,16 @@ PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
 FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze-restored-a}"
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
-TRAIN_PATH="${TRAIN_PATH:-$FREEZE_DIR/splits_primary/train.jsonl}"
-DEV_PATH="${DEV_PATH:-$FREEZE_DIR/splits_primary/dev.jsonl}"
+TRAIN_PATH="${TRAIN_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/train.jsonl}"
+DEV_PATH="${DEV_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/dev.jsonl}"
 MAX_TURNS="${MAX_TURNS:-64}"
 MAX_TOKENS="${MAX_TOKENS:-8192}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 BACKBONE_TURN_MICROBATCH="${BACKBONE_TURN_MICROBATCH:-8}"
+SMOKE_RUN_ID="${SMOKE_RUN_ID:-${SLURM_JOB_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
+SMOKE_OUTPUT_DIR="${SMOKE_OUTPUT_DIR:-$HOME/work/results/guardlens_naacl_redesign/smoke/$SMOKE_RUN_ID}"
 
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -35,7 +37,11 @@ export HF_HOME="${GUARDLENS_HF_HOME:-$HOME/work/hf_models}"
 export HF_HUB_CACHE="$HF_HOME/hub"
 unset TRANSFORMERS_CACHE HUGGINGFACE_HUB_CACHE
 export HF_HUB_OFFLINE=1
-mkdir -p "$TMPDIR" "$HF_HUB_CACHE" logs
+if [[ -e "$SMOKE_OUTPUT_DIR" ]]; then
+  echo "ERROR: smoke output already exists: $SMOKE_OUTPUT_DIR"
+  exit 2
+fi
+mkdir -p "$TMPDIR" "$HF_HUB_CACHE" "$SMOKE_OUTPUT_DIR" logs
 cd "$PROJECT_DIR"
 echo "HF_HOME:      $HF_HOME"
 echo "HF_HUB_CACHE: $HF_HUB_CACHE"
@@ -64,7 +70,17 @@ python -m guardlens.data.verify_freeze \
   --report "$REPORT_PATH" \
   --train "$TRAIN_PATH" \
   --dev "$DEV_PATH" \
-  --variant primary
+  --variant primary_plus_auxiliary \
+  --output "$SMOKE_OUTPUT_DIR/freeze_verification.json"
+
+python -m guardlens.data.audit_representation \
+  --train "$TRAIN_PATH" \
+  --dev "$DEV_PATH" \
+  --backbone "$BACKBONE" \
+  --backbone-revision "$BACKBONE_REVISION" \
+  --max-turns "$MAX_TURNS" \
+  --max-tokens "$MAX_TOKENS" \
+  --output "$SMOKE_OUTPUT_DIR/representation_coverage.json"
 
 echo "========================================================"
 echo " GuardLens joint architecture GPU smoke"

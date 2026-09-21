@@ -38,9 +38,8 @@ architecture and training module on branch:
 
     naacl-causal-localization-redesign
 
-The branch starts from the complete `naacl-validity-repair` tip
-`e6c432c37635ea7af34b390cbfa971173c9b5f43`, so the frozen-data validity work
-is inherited. Model and baseline choices are otherwise optimized for the NAACL
+The branch consumes the final restored-A freeze produced by DataGen branch
+`naacl-validity-repair`. Model and baseline choices are optimized for the NAACL
 paper itself. Historical EMNLP architecture compatibility is not a scientific
 constraint.
 
@@ -56,65 +55,68 @@ Canonical frozen artifacts live at:
 
 Primary A+B corpus:
 
-- 2,454 conversations
-- 1,227 benign
-- 1,227 malicious
-- train 1,720
-- dev 367
-- test 367
+- 2,434 conversations
+- 1,217 benign
+- 1,217 malicious
+- train 1,706
+- dev 364
+- test 364
 
 Record-level supervision tiers:
 
 | Tier | Train | Dev | Test | Total |
 | --- | ---: | ---: | ---: | ---: |
-| benign_validated | 861 | 183 | 183 | 1,227 |
-| cf_strong | 445 | 98 | 89 | 632 |
-| cf_weak | 3 | 1 | 2 | 6 |
-| llm_confirmed | 411 | 85 | 93 | 589 |
+| benign_validated | 853 | 182 | 182 | 1,217 |
+| cf_strong | 446 | 91 | 95 | 632 |
+| cf_weak | 2 | 3 | 1 | 6 |
+| llm_confirmed | 405 | 88 | 86 | 579 |
 
-Span annotations:
+Primary train supervision by source:
 
-| Span target tier | Train | Dev | Test | Total |
-| --- | ---: | ---: | ---: | ---: |
-| cf_strong | 820 | 176 | 151 | 1,147 |
-| cf_weak | 16 | 4 | 5 | 25 |
-| incidental | 227 | 45 | 55 | 327 |
-| ignore | 3,004 | 627 | 650 | 4,281 |
-| all annotations | 4,067 | 852 | 861 | 5,780 |
+| Source | benign_validated | cf_strong | cf_weak | llm_confirmed | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A (`legacy_restored_primary`) | 363 | 1 | 2 | 360 | 726 |
+| B (`frontier_authored_v3`) | 490 | 445 | 0 | 45 | 980 |
 
-The 14 reviewed construction-language spans surviving into primary are a subset
-of the ignored spans. They are never positive token supervision. Their split is
-12 train, 2 dev and 0 test.
+Strong counterfactual localization supervision therefore comes almost entirely
+from B, while restored A contributes primarily LLM-confirmed primary records and
+its 721 detection auxiliaries. Evaluation and reporting must remain
+source-stratified.
 
-Construction-language visibility is class-symmetric in Dataset B primary:
-174 benign and 174 malicious records contain reviewed construction language.
+Exact turn/span target counts are generated from this freeze by the mandatory
+representation audit. Construction-derived and LLM-confirmed spans remain
+ignored unless the frozen span carries the exact intervention-backed tier,
+causal type, and evidence-status combination required by the target contract.
 
 Primary frozen SHA-256 values:
 
-    train  7ba829d3acd0699b76012c477426504301694e215a7755e97341b196d5bf9011
-    dev    e024e52ffa2ab1820fbf190a1389ebeec3e364256c45d701fb87082e622257f6
-    test   82771ea6ddef43a73f02de05e66d774f2c2f694bfb552929d28379c5a331cf45
+    train  5ccad79f1c3f0f0cc998f6ee2a4b04943e18938319ce5663e6d3d725e27de0d2
+    dev    16f500cd6a67806f834aa761e388116a2ba03b1b136232cd2ec504aa9261833d
+    test   6085baf91f129f5ed2acfc6e1c6b14270f9750f3c8aaa7c269307d9ea157bb0a
 
 The test hash is documented for provenance only. Training must not open the test
 file.
 
-### Detection-only auxiliary candidate
+### Canonical detection-only auxiliary population
 
-The optional candidate split freezes the primary split and adds 424 audited
+The canonical split freezes the primary partitions and adds 1,146 audited
 auxiliary outcomes to training only:
 
-- train 2,144 = 1,720 primary + 424 auxiliary
-- dev 367 and byte-identical to primary dev
-- test 367 and byte-identical to primary test
-- auxiliary train detection labels are 271 safe and 153 unsafe
+- train 2,852 = 1,706 primary + 721 A auxiliary + 425 B auxiliary
+- dev 364 and byte-identical to primary dev
+- test 364 and byte-identical to primary test
+- final train detection labels are 1,845 benign and 1,007 unsafe
+- A auxiliary detection weight is 1.0
+- B auxiliary detection weight is 0.25
 - auxiliary localization supervision is always disabled
 
-Frozen auxiliary candidate SHA-256 values:
+Frozen canonical training SHA-256 values:
 
-    train  3533198efdb55fe33087170c50d62d301969b841422e283c5ebdc71f10c7490f
-    dev    659394391b035fa5fa06607f304bd118872e44e61388704288cf27684034dbd0
+    train  2927d73c9c471ca9835159d6162e62fd8bb75f4a501b56536bfe1f41dffe2b80
+    dev    16f500cd6a67806f834aa761e388116a2ba03b1b136232cd2ec504aa9261833d
 
-The canonical run is primary-only. The auxiliary candidate is an ablation.
+The canonical run uses `primary_plus_auxiliary`. Primary-only training is the
+auxiliary ablation.
 
 ## 2. Scientific target
 
@@ -262,6 +264,10 @@ Positive:
 - repaired Dataset A supported anchor intervention
 - evidence turns established through intervention-supported spans
 
+`pivot_turn_id` never creates a target. It is retained only as legacy provenance
+and for diagnostic evaluation slices. A counterfactual-tier record with no
+intervention-backed positive evidence-turn target fails closed.
+
 Negative:
 
 - explicitly tested `not_supported` malicious turns
@@ -317,8 +323,14 @@ Auxiliary records use their audited:
 and have zero localization supervision.
 
 Detection `pos_weight` is derived from weighted detection mass rather than raw
-record count, so the optional 0.25-weight auxiliary outcomes do not silently
+record count, so the 0.25-weight B auxiliary outcomes do not silently
 change class balancing.
+
+Confidence weights are absolute. Weighted BCE is divided by the number of
+eligible targets, not by the sum of their confidence weights. Therefore, a
+microbatch containing only 0.25-weight B auxiliaries still contributes exactly
+one quarter of the equivalent unit-weight loss. The same rule preserves the
+0.70 scale for weak turn/span evidence.
 
 Evidence-turn BCE also balances labeled positive versus labeled negative turn
 mass after applying strong/weak confidence weights. Untested turns do not enter
@@ -408,9 +420,9 @@ Before training, run:
 
     python -m guardlens.data.verify_freeze \
       --report "$FREEZE/data_prep_freeze_report.json" \
-      --train "$FREEZE/splits_primary/train.jsonl" \
-      --dev "$FREEZE/splits_primary/dev.jsonl" \
-      --variant primary
+      --train "$FREEZE/splits_primary_plus_train_auxiliary/train.jsonl" \
+      --dev "$FREEZE/splits_primary_plus_train_auxiliary/dev.jsonl" \
+      --variant primary_plus_auxiliary
 
 The verifier checks both SHA-256 and record counts against the final DataGen
 freeze report.
@@ -423,8 +435,8 @@ training.
 Run:
 
     python -m guardlens.data.audit_representation \
-      --train "$FREEZE/splits_primary/train.jsonl" \
-      --dev "$FREEZE/splits_primary/dev.jsonl" \
+      --train "$FREEZE/splits_primary_plus_train_auxiliary/train.jsonl" \
+      --dev "$FREEZE/splits_primary_plus_train_auxiliary/dev.jsonl" \
       --backbone answerdotai/ModernBERT-large \
       --max-turns 64 \
       --max-tokens 8192 \
@@ -458,8 +470,10 @@ from silently turning a joint run into a one-class or detection-only run.
 
 `train_naacl.slurm` retains the repaired train/dev-only length probe.
 
-Training must stop if the locked dev length-only ROC AUC exceeds the configured
-gate, currently 0.65.
+The locked restored-A probe is diagnostic rather than an arbitrary stop gate.
+Its dev multivariable ROC AUC is approximately 0.600. Train/dev direction
+reversal and all source-stratified detection results must remain visible in the
+reported diagnostics.
 
 The held-out test is not accessed by this preflight.
 
@@ -470,14 +484,14 @@ All checkpoint selection is dev-only.
 The trainer saves:
 
     best_detection.pt
-        maximum dev detection F1
+        maximum Dataset-B dev detection AUPRC
 
     best_localization.pt
         maximum mean(dev turn AUPRC, dev span AUPRC)
 
     best_joint.pt
         maximum mean(
-            dev detection F1,
+            Dataset-B dev detection AUPRC,
             dev evidence-turn AUPRC,
             dev span AUPRC
         )
@@ -493,6 +507,7 @@ selection score.
 Every checkpoint records:
 
 - architecture_version=causal_localization_v2
+- training_contract_version=restored_a_primary_plus_auxiliary_v1
 - exact training-code Git SHA
 - exact ModernBERT model revision through the stored config
 - exact train SHA-256
@@ -500,6 +515,8 @@ Every checkpoint records:
 - Python / PyTorch / Transformers / CUDA runtime versions
 - dev threshold
 - dev metrics
+- combined, A-only, B-only, and macro A/B detection diagnostics
+- canonical_detection_source_family=B
 - epoch and phase
 
 This prevents a localization-only peak from becoming the canonical checkpoint
@@ -541,10 +558,17 @@ DataLoader also uses an explicit seed-bound `torch.Generator`, pinning shuffled
 batch order to `config.seed`. This does not claim full CUDA bitwise
 determinism; it removes batch-order nondeterminism.
 
-The smoke launcher is pinned to the frozen primary train/dev hashes and exact
-ModernBERT revision before it touches the GPU. It executes both a
-localization-supervision batch and a separate worst-token-footprint batch chosen
-from actual ModernBERT token counts; both report peak CUDA allocation.
+The launchers default to `primary_plus_auxiliary`. The trainer independently
+validates that canonical training contains both A and B auxiliary sources and
+that dev remains primary-only with both A and B source families. Every full run
+uses a new run-specific output directory and refuses to reuse an existing path.
+CUDA requests fail closed instead of falling back to CPU.
+
+The smoke launcher is pinned to the canonical train/dev hashes and exact
+ModernBERT revision before it touches the GPU. It executes a localization batch,
+an A+B auxiliary-only batch that must have no localization targets, and a
+worst-token-footprint batch chosen across the full training population. All
+three report peak CUDA allocation.
 
 The following historical launchers are intentionally disabled on this branch:
 
@@ -766,6 +790,25 @@ assumptions:
     model-registry keys such as `conversation_deberta`. They remain outside the
     canonical path and must be rewritten, not re-enabled as-is, during the
     evaluation migration.
+46. canonical launchers defaulted to primary-only training and silently omitted
+    all 1,146 detection auxiliaries; the canonical default and smoke now use
+    `primary_plus_auxiliary`, and the trainer validates the declared variant.
+47. confidence weights were normalized by the microbatch weight sum, cancelling
+    uniform 0.25 auxiliary and 0.70 weak-evidence weights; loss reduction now
+    preserves their absolute influence.
+48. checkpoint selection used combined dev detection F1 despite the known A
+    paired-generation artifact; canonical detection selection now uses B-dev
+    AUPRC while logging combined, A-only, B-only and macro A/B diagnostics.
+49. a legacy target fallback converted a single `pivot_turn_id` into turn
+    supervision; it is removed, and CF-tier records without intervention-backed
+    positive evidence fail closed.
+50. run outputs could reuse an existing directory and mix checkpoints; launchers
+    now create run-specific paths and the trainer refuses an existing output.
+51. a requested CUDA run silently fell back to CPU when CUDA was unavailable;
+    device resolution now fails closed.
+52. source and auxiliary schema fields were carried inconsistently; all
+    supervision-bearing fields and A/B source identity are now validated before
+    model initialization.
 
 All of the above are addressed or explicitly quarantined in the current redesign branch.
 
@@ -785,7 +828,8 @@ Run CPU contracts:
       test_naacl_dataset_contract.py \
       test_auxiliary_loss_isolation.py \
       test_causal_localization_architecture.py \
-      test_metadata_leakage.py
+      test_metadata_leakage.py \
+      test_training_readiness_contract.py
 
 Then run the frozen SHA verifier and representation audit from Sections 8 and 9.
 
@@ -793,10 +837,11 @@ Then submit:
 
     sbatch smoke_naacl_window.slurm
 
-The smoke is pinned to the frozen primary hashes and selects a localizable
-malicious record plus a benign record with explicit negative span supervision.
-It requires positive evidence-turn targets, positive causal-span targets and
-explicit negative span targets before performing the joint optimizer step.
+The smoke is pinned to the canonical auxiliary-inclusive hashes. It selects a
+localizable malicious record plus a benign record with explicit negative span
+supervision, a separate A+B auxiliary-only batch, and a worst-footprint batch
+from the full training population. It verifies positive turn/span targets in the
+joint batch and zero localization targets in the auxiliary batch.
 
 Proceed to full training only when the smoke ends with:
 
@@ -816,7 +861,8 @@ Static/manual code review:
 
 Runtime test execution:
 
-    CPU contracts, frozen verification, representation audit and GPU architecture smoke passed on HPC
+    CPU contracts must pass at the current repair commit
+    final-freeze verification and GPU architecture smoke must be rerun on HPC
 
 Architecture redesign:
 
@@ -828,28 +874,24 @@ Training redesign:
 
 Frozen-data SHA verification code:
 
-    implemented, execution still required on HPC
+    implemented for the restored-A primary_plus_auxiliary freeze
 
 Representation/truncation audit:
 
-    512-token DeBERTa audit executed and failed as intended
-    native-8K ModernBERT audit passed
-    train max=3364 tokens, dev max=2026, over_cap=0
-    positive_spans_beyond_cap=0
+    native-8K ModernBERT audit must be rerun against the final restored-A freeze
 
 CPU unit/contract suite:
 
-    passed on HPC
+    execution required at the current repair commit
 
 GPU architecture smoke:
 
-    passed on HPC at code SHA ca437870a08faed105ebf157246efd239c82abbf
-    joint peak CUDA allocation 2.38 GiB
-    worst-token-footprint peak CUDA allocation 1.81 GiB
+    prior smoke is obsolete because it used older code and data
+    auxiliary-inclusive smoke required at the current repair commit
 
 Full training:
 
-    authorized; not yet completed
+    blocked until final-freeze preflight and current GPU smoke pass
 
 Evaluation migration:
 

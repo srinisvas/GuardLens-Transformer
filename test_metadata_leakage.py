@@ -13,6 +13,7 @@ class TrainingMetadataLeakageTests(unittest.TestCase):
     def test_hidden_metadata_cannot_change_model_visible_turn_features(self):
         base = {
             "conversation_id": "visible-id-a",
+            "corpus_source": "frontier_authored_v3",
             "pair_id": "PAIR_SECRET_A",
             "label": 1,
             "loss_weight": 0.6,

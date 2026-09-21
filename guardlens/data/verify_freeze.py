@@ -29,7 +29,7 @@ def main():
     parser.add_argument(
         "--variant",
         choices=["primary", "primary_plus_auxiliary"],
-        default="primary",
+        default="primary_plus_auxiliary",
     )
     parser.add_argument("--output", default="")
     args = parser.parse_args()

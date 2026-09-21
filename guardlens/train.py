@@ -14,6 +14,12 @@ def main():
     )
     parser.add_argument("--train-path", required=True)
     parser.add_argument("--dev-path", required=True)
+    parser.add_argument(
+        "--train-variant",
+        choices=["primary", "primary_plus_auxiliary"],
+        default="primary_plus_auxiliary",
+        help="Frozen training population contract. The canonical run includes auxiliaries.",
+    )
     parser.add_argument("--output", default="./checkpoints")
     parser.add_argument(
         "--model",
@@ -72,6 +78,7 @@ def main():
         num_workers=args.workers,
         train_path=args.train_path,
         dev_path=args.dev_path,
+        train_variant=args.train_variant,
         tune_threshold=not args.no_threshold_tune,
     )
     train(config, args.output, model_name=args.model)

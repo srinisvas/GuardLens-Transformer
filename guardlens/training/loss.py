@@ -23,9 +23,19 @@ class GuardLensLoss(nn.Module):
 
     @staticmethod
     def _weighted_mean(raw: torch.Tensor, weights: Optional[torch.Tensor]):
+        """Apply absolute confidence weights without batch-local renormalization.
+
+        Dividing by ``weights.sum()`` would cancel a uniform 0.25 auxiliary
+        weight or 0.70 weak-evidence weight whenever a microbatch contains only
+        that tier. Dividing by the number of eligible targets preserves the
+        intended absolute influence while keeping the ordinary mean scale for
+        unit-weight targets.
+        """
         if weights is None:
             return raw.mean()
-        return (raw * weights).sum() / weights.sum().clamp(min=1e-8)
+        if raw.numel() == 0:
+            raise RuntimeError("cannot reduce an empty weighted loss")
+        return (raw * weights).sum() / raw.numel()
 
     def forward(
         self,

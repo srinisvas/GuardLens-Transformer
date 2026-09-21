@@ -25,13 +25,20 @@ from guardlens.config import GuardLensConfig
 from guardlens.data.dataset import GuardLensCollator, GuardLensDataset
 from guardlens.data.causal_targets import span_supervision_target
 from guardlens.data.training_contract import (
+    CANONICAL_DETECTION_SOURCE_FAMILY,
     classification_loss_weight,
     is_auxiliary_detection_record,
+    source_family,
     training_label,
+    validate_training_record,
 )
 from guardlens.models import MODEL_REGISTRY
 from guardlens.training.loss import GuardLensLoss
 from guardlens.training.schedule import get_current_phase, get_lambda_schedule
+
+
+ARCHITECTURE_VERSION = "causal_localization_v2"
+TRAINING_CONTRACT_VERSION = "restored_a_primary_plus_auxiliary_v1"
 
 
 def load_records(path: str) -> List[Dict]:
@@ -100,6 +107,77 @@ def _assert_train_dev_disjoint(train_records: Sequence[Dict], dev_records: Seque
         )
     if any(is_auxiliary_detection_record(r) for r in dev_records):
         raise RuntimeError("dev must remain primary-only; auxiliary records are train-only")
+
+
+def _validate_frozen_schema(
+    train_records: Sequence[Dict],
+    dev_records: Sequence[Dict],
+    train_variant: str,
+) -> None:
+    if train_variant not in {"primary", "primary_plus_auxiliary"}:
+        raise RuntimeError(f"unsupported train_variant={train_variant!r}")
+
+    for record in [*train_records, *dev_records]:
+        validate_training_record(record)
+
+    train_aux = [r for r in train_records if is_auxiliary_detection_record(r)]
+    if train_variant == "primary" and train_aux:
+        raise RuntimeError("primary train variant must not contain auxiliary records")
+    if train_variant == "primary_plus_auxiliary" and not train_aux:
+        raise RuntimeError(
+            "primary_plus_auxiliary train variant contains no auxiliary records"
+        )
+
+    dev_families = {source_family(r) for r in dev_records}
+    if dev_families != {"A", "B"}:
+        raise RuntimeError(
+            f"dev must contain primary source families A and B, got {sorted(dev_families)}"
+        )
+    b_dev_labels = {
+        training_label(r)
+        for r in dev_records
+        if source_family(r) == CANONICAL_DETECTION_SOURCE_FAMILY
+    }
+    if b_dev_labels != {0, 1}:
+        raise RuntimeError(
+            "B-dev must contain both detection classes for canonical selection, "
+            f"got {sorted(b_dev_labels)}"
+        )
+    if train_variant == "primary_plus_auxiliary":
+        aux_families = {source_family(r) for r in train_aux}
+        if aux_families != {"A", "B"}:
+            raise RuntimeError(
+                "canonical auxiliary training must contain A and B auxiliaries, "
+                f"got {sorted(aux_families)}"
+            )
+
+
+def _resolve_device(requested: str) -> torch.device:
+    requested = str(requested).strip()
+    if not requested:
+        raise RuntimeError("device must be non-empty")
+    if requested.lower().startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError(
+            f"CUDA device {requested!r} was requested but CUDA is unavailable"
+        )
+    device = torch.device(requested)
+    if device.type == "cuda" and device.index is not None:
+        if device.index < 0 or device.index >= torch.cuda.device_count():
+            raise RuntimeError(
+                f"requested CUDA device index {device.index} but only "
+                f"{torch.cuda.device_count()} device(s) are visible"
+            )
+    return device
+
+
+def _prepare_output_dir(output_dir: str) -> None:
+    if not output_dir:
+        raise RuntimeError("output directory must be non-empty")
+    if os.path.exists(output_dir):
+        raise RuntimeError(
+            f"output directory already exists: {output_dir}; use a fresh run directory"
+        )
+    os.makedirs(output_dir, exist_ok=False)
 
 
 def _weighted_detection_balance(records: Sequence[Dict]) -> Tuple[int, int, float, float]:
@@ -215,6 +293,76 @@ def _average_precision(scores: Sequence[float], labels: Sequence[int]) -> Option
             tp += 1
             precision_sum += tp / rank
     return precision_sum / positives
+
+
+def _roc_auc(scores: Sequence[float], labels: Sequence[int]) -> Optional[float]:
+    if not scores:
+        return None
+    positives = sum(int(x) == 1 for x in labels)
+    negatives = sum(int(x) == 0 for x in labels)
+    if positives == 0 or negatives == 0:
+        return None
+
+    # Mann-Whitney U with average ranks for tied scores.
+    ordered = sorted(
+        ((float(score), int(label)) for score, label in zip(scores, labels)),
+        key=lambda item: item[0],
+    )
+    positive_rank_sum = 0.0
+    start = 0
+    while start < len(ordered):
+        end = start + 1
+        while end < len(ordered) and ordered[end][0] == ordered[start][0]:
+            end += 1
+        average_rank = ((start + 1) + end) / 2.0
+        positive_rank_sum += average_rank * sum(
+            label == 1 for _, label in ordered[start:end]
+        )
+        start = end
+    u_stat = positive_rank_sum - positives * (positives + 1) / 2.0
+    return float(u_stat / (positives * negatives))
+
+
+def _detection_metrics(
+    probs: Sequence[float],
+    labels: Sequence[int],
+    threshold: float,
+) -> Dict[str, object]:
+    result: Dict[str, object] = _binary_metrics(probs, labels, threshold)
+    result["auprc"] = _average_precision(probs, labels)
+    result["auroc"] = _roc_auc(probs, labels)
+    result["records"] = len(labels)
+    result["positives"] = sum(int(x) == 1 for x in labels)
+    result["negatives"] = sum(int(x) == 0 for x in labels)
+    return result
+
+
+def _source_detection_metrics(
+    probs: Sequence[float],
+    labels: Sequence[int],
+    families: Sequence[str],
+    threshold: float,
+) -> Dict[str, Dict[str, object]]:
+    result: Dict[str, Dict[str, object]] = {}
+    for family in sorted(set(families)):
+        indices = [i for i, value in enumerate(families) if value == family]
+        result[family] = _detection_metrics(
+            [probs[i] for i in indices],
+            [labels[i] for i in indices],
+            threshold,
+        )
+    return result
+
+
+def _canonical_detection_score(dev_metrics: Dict[str, object]) -> float:
+    by_source = dev_metrics.get("detection_by_source") or {}
+    source_metrics = by_source.get(CANONICAL_DETECTION_SOURCE_FAMILY) or {}
+    score = source_metrics.get("auprc")
+    if score is None:
+        raise RuntimeError(
+            "canonical checkpoint selection requires B-dev detection AUPRC"
+        )
+    return float(score)
 
 
 def train_epoch(
@@ -335,9 +483,10 @@ def _collect_detection_probs(
     model: nn.Module,
     loader: DataLoader,
     device: torch.device,
-) -> Tuple[List[float], List[int]]:
+) -> Tuple[List[float], List[int], List[str]]:
     probs: List[float] = []
     labels: List[int] = []
+    families: List[str] = []
     model.eval()
     for batch in loader:
         outputs = model(
@@ -349,7 +498,8 @@ def _collect_detection_probs(
         )
         probs.extend(torch.sigmoid(outputs["cls_logits"]).cpu().tolist())
         labels.extend(batch["labels"].tolist())
-    return probs, labels
+        families.extend(str(row["source_family"]) for row in batch["metadata"])
+    return probs, labels, families
 
 
 @torch.no_grad()
@@ -366,6 +516,7 @@ def evaluate_dev(
 
     det_probs: List[float] = []
     det_labels: List[int] = []
+    det_families: List[str] = []
     span_probs: List[float] = []
     span_labels: List[int] = []
     turn_probs: List[float] = []
@@ -401,6 +552,9 @@ def evaluate_dev(
 
         det_probs.extend(torch.sigmoid(outputs["cls_logits"]).cpu().tolist())
         det_labels.extend(labels.cpu().tolist())
+        det_families.extend(
+            str(row["source_family"]) for row in batch["metadata"]
+        )
 
         if outputs.get("attr_probs") is not None:
             span_valid = (
@@ -424,7 +578,15 @@ def evaluate_dev(
                 )
                 turn_labels.extend(batch["turn_labels"][turn_valid].tolist())
 
-    detection = _binary_metrics(det_probs, det_labels, threshold)
+    detection = _detection_metrics(det_probs, det_labels, threshold)
+    detection_by_source = _source_detection_metrics(
+        det_probs, det_labels, det_families, threshold
+    )
+    source_auprcs = [
+        float(metrics["auprc"])
+        for metrics in detection_by_source.values()
+        if metrics.get("auprc") is not None
+    ]
     span = _binary_metrics(span_probs, span_labels, 0.5) if span_probs else None
     turn = _binary_metrics(turn_probs, turn_labels, 0.5) if turn_probs else None
     span_ap = _average_precision(span_probs, span_labels)
@@ -435,6 +597,13 @@ def evaluate_dev(
     return {
         "loss": total_loss / max(1, n_batches),
         "detection": detection,
+        "detection_by_source": detection_by_source,
+        "detection_macro_source_auprc": (
+            float(np.mean(source_auprcs)) if source_auprcs else None
+        ),
+        "canonical_detection_source_family": (
+            CANONICAL_DETECTION_SOURCE_FAMILY
+        ),
         "span": span,
         "turn": turn,
         "span_auprc": span_ap,
@@ -461,7 +630,8 @@ def _checkpoint_payload(
     runtime_versions,
 ):
     return {
-        "architecture_version": "causal_localization_v2",
+        "architecture_version": ARCHITECTURE_VERSION,
+        "training_contract_version": TRAINING_CONTRACT_VERSION,
         "epoch": epoch,
         "phase": phase,
         "model_name": model_name,
@@ -506,12 +676,14 @@ def train(
     train_records = load_records(config.train_path)
     dev_records = load_records(config.dev_path)
     _assert_train_dev_disjoint(train_records, dev_records)
-
-    device = torch.device(
-        config.device if torch.cuda.is_available() else "cpu"
+    _validate_frozen_schema(
+        train_records, dev_records, config.train_variant
     )
+
+    device = _resolve_device(config.device)
     print(f"Device: {device}")
     print(f"Train: {len(train_records)}  Dev: {len(dev_records)}")
+    print(f"Train variant: {config.train_variant}")
     print("Held-out test: NOT LOADED")
 
     data_sha256 = {
@@ -524,6 +696,7 @@ def train(
     print(f"Dev SHA256:   {data_sha256['dev']}")
     print(f"Code SHA:     {code_sha}")
     print(f"Runtime:      {runtime_versions}")
+    _prepare_output_dir(output_dir)
 
     n_pos, n_neg, pos_mass, neg_mass = _weighted_detection_balance(
         train_records
@@ -677,7 +850,6 @@ def train(
     if turn_pos > 0 and turn_neg > 0:
         loss_fn.set_turn_pos_weight(turn_pos_weight)
 
-    os.makedirs(output_dir, exist_ok=True)
     best_detection = -1.0
     best_localization = -1.0
     best_joint = -1.0
@@ -708,10 +880,21 @@ def train(
             continue
 
         if config.tune_threshold:
-            probs, labels = _collect_detection_probs(
+            probs, labels, families = _collect_detection_probs(
                 model, dev_loader, device
             )
-            best_threshold = find_best_threshold(probs, labels)
+            canonical_indices = [
+                i for i, family in enumerate(families)
+                if family == CANONICAL_DETECTION_SOURCE_FAMILY
+            ]
+            if not canonical_indices:
+                raise RuntimeError(
+                    "cannot tune threshold: dev has no B-source records"
+                )
+            best_threshold = find_best_threshold(
+                [probs[i] for i in canonical_indices],
+                [labels[i] for i in canonical_indices],
+            )
 
         dev_metrics = evaluate_dev(
             model,
@@ -735,6 +918,7 @@ def train(
             f"Ep {epoch:02d} P{phase} "
             f"loss={train_metrics['loss']:.4f} "
             f"detF1={dev_metrics['detection']['f1']:.3f} "
+            f"BdetAP={_canonical_detection_score(dev_metrics):.3f} "
             f"spanF1={span_f1:.3f} turnF1={turn_f1:.3f} "
             f"locAP={dev_metrics['localization_score']} "
             f"lr={train_metrics['learning_rate']:.3e} "
@@ -746,7 +930,7 @@ def train(
             patience_counter = 0
             last_phase = phase
 
-        det_score = float(dev_metrics["detection"]["f1"])
+        det_score = _canonical_detection_score(dev_metrics)
         if det_score > best_detection:
             best_detection = det_score
             payload = _checkpoint_payload(
@@ -760,7 +944,7 @@ def train(
                 data_sha256=data_sha256,
                 code_sha=code_sha,
                 score=det_score,
-                score_name="dev_detection_f1",
+                score_name="b_dev_detection_auprc",
                 runtime_versions=runtime_versions,
             )
             torch.save(
@@ -791,7 +975,7 @@ def train(
                 )
 
             # Canonical checkpoint selection is joint, not localization-only.
-            # Detection F1, turn AUPRC and span AUPRC are all bounded [0,1],
+            # B-source detection AUPRC, turn AUPRC and span AUPRC are all bounded [0,1],
             # so an equal-weight mean is transparent and avoids selecting a
             # localization peak that materially sacrifices detection.
             turn_ap = dev_metrics.get("turn_auprc")
@@ -815,7 +999,7 @@ def train(
                         data_sha256=data_sha256,
                         code_sha=code_sha,
                         score=joint_score,
-                        score_name="mean_dev_detection_f1_turn_auprc_span_auprc",
+                        score_name="mean_b_dev_detection_turn_span_auprc",
                         runtime_versions=runtime_versions,
                     )
                     torch.save(
@@ -847,10 +1031,11 @@ def train(
     shutil.copy2(chosen, os.path.join(output_dir, "best.pt"))
     summary = {
         "status": "completed",
-        "architecture_version": "causal_localization_v2",
+        "architecture_version": ARCHITECTURE_VERSION,
+        "training_contract_version": TRAINING_CONTRACT_VERSION,
         "model_name": model_name,
         "best_checkpoint": os.path.basename(chosen),
-        "best_detection_f1": best_detection,
+        "best_b_dev_detection_auprc": best_detection,
         "best_localization_auprc": (
             best_localization if best_localization >= 0 else None
         ),

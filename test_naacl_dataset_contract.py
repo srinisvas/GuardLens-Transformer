@@ -45,9 +45,10 @@ class _FakeTokenizer:
 def base_record(label=1):
     return {
         "conversation_id": "r1",
+        "corpus_source": "frontier_authored_v3",
         "label": label,
         "loss_weight": 0.6,
-        "supervision_tier": "cf_strong" if label else "benign_validated",
+        "supervision_tier": "llm_confirmed" if label else "benign_validated",
         "localization_supervision_ignore": False,
         "turns": [
             {
@@ -80,10 +81,19 @@ class NaaclDatasetContractTests(unittest.TestCase):
 
     def test_multi_evidence_turns_are_multi_label_targets(self):
         record = base_record(1)
+        record["supervision_tier"] = "cf_weak"
         record["evidence_turn_ids"] = [0, 2]
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertEqual(item["evidence_turn_labels"], [1, -1, 1])
         self.assertEqual(item["evidence_turn_weights"], [0.70, 0.0, 0.70])
+
+    def test_legacy_single_pivot_is_not_a_turn_target(self):
+        record = base_record(1)
+        record["supervision_tier"] = "cf_strong"
+        record["pivot_turn_id"] = 2
+        record["evidence_turn_ids"] = []
+        with self.assertRaisesRegex(RuntimeError, "pivot_turn_id is never used"):
+            GuardLensDataset([record], GuardLensConfig())[0]
 
     def test_record_strong_tier_does_not_upgrade_weak_evidence_turn(self):
         record = base_record(1)
@@ -109,6 +119,7 @@ class NaaclDatasetContractTests(unittest.TestCase):
 
     def test_explicit_not_supported_turn_is_negative(self):
         record = base_record(1)
+        record["supervision_tier"] = "cf_strong"
         record["evidence_turn_ids"] = [2]
         record["frontier_evidence_analysis"] = {
             "turn_interventions": [
@@ -121,6 +132,7 @@ class NaaclDatasetContractTests(unittest.TestCase):
 
     def test_contradictory_evidence_turn_and_negative_intervention_fails_closed(self):
         record = base_record(1)
+        record["supervision_tier"] = "cf_strong"
         record["evidence_turn_ids"] = [0]
         record["frontier_evidence_analysis"] = {
             "turn_interventions": [
@@ -132,6 +144,7 @@ class NaaclDatasetContractTests(unittest.TestCase):
 
     def test_supported_span_can_override_negative_whole_turn_intervention(self):
         record = base_record(1)
+        record["supervision_tier"] = "cf_weak"
         record["evidence_turn_ids"] = [0]
         record["frontier_evidence_analysis"] = {
             "turn_interventions": [
@@ -151,6 +164,7 @@ class NaaclDatasetContractTests(unittest.TestCase):
 
     def test_multiple_positive_turn_sources_keep_strongest_confidence(self):
         record = base_record(1)
+        record["supervision_tier"] = "cf_strong"
         record["evidence_turn_ids"] = [0]
         record["frontier_evidence_analysis"] = {
             "turn_interventions": [
@@ -197,6 +211,7 @@ class NaaclDatasetContractTests(unittest.TestCase):
 
     def test_counterfactually_supported_span_is_positive(self):
         record = base_record(1)
+        record["supervision_tier"] = "cf_strong"
         record["evidence_turn_ids"] = [0]
         record["turns"][0]["span_annotations"] = [{
             "label": "EVIDENCE_CANDIDATE",
@@ -211,6 +226,8 @@ class NaaclDatasetContractTests(unittest.TestCase):
 
     def test_overlapping_strong_and_weak_positive_spans_keep_strong_weight(self):
         record = base_record(1)
+        record["supervision_tier"] = "cf_strong"
+        record["evidence_turn_ids"] = [0]
         record["turns"][0]["span_annotations"] = [
             {
                 "causal_type": "causal",
@@ -324,6 +341,7 @@ class NaaclDatasetContractTests(unittest.TestCase):
         record = base_record(0)
         record.update({
             "authoring_intent_label": 0,
+            "corpus_source": "frontier_authored_v3_auxiliary",
             "detection_label": 1,
             "detection_loss_weight": 0.25,
             "pivot_loss_weight": 0.0,
@@ -331,6 +349,8 @@ class NaaclDatasetContractTests(unittest.TestCase):
             "auxiliary_detection_only": True,
             "use_as": "auxiliary_detection_only",
             "pivot_supervision_ignore": True,
+            "pivot_turn_id": None,
+            "evidence_turn_ids": [],
             "localization_supervision_ignore": True,
             "supervision_tier": "auxiliary_detection",
         })

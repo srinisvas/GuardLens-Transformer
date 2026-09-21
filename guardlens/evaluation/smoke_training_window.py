@@ -14,6 +14,7 @@ from guardlens.data.causal_targets import span_supervision_target
 from guardlens.data.training_contract import (
     classification_loss_weight,
     is_auxiliary_detection_record,
+    source_family,
     training_label,
 )
 from guardlens.models import MODEL_REGISTRY
@@ -93,14 +94,46 @@ def select_smoke_records(records, batch_size, tokenizer):
 
 
 def select_worst_case_records(records, batch_size, tokenizer):
-    primary = [
-        r for r in records if not is_auxiliary_detection_record(r)
-    ]
     return sorted(
-        primary,
+        records,
         key=lambda r: token_footprint(r, tokenizer),
         reverse=True,
     )[:batch_size]
+
+
+def select_auxiliary_records(records, batch_size, tokenizer):
+    auxiliary = [r for r in records if is_auxiliary_detection_record(r)]
+    by_family = {
+        family: [r for r in auxiliary if source_family(r) == family]
+        for family in ("A", "B")
+    }
+    if not all(by_family.values()):
+        raise RuntimeError(
+            "canonical smoke requires detection-only auxiliaries from A and B"
+        )
+
+    selected = [
+        max(by_family["A"], key=lambda r: token_footprint(r, tokenizer)),
+        max(
+            by_family["B"],
+            key=lambda r: (
+                training_label(r) == 1,
+                token_footprint(r, tokenizer),
+            ),
+        ),
+    ]
+    if batch_size > 2:
+        used = {str(r.get("conversation_id", "")) for r in selected}
+        remaining = [
+            r for r in sorted(
+                auxiliary,
+                key=lambda r: token_footprint(r, tokenizer),
+                reverse=True,
+            )
+            if str(r.get("conversation_id", "")) not in used
+        ]
+        selected.extend(remaining[: batch_size - 2])
+    return selected[:batch_size]
 
 
 def make_loader(records, config, tokenizer):
@@ -165,8 +198,12 @@ def main():
     worst_case = select_worst_case_records(
         records, args.batch_size, tokenizer
     )
+    auxiliary = select_auxiliary_records(
+        records, args.batch_size, tokenizer
+    )
     loader = make_loader(selected, config, tokenizer)
     worst_loader = make_loader(worst_case, config, tokenizer)
+    auxiliary_loader = make_loader(auxiliary, config, tokenizer)
     batch = next(iter(loader))
     if int((batch["turn_labels"] == 1).sum()) == 0:
         raise RuntimeError("smoke batch has no positive evidence-turn target")
@@ -174,6 +211,11 @@ def main():
         raise RuntimeError("smoke batch has no positive causal-span target")
     if int((batch["token_labels"] == 0).sum()) == 0:
         raise RuntimeError("smoke batch has no explicit negative span target")
+    auxiliary_batch = next(iter(auxiliary_loader))
+    if int((auxiliary_batch["turn_labels"] >= 0).sum()) != 0:
+        raise RuntimeError("auxiliary smoke batch leaked evidence-turn targets")
+    if int((auxiliary_batch["token_labels"] >= 0).sum()) != 0:
+        raise RuntimeError("auxiliary smoke batch leaked span targets")
 
     model = MODEL_REGISTRY["guardlens"](config)
     model.setup_backbone()
@@ -230,7 +272,9 @@ def main():
                 f"turns={len(record.get('turns', []))} "
                 f"max_turn_tokens={footprint[1]} "
                 f"dense_token_slots={footprint[0]} "
-                f"tier={record.get('supervision_tier')}"
+                f"tier={record.get('supervision_tier')} "
+                f"source={record.get('corpus_source')} "
+                f"detection_weight={classification_loss_weight(record)}"
             )
         print(
             f"phase={metrics['phase']} loss={metrics['loss']:.6f} "
@@ -242,8 +286,12 @@ def main():
 
     print("=== GuardLens causal-localization training smoke ===")
     joint_peak = run_batch("joint-supervision batch", selected, loader)
+    auxiliary_peak = run_batch(
+        "auxiliary-detection-only batch", auxiliary, auxiliary_loader
+    )
     worst_peak = run_batch("worst-token-footprint batch", worst_case, worst_loader)
     print(f"joint_peak_gib={joint_peak:.2f}")
+    print(f"auxiliary_peak_gib={auxiliary_peak:.2f}")
     print(f"worst_case_peak_gib={worst_peak:.2f}")
     print("TRAINING ARCHITECTURE SMOKE PASSED")
 

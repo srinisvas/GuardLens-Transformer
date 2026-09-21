@@ -65,4 +65,4 @@ class GuardLensConfig:
     # Frozen input paths. Training intentionally has no test-path contract.
     train_path: str = ""
     dev_path: str = ""
-
+    train_variant: str = "primary_plus_auxiliary"

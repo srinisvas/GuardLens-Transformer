@@ -15,7 +15,9 @@ from guardlens.data.training_contract import (
     classification_loss_weight,
     is_auxiliary_detection_record,
     localization_supervision_ignored,
+    source_family,
     training_label,
+    validate_training_record,
 )
 
 
@@ -31,6 +33,7 @@ class GuardLensDataset(Dataset):
 
     def __getitem__(self, idx):
         record = self.records[idx]
+        validate_training_record(record)
         cid = str(record.get("conversation_id", "")) or "<missing>"
         turns = list(record.get("turns", []))
         if not turns:
@@ -49,6 +52,7 @@ class GuardLensDataset(Dataset):
             )
 
         localization_ignore = localization_supervision_ignored(record)
+        label = training_label(record)
         turn_texts: List[str] = []
         turn_roles: List[int] = []
         char_labels_per_turn: List[List[int]] = []
@@ -112,11 +116,21 @@ class GuardLensDataset(Dataset):
         evidence_turn_labels, evidence_turn_weights = build_evidence_turn_targets(
             record, turns
         )
+        if (
+            not localization_ignore
+            and label == 1
+            and str(record.get("supervision_tier", "")) in {"cf_strong", "cf_weak"}
+            and 1 not in evidence_turn_labels
+        ):
+            raise RuntimeError(
+                f"{cid}: counterfactual tier has no intervention-backed positive "
+                "evidence-turn target; pivot_turn_id is never used as a fallback"
+            )
 
         return {
             "turn_texts": turn_texts,
             "turn_roles": turn_roles,
-            "label": training_label(record),
+            "label": label,
             "detection_weight": classification_loss_weight(record),
             "auxiliary_detection_only": is_auxiliary_detection_record(record),
             "localization_supervision_ignore": localization_ignore,
@@ -125,6 +139,8 @@ class GuardLensDataset(Dataset):
             "evidence_turn_labels": evidence_turn_labels,
             "evidence_turn_weights": evidence_turn_weights,
             "conversation_id": record.get("conversation_id", ""),
+            "corpus_source": record.get("corpus_source", ""),
+            "source_family": source_family(record),
             "difficulty": record.get("difficulty", "medium"),
             "family": record.get("family", "unknown"),
             "evidence_turn_ids": list(record.get("evidence_turn_ids") or []),
@@ -303,9 +319,13 @@ class GuardLensCollator:
             all_turn_weights.append(torch.tensor(turn_weights, dtype=torch.float))
             metadata.append({
                 "conversation_id": item["conversation_id"],
+                "corpus_source": item["corpus_source"],
+                "source_family": item["source_family"],
                 "difficulty": item["difficulty"],
                 "family": item["family"],
                 "evidence_turn_ids": item["evidence_turn_ids"],
+                # Legacy pivot fields are retained only for diagnostic slicing.
+                # They never construct turn targets or enter any model loss.
                 "pivot_turn_id": item["pivot_turn_id"],
                 "pivot_kind": item["pivot_kind"],
                 "auxiliary_detection_only": item["auxiliary_detection_only"],

@@ -14,9 +14,8 @@ set -euo pipefail
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
 FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze-restored-a}"
-TRAIN_VARIANT="${TRAIN_VARIANT:-primary}"
-BASE_OUTPUT="${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl_redesign/checkpoints}"
-PRECHECK_DIR="${PRECHECK_DIR:-$HOME/work/results/guardlens_naacl_redesign/preflight}"
+TRAIN_VARIANT="${TRAIN_VARIANT:-primary_plus_auxiliary}"
+BASE_OUTPUT="${BASE_OUTPUT:-$HOME/work/results/guardlens_naacl_redesign}"
 MAX_TURNS="${MAX_TURNS:-64}"
 MAX_TOKENS="${MAX_TOKENS:-8192}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
@@ -27,6 +26,7 @@ GRAD_ACCUMULATION="${GRAD_ACCUMULATION:-8}"
 EPOCHS="${EPOCHS:-20}"
 LOCALIZATION_RAMP_EPOCHS="${LOCALIZATION_RAMP_EPOCHS:-5}"
 MODEL="${MODEL:-guardlens}"
+RUN_ID="${RUN_ID:-${SLURM_JOB_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
 
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
 
@@ -47,6 +47,10 @@ case "$TRAIN_VARIANT" in
     ;;
 esac
 
+RUN_ROOT="${RUN_ROOT:-$BASE_OUTPUT/$TRAIN_VARIANT/$MODEL/$RUN_ID}"
+PRECHECK_DIR="${PRECHECK_DIR:-$RUN_ROOT/preflight}"
+OUTPUT="${OUTPUT:-$RUN_ROOT/checkpoints}"
+
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
 source "$CONDA_BASE/etc/profile.d/conda.sh"
@@ -58,7 +62,12 @@ export HF_HOME="${GUARDLENS_HF_HOME:-$HOME/work/hf_models}"
 export HF_HUB_CACHE="$HF_HOME/hub"
 unset TRANSFORMERS_CACHE HUGGINGFACE_HUB_CACHE
 export HF_HUB_OFFLINE=1
-mkdir -p "$TMPDIR" "$HF_HUB_CACHE" "$BASE_OUTPUT" "$PRECHECK_DIR" logs
+if [[ -e "$RUN_ROOT" || -e "$PRECHECK_DIR" || -e "$OUTPUT" ]]; then
+  echo "ERROR: run output already exists; choose a fresh RUN_ID"
+  echo "RUN_ROOT=$RUN_ROOT"
+  exit 2
+fi
+mkdir -p "$TMPDIR" "$HF_HUB_CACHE" "$PRECHECK_DIR" logs
 cd "$PROJECT_DIR"
 echo "HF_HOME:      $HF_HOME"
 echo "HF_HUB_CACHE: $HF_HUB_CACHE"
@@ -77,6 +86,8 @@ fi
 export GUARDLENS_CODE_SHA="$CODE_SHA"
 echo "Code branch: $CURRENT_BRANCH"
 echo "Code SHA:    $CODE_SHA"
+echo "Run ID:      $RUN_ID"
+echo "Run root:    $RUN_ROOT"
 
 
 for path in "$REPORT_PATH" "$TRAIN_PATH" "$DEV_PATH"; do
@@ -138,12 +149,10 @@ print(
 print("Diagnostic only: no arbitrary AUC threshold is used as a training gate.")
 PY
 
-OUTPUT="$BASE_OUTPUT/$TRAIN_VARIANT/$MODEL"
-mkdir -p "$OUTPUT"
-
 python -m guardlens.train \
   --train-path "$TRAIN_PATH" \
   --dev-path "$DEV_PATH" \
+  --train-variant "$TRAIN_VARIANT" \
   --output "$OUTPUT" \
   --model "$MODEL" \
   --backbone "$BACKBONE" \
@@ -157,7 +166,8 @@ python -m guardlens.train \
   --localization-ramp-epochs "$LOCALIZATION_RAMP_EPOCHS" \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
-  --seed 42
+  --seed 42 \
+  --device cuda
 
 echo "========================================================"
 echo "Training complete"

@@ -150,14 +150,6 @@ def build_evidence_turn_targets(
     if evidence_ids is None:
         evidence_ids = []
 
-    # Dataset A compatibility: only CF-tier legacy pivots may become positive.
-    if not evidence_ids and str(record.get("supervision_tier", "")) in {
-        "cf_strong", "cf_weak"
-    }:
-        pivot = record.get("pivot_turn_id")
-        if isinstance(pivot, int) and not isinstance(pivot, bool):
-            evidence_ids = [pivot]
-
     seen = set()
     for raw_tid in evidence_ids:
         tid = int(raw_tid) if isinstance(raw_tid, int) and not isinstance(raw_tid, bool) else raw_tid
