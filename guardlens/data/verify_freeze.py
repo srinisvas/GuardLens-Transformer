@@ -5,7 +5,12 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
+from typing import Any, Dict, Tuple
+
+
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def sha256(path: str) -> str:
@@ -19,6 +24,67 @@ def sha256(path: str) -> str:
 def count_jsonl(path: str) -> int:
     with open(path, "r", encoding="utf-8") as handle:
         return sum(1 for line in handle if line.strip())
+
+
+def _required_field(report: Dict[str, Any], path: str) -> Any:
+    value: Any = report
+    traversed = []
+    for key in path.split("."):
+        traversed.append(key)
+        if not isinstance(value, dict) or key not in value:
+            raise RuntimeError(
+                "freeze report missing required field: " + ".".join(traversed)
+            )
+        value = value[key]
+    return value
+
+
+def _required_sha256(report: Dict[str, Any], path: str) -> str:
+    value = _required_field(report, path)
+    if not isinstance(value, str) or not SHA256_RE.fullmatch(value):
+        raise RuntimeError(
+            f"freeze report field {path} must be a lowercase SHA-256 hex digest"
+        )
+    return value
+
+
+def _required_count(report: Dict[str, Any], path: str) -> int:
+    value = _required_field(report, path)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RuntimeError(
+            f"freeze report field {path} must be a non-negative integer"
+        )
+    return value
+
+
+def expected_artifacts(
+    report: Dict[str, Any], variant: str
+) -> Tuple[str, str, int, int]:
+    """Read the exact DataGen freeze-report contract for a training variant."""
+    if report.get("status") != "passed":
+        raise RuntimeError("freeze report itself is not status=passed")
+
+    if variant == "primary":
+        train_hash_path = "artifact_sha256.primary_train"
+        dev_hash_path = "artifact_sha256.primary_dev"
+        train_count_path = "counts.primary_splits.train"
+        dev_count_path = "counts.primary_splits.dev"
+    elif variant == "primary_plus_auxiliary":
+        # The restored-A builder deliberately retained these stable consumer
+        # keys even though the training view now includes both A and B aux data.
+        train_hash_path = "artifact_sha256.auxiliary_candidate_train"
+        dev_hash_path = "artifact_sha256.auxiliary_candidate_dev"
+        train_count_path = "auxiliary_candidate.train_records"
+        dev_count_path = "auxiliary_candidate.dev_records"
+    else:
+        raise RuntimeError(f"unsupported freeze variant: {variant!r}")
+
+    return (
+        _required_sha256(report, train_hash_path),
+        _required_sha256(report, dev_hash_path),
+        _required_count(report, train_count_path),
+        _required_count(report, dev_count_path),
+    )
 
 
 def main():
@@ -38,30 +104,14 @@ def main():
         if not os.path.isfile(path):
             raise FileNotFoundError(path)
 
-    report = json.load(open(args.report, encoding="utf-8"))
-    if report.get("status") != "passed":
-        raise RuntimeError("freeze report itself is not status=passed")
-
-    hashes = report.get("artifact_sha256") or {}
-    if args.variant == "primary":
-        expected_train = hashes.get("primary_train")
-        expected_dev = hashes.get("primary_dev")
-        expected_train_n = (
-            (report.get("counts") or {})
-            .get("primary_splits", {})
-            .get("train")
-        )
-        expected_dev_n = (
-            (report.get("counts") or {})
-            .get("primary_splits", {})
-            .get("dev")
-        )
-    else:
-        expected_train = hashes.get("auxiliary_candidate_train")
-        expected_dev = hashes.get("auxiliary_candidate_dev")
-        aux = report.get("auxiliary_candidate") or {}
-        expected_train_n = aux.get("train_records")
-        expected_dev_n = aux.get("dev_records")
+    with open(args.report, encoding="utf-8") as handle:
+        report = json.load(handle)
+    (
+        expected_train,
+        expected_dev,
+        expected_train_n,
+        expected_dev_n,
+    ) = expected_artifacts(report, args.variant)
 
     actual_train = sha256(args.train)
     actual_dev = sha256(args.dev)
@@ -77,11 +127,11 @@ def main():
         errors.append(
             f"dev SHA mismatch expected={expected_dev} actual={actual_dev}"
         )
-    if expected_train_n is not None and train_n != int(expected_train_n):
+    if train_n != expected_train_n:
         errors.append(
             f"train count mismatch expected={expected_train_n} actual={train_n}"
         )
-    if expected_dev_n is not None and dev_n != int(expected_dev_n):
+    if dev_n != expected_dev_n:
         errors.append(
             f"dev count mismatch expected={expected_dev_n} actual={dev_n}"
         )
@@ -89,6 +139,13 @@ def main():
     payload = {
         "status": "failed" if errors else "passed",
         "variant": args.variant,
+        "report": {
+            "path": args.report,
+            "expected_train_sha256": expected_train,
+            "expected_dev_sha256": expected_dev,
+            "expected_train_records": expected_train_n,
+            "expected_dev_records": expected_dev_n,
+        },
         "train": {
             "path": args.train,
             "sha256": actual_train,

@@ -427,6 +427,13 @@ Before training, run:
 The verifier checks both SHA-256 and record counts against the final DataGen
 freeze report.
 
+For `primary_plus_auxiliary`, the restored-A builder intentionally retains the
+stable report fields `artifact_sha256.auxiliary_candidate_train`,
+`artifact_sha256.auxiliary_candidate_dev`,
+`auxiliary_candidate.train_records`, and
+`auxiliary_candidate.dev_records`. The verifier requires all four fields and
+fails with the missing field name if the report schema is incomplete.
+
 A Git LFS pointer, stale copy or regenerated split therefore fails before
 training.
 
@@ -498,6 +505,11 @@ The trainer saves:
 
 `best.pt` resolves to `best_joint.pt` when it exists. Localization-only and
 detection-only checkpoints remain diagnostics.
+
+The paper's primary detection claim must be based on Dataset B, matching the
+selection population. Dataset A detection remains a separately reported
+paired-generation diagnostic. Combined and macro A/B results are supplemental
+and must not be substituted for the B-primary claim.
 
 The canonical run does not early-stop; all 20 default epochs execute and the
 joint dev score selects the checkpoint afterward. If early stopping is
@@ -675,8 +687,14 @@ Specificity and robustness:
 - MHJ external evaluation
 - human benchmark
 - length-only shortcut probe
+- source-family-stratified and macro A/B detection results
+- length-stratified or length-matched detection analysis alongside the probe
 - bootstrap confidence intervals
 - per-supervision-tier analysis
+
+The final report must not rely on an unadjusted combined A/B detection metric
+to dismiss the known Dataset A length artifact. It must report Dataset B as the
+primary detection population and expose the length-controlled result explicitly.
 
 Ablations:
 
@@ -829,7 +847,8 @@ Run CPU contracts:
       test_auxiliary_loss_isolation.py \
       test_causal_localization_architecture.py \
       test_metadata_leakage.py \
-      test_training_readiness_contract.py
+      test_training_readiness_contract.py \
+      test_verify_freeze_contract.py
 
 Then run the frozen SHA verifier and representation audit from Sections 8 and 9.
 
