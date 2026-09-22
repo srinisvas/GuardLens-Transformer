@@ -83,9 +83,55 @@ class NaaclDatasetContractTests(unittest.TestCase):
         record = base_record(1)
         record["supervision_tier"] = "cf_weak"
         record["evidence_turn_ids"] = [0, 2]
+        record["frontier_evidence_analysis"] = {
+            "turn_interventions": [
+                {"turn_id": 0, "status": "supported_weak"},
+                {"turn_id": 2, "status": "supported_weak"},
+            ]
+        }
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertEqual(item["evidence_turn_labels"], [1, -1, 1])
         self.assertEqual(item["evidence_turn_weights"], [0.70, 0.0, 0.70])
+
+    def test_llm_confirmed_record_can_have_supported_turn_evidence(self):
+        record = base_record(1)
+        record["supervision_tier"] = "llm_confirmed"
+        record["evidence_turn_ids"] = [2]
+        record["frontier_evidence_analysis"] = {
+            "turn_interventions": [
+                {"turn_id": 0, "status": "not_supported"},
+                {"turn_id": 2, "status": "supported_strong"},
+            ]
+        }
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertEqual(item["evidence_turn_labels"], [0, -1, 1])
+        self.assertEqual(item["evidence_turn_weights"], [1.0, 0.0, 1.0])
+
+    def test_llm_confirmed_evidence_id_requires_local_intervention_support(self):
+        record = base_record(1)
+        record["supervision_tier"] = "llm_confirmed"
+        record["evidence_turn_ids"] = [2]
+        record["pivot_turn_id"] = 2
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "evidence_turn_ids contains turn 2 without an explicit supported",
+        ):
+            GuardLensDataset([record], GuardLensConfig())[0]
+
+    def test_supported_turn_must_be_declared_in_evidence_ids(self):
+        record = base_record(1)
+        record["supervision_tier"] = "llm_confirmed"
+        record["evidence_turn_ids"] = []
+        record["frontier_evidence_analysis"] = {
+            "turn_interventions": [
+                {"turn_id": 2, "status": "supported_weak"},
+            ]
+        }
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "intervention-backed positive turns.*missing from evidence_turn_ids",
+        ):
+            GuardLensDataset([record], GuardLensConfig())[0]
 
     def test_legacy_single_pivot_is_not_a_turn_target(self):
         record = base_record(1)
@@ -196,6 +242,18 @@ class NaaclDatasetContractTests(unittest.TestCase):
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertEqual(item["evidence_turn_labels"], [0, -1, -1])
 
+    def test_llm_confirmed_legacy_anchor_can_supply_positive_turn(self):
+        record = base_record(1)
+        record["supervision_tier"] = "llm_confirmed"
+        record["evidence_turn_ids"] = [0]
+        record["evidence_analysis"] = {
+            "fresh_anchor_turn_id": 0,
+            "anchor_turn_intervention": {"status": "supported_weak"},
+        }
+        item = GuardLensDataset([record], GuardLensConfig())[0]
+        self.assertEqual(item["evidence_turn_labels"], [1, -1, -1])
+        self.assertEqual(item["evidence_turn_weights"], [0.70, 0.0, 0.0])
+
     def test_llm_confirmed_causal_looking_span_is_ignored(self):
         record = base_record(1)
         record["supervision_tier"] = "llm_confirmed"
@@ -250,6 +308,7 @@ class NaaclDatasetContractTests(unittest.TestCase):
 
     def test_semantic_construction_mask_is_fail_closed(self):
         record = base_record(1)
+        record["evidence_turn_ids"] = [0]
         record["turns"][0]["span_annotations"] = [{
             "causal_type": "causal",
             "evidence_status": "supported_strong",
@@ -260,6 +319,7 @@ class NaaclDatasetContractTests(unittest.TestCase):
         }]
         item = GuardLensDataset([record], GuardLensConfig())[0]
         self.assertTrue(all(x == -1 for x in item["char_labels"][0]))
+        self.assertEqual(item["evidence_turn_labels"], [1, -1, -1])
 
     def test_cf_tier_without_matching_intervention_status_is_ignored(self):
         record = base_record(1)
