@@ -239,12 +239,13 @@ class MetricTests(unittest.TestCase):
         for k in ("f1", "ap", "auroc", "fpr", "precision"):
             self.assertIsNone(r[k])
 
-    def test_tie_aware_metrics_match_sklearn(self):
-        from sklearn.metrics import average_precision_score, roc_auc_score
+    def test_tie_aware_metrics_match_exact_reference_values(self):
         labels, ps = [1, 0, 1, 0, 1], [.4, .4, .9, .1, .4]
         result = binary(labels, ps, .5)
-        self.assertAlmostEqual(result["ap"], average_precision_score(labels, ps))
-        self.assertAlmostEqual(result["auroc"], roc_auc_score(labels, ps))
+        # One positive is ranked first. The .4 tie contains two positives and
+        # one negative. Grouping the tie gives AP=AUC=5/6 exactly.
+        self.assertAlmostEqual(result["ap"], 5 / 6)
+        self.assertAlmostEqual(result["auroc"], 5 / 6)
 
     def test_cluster_bootstrap_not_rollout_bootstrap(self):
         rows = [{"cluster_id": "one", "v": 1}] * 20
