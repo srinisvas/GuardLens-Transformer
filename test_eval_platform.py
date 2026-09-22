@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from eval_platform.adapters import adapt, check_overlap, validate_collection
-from eval_platform.calibration import calibrate_operating_points
+from eval_platform.calibration import apply_calibration, calibrate_operating_points
 from eval_platform.contract import RunStore, canonical, visible, validate_protocol
 from eval_platform.interventions import words, select, edit, risk_scores, project_tokens, eligible_indices, loto_scores
 from eval_platform.metrics import binary, cluster_interval, effects, localization, utility_grid, break_even
@@ -194,6 +194,26 @@ class InterventionTests(unittest.TestCase):
 
 
 class MetricTests(unittest.TestCase):
+    def test_calibration_application_requires_matching_checkpoint_and_dev(self):
+        detector = type("Detector", (), {"threshold": .2, "identity": {
+            "checkpoint_sha256": "checkpoint", "training_data_sha256": {"dev": "dev"}}})()
+        artifact = {
+            "selection_rule": "dev_only_no_test_access",
+            "selection_population": "canonical_source_family_B_dev",
+            "checkpoint": {"checkpoint_sha256": "checkpoint"},
+            "prepared_input_sha256": "dev",
+            "policies": {"primary": {"threshold": .75, "metrics": {"fpr": .05},
+                                      "all_dev_metrics": {"fpr": .04}}},
+        }
+        self.assertEqual(apply_calibration(detector, artifact, "primary", "artifact"), .75)
+        self.assertEqual(detector.threshold, .75)
+        self.assertEqual(detector.identity["checkpoint_threshold"], .2)
+        self.assertEqual(detector.identity["calibration"]["artifact_sha256"], "artifact")
+        bad = copy.deepcopy(artifact)
+        bad["checkpoint"]["checkpoint_sha256"] = "other"
+        with self.assertRaisesRegex(ValueError, "checkpoint SHA256"):
+            apply_calibration(detector, bad, "primary", "artifact")
+
     def test_dev_calibration_freezes_fpr_constrained_operating_points(self):
         rows = [
             {"source_family": "B", "label": 1, "probability": .9},

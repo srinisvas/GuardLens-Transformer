@@ -925,7 +925,8 @@ Representation/truncation audit:
 
 CPU unit/contract suite:
 
-    80 tests passed at the current evaluation commit
+    80-test suite passed at cd65fbb
+    calibration-policy regression passes at the current evaluation commit
 
 GPU architecture smoke:
 

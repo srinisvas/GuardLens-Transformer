@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 
+from .contract import probability
 from .metrics import binary
 
 
@@ -55,3 +56,35 @@ def calibrate_operating_points(rows, fpr_caps=(0.01, 0.05, 0.10)):
         "all_dev_n": len(rows),
         "policies": policies,
     }
+
+
+def apply_calibration(detector, artifact, policy_name, artifact_sha256):
+    """Apply a frozen dev policy only when its checkpoint and dev hashes match."""
+    identity = detector.identity
+    if artifact.get("selection_rule") != "dev_only_no_test_access":
+        raise ValueError("calibration artifact is not declared dev-only")
+    if artifact.get("selection_population") != "canonical_source_family_B_dev":
+        raise ValueError("calibration artifact uses an unknown selection population")
+    if artifact.get("checkpoint", {}).get("checkpoint_sha256") != identity.get("checkpoint_sha256"):
+        raise ValueError("calibration checkpoint SHA256 does not match evaluator checkpoint")
+    expected_dev = identity.get("training_data_sha256", {}).get("dev")
+    if artifact.get("prepared_input_sha256") != expected_dev:
+        raise ValueError("calibration dev SHA256 does not match checkpoint training data")
+    policies = artifact.get("policies", {})
+    if policy_name not in policies:
+        raise ValueError("requested calibration policy is absent")
+    threshold = probability(policies[policy_name].get("threshold"))
+    checkpoint_threshold = detector.threshold
+    detector.threshold = threshold
+    identity["checkpoint_threshold"] = checkpoint_threshold
+    identity["threshold"] = threshold
+    identity["calibration"] = {
+        "artifact_sha256": artifact_sha256,
+        "policy": policy_name,
+        "selection_rule": artifact["selection_rule"],
+        "selection_population": artifact["selection_population"],
+        "threshold": threshold,
+        "dev_metrics": policies[policy_name]["metrics"],
+        "all_dev_metrics": policies[policy_name]["all_dev_metrics"],
+    }
+    return threshold

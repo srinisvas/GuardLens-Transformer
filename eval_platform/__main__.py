@@ -82,6 +82,12 @@ def evaluate(args):
     if not isinstance(lexicon, list) or not lexicon or not all(isinstance(x, str) and x for x in lexicon):
         raise ValueError("lexicon must be a frozen nonempty string list")
     detector = GuardLensBackend(args.checkpoint, args.device)
+    if bool(args.calibration) != bool(args.calibration_policy):
+        raise ValueError("--calibration and --calibration-policy must be supplied together")
+    if args.calibration:
+        from .calibration import apply_calibration
+        apply_calibration(detector, load(args.calibration), args.calibration_policy,
+                          file_hash(args.calibration))
     if not set(detector.identity["training_data_sha256"].values()) <= raw_hashes:
         raise ValueError("--exclude must include prepared copies of this checkpoint's exact train AND dev files")
     guards = {"self": detector} if args.guard in {"self", "both"} else {}
@@ -227,6 +233,8 @@ def parser():
     q.add_argument("--guard", choices=["none", "self", "shield", "both"], default="both")
     q.add_argument("--shield-config")
     q.add_argument("--llm-config")
+    q.add_argument("--calibration")
+    q.add_argument("--calibration-policy")
     q.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
     q.set_defaults(func=evaluate)
     q = sub.add_parser("replay", help="paired fresh generations and independent behavior judging")

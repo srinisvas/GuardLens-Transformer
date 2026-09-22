@@ -16,6 +16,8 @@ set -euo pipefail
 : "${EVAL_TRAIN_EXCLUDE:?prepared training exclusion required}"
 : "${EVAL_DEV_EXCLUDE:?prepared dev exclusion required}"
 : "${EVAL_SHIELD_CONFIG:?pinned ShieldGemma config required}"
+: "${EVAL_CALIBRATION:?dev-only detector calibration required}"
+: "${EVAL_CALIBRATION_POLICY:?frozen detector operating point required}"
 : "${EVAL_RUN_ROOT:?output directory required}"
 
 CONDA_BASE=$(conda info --base)
@@ -28,6 +30,8 @@ cd "$SLURM_SUBMIT_DIR"
 python -u -m eval_platform run \
   --data "$EVAL_DATA" --data-sha256 "$EVAL_DATA_SHA256" \
   --checkpoint "$EVAL_CHECKPOINT" \
+  --calibration "$EVAL_CALIBRATION" \
+  --calibration-policy "$EVAL_CALIBRATION_POLICY" \
   --exclude "$EVAL_TRAIN_EXCLUDE" "$EVAL_DEV_EXCLUDE" \
   --protocol "${EVAL_PROTOCOL:-configs/eval_protocol.json}" \
   --guard both --shield-config "$EVAL_SHIELD_CONFIG" \
