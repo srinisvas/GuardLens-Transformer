@@ -350,6 +350,10 @@ def evaluate_batch(
 # -------------------------------------------------------
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(description="Cross-dataset generalisation eval")
     parser.add_argument("--seeds", type=str, required=True,
                         help="Path to cross_dataset_combined.jsonl")

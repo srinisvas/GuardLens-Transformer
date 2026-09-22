@@ -1,0 +1,17 @@
+{
+  "version": "naacl_eval_v1",
+  "view": "pre_response",
+  "threshold_source": "checkpoint_internal_dev",
+  "turn_threshold": 0.5,
+  "span_threshold": 0.5,
+  "guard_threshold": 0.5,
+  "budgets": [0.05, 0.10, 0.15, 0.20],
+  "methods": ["guardlens", "random", "span_random", "surface", "last_user", "loto"],
+  "scope": "all_user",
+  "operation": "delete",
+  "context_diagnostics": true,
+  "random_repeats": 10,
+  "seed": 42,
+  "bootstrap_repeats": 1000,
+  "utility_lambdas": [0, 0.5, 1, 2, 5]
+}

@@ -652,6 +652,10 @@ def print_results(tfr: Dict, scored_entries: List[Dict], k_frac: float, model_na
 # -------------------------------------------------------
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(description="Cross-model transfer (two-phase)")
     parser.add_argument("--test-path", type=str, default="",
                         help="Path to pre-split test.jsonl (preferred)")

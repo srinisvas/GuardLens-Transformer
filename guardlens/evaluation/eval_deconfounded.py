@@ -385,6 +385,10 @@ def print_variant_comparison(all_results: Dict, focus_k: str = "15%"):
 
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(description="Deconfounded evaluation")
     parser.add_argument("--test-path", type=str, required=True)
     parser.add_argument("--checkpoint", type=str, required=True)

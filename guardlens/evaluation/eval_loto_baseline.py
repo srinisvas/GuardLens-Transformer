@@ -360,6 +360,10 @@ def compute_loto_dd(
 
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(
         description="Leave-one-turn-out occlusion baseline",
     )

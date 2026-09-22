@@ -403,6 +403,10 @@ def compute_pivot_window_accuracy(
 # =========================================================
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(description="Attribution utility metrics")
     parser.add_argument("--test-path", type=str, required=True)
     parser.add_argument("--causal-results", type=str, required=True,

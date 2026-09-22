@@ -33,6 +33,10 @@ from guardlens.evaluation.eval_utils import load_jsonl
 
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(description="Boundary stress test")
     parser.add_argument("--boundary-files", nargs="+", required=True,
                         help="JSONL files with boundary/rejected benign records")

@@ -75,6 +75,10 @@ def run_subset_causal_eval(
 
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(description="Causal attribution evaluation")
     parser = add_test_path_args(parser)
     parser.add_argument("--checkpoint", type=str, required=True)

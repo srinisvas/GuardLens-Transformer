@@ -89,6 +89,10 @@ def run_boundary_fpr(
 
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(
         description="Attribution Utility sensitivity grid",
     )

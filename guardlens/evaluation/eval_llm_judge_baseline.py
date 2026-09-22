@@ -393,6 +393,10 @@ def compute_false_lead_specificity(
 # ================================================================
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(
         description="LLM-as-judge attribution baseline",
     )

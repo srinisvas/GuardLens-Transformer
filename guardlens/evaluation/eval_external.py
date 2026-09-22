@@ -514,6 +514,10 @@ def print_comparison_table(
 
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(description="Self-eval vs external-eval")
     parser.add_argument("--test-path", type=str, default="",
                         help="Path to pre-split test.jsonl (preferred)")

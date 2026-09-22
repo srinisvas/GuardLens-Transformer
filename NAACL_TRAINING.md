@@ -601,8 +601,8 @@ The following historical launchers are intentionally disabled on this branch:
     train_and_eval_review.slurm
     eval_naacl.slurm
 
-`guardlens.evaluate` also fails closed for redesigned checkpoints until the
-evaluation migration is complete.
+`guardlens.evaluate` now delegates to the versioned `eval_platform` CLI.
+See `NAACL_EVALUATION.md` for review coverage, commands and experiment gates.
 
 This is intentional. The pre-redesign evaluators use stale target and
 representation semantics and must not silently run against
@@ -639,6 +639,13 @@ There is no requirement to reproduce the old DeBERTa architecture in the NAACL
 paper.
 
 ## 15. Evaluation migration contract
+
+Implementation status: the unified platform now supports the current checkpoint,
+public dataset preparation, evidence agreement, textual interventions, independent
+guard transfer, paired target replay and review-facing reports. The detailed
+coverage matrix and remaining empirical requirements are in `NAACL_EVALUATION.md`.
+The list below remains the scientific scope, not a claim that every experiment
+has already been run or every historical metric should retain its original name.
 
 The NAACL evaluation suite must preserve every scientifically useful capability,
 but it does not need to preserve historical checkpoint compatibility.
@@ -886,7 +893,8 @@ Finally:
 
     sbatch train_naacl.slurm
 
-Do not submit a test/evaluation job yet. Evaluation migration is the next module.
+Freeze the completed training checkpoint and evaluation protocol before submitting
+held-out evaluation. Follow `NAACL_EVALUATION.md` for the current launcher.
 
 ## 18. Current readiness status
 
@@ -930,8 +938,10 @@ Full training:
 
 Evaluation migration:
 
-    not yet implemented
+    unified platform implemented, see NAACL_EVALUATION.md
+    77 CPU regression tests passed
+    actual-checkpoint GPU evaluation and empirical review experiments remain
 
 Held-out test access:
 
-    prohibited until evaluation migration and training freeze
+    requires completed training and a frozen evaluation protocol

@@ -699,6 +699,10 @@ def compute_metrics(raw: Dict) -> Dict:
 # ================================================================
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(description="Cached-original target-LLM counterfactual test")
     parser.add_argument("--test-path", type=str, required=True)
     parser.add_argument("--checkpoint", type=str, required=True)

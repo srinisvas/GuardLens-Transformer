@@ -413,6 +413,10 @@ def compute_sharpness(curve: Dict[str, float], k_fracs: List[float]) -> Dict:
 # -------------------------------------------------------
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(
         description="Hard negative attribution precision and minimality curve"
     )

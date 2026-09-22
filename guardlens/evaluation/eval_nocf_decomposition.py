@@ -288,6 +288,10 @@ def load_model(ckpt_path, device):
 
 
 def main():
+    raise SystemExit(
+        "Historical evaluator disabled on the redesigned branch. "
+        "Use python -m eval_platform --help and NAACL_EVALUATION.md."
+    )
     parser = argparse.ArgumentParser(
         description="NoCF specificity decomposition",
     )
