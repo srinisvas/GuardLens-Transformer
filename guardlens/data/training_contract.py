@@ -149,11 +149,17 @@ def validate_training_record(record: Dict) -> None:
             raise RuntimeError(
                 f"{cid}: evidence_turn_ids must be sorted and duplicate-free"
             )
-        if evidence_ids and tier not in {"cf_strong", "cf_weak"}:
+        if evidence_ids and label != 1:
             raise RuntimeError(
-                f"{cid}: supervision_tier={tier!r} cannot carry positive "
+                f"{cid}: benign primary record cannot carry positive "
                 "evidence_turn_ids"
             )
+
+    # supervision_tier summarizes record/span evidence. A behaviorally
+    # confirmed record may still have counterfactually supported whole-turn
+    # evidence, so llm_confirmed does not imply empty evidence_turn_ids. The
+    # target builder reconciles every declared ID against explicit turn/span
+    # intervention results and never consults pivot_turn_id.
 
     # Dataset identity is consumed by source-aware dev selection. Referencing
     # the value here also makes an accidental A/B source remap fail before GPU
