@@ -259,10 +259,21 @@ cannot create positive causal supervision.
 
 Positive:
 
-- every member of the full `evidence_turn_ids` set
 - supported B4 tested turn interventions
 - repaired Dataset A supported anchor intervention
 - evidence turns established through intervention-supported spans
+
+The full `evidence_turn_ids` set must exactly match the turns established by
+those local intervention sources. A declared ID without local support, or a
+locally supported turn omitted from the declared set, fails closed.
+`semantic_token_supervision_ignore=true` masks the span-token target only. A
+valid supported span intervention may still establish its containing turn as a
+turn-level target.
+
+`supervision_tier` summarizes record/span evidence quality. Therefore an
+`llm_confirmed` record may still carry positive evidence-turn supervision when
+its whole-turn intervention is supported. Its spans remain ignored unless they
+independently satisfy the strict counterfactual span contract above.
 
 `pivot_turn_id` never creates a target. It is retained only as legacy provenance
 and for diagnostic evaluation slices. A counterfactual-tier record with no
@@ -292,9 +303,10 @@ Weak intervention evidence receives weight 0.70.
 A weak evidence turn is not upgraded merely because another turn in the same
 record made the record-level tier `cf_strong`. Turn confidence is derived from
 the intervention status on that turn or from the strongest supported span on
-that turn. If `evidence_turn_ids` establishes turn membership but neither a
-turn-local intervention status nor a supported span is present, the turn uses a
-conservative weak-confidence weight of 0.70 independent of the record tier.
+that turn. `evidence_turn_ids` is a reconciled index, not an independent source
+of supervision. If an ID has neither a supported turn-local intervention nor a
+supported span, target construction fails rather than assigning a fallback
+weight.
 
 If a turn is simultaneously listed in `evidence_turn_ids` and has an explicit
 `not_supported` whole-turn intervention, the record fails closed unless an
@@ -519,7 +531,7 @@ selection score.
 Every checkpoint records:
 
 - architecture_version=causal_localization_v2
-- training_contract_version=restored_a_primary_plus_auxiliary_v1
+- training_contract_version=restored_a_primary_plus_auxiliary_v2
 - exact training-code Git SHA
 - exact ModernBERT model revision through the stored config
 - exact train SHA-256
@@ -827,6 +839,10 @@ assumptions:
 52. source and auxiliary schema fields were carried inconsistently; all
     supervision-bearing fields and A/B source identity are now validated before
     model initialization.
+53. the first restored-A validator incorrectly assumed `llm_confirmed` meant no
+    positive evidence turns, although that tier can include a supported
+    whole-turn anchor without a supported span; turn IDs are now accepted only
+    after exact reconciliation with explicit turn/span intervention evidence.
 
 All of the above are addressed or explicitly quarantined in the current redesign branch.
 
