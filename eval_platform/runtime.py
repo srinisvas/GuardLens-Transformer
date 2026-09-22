@@ -92,7 +92,11 @@ class HFChat:
             raise RuntimeError("CUDA requested but unavailable")
         self.torch, self.device = torch, device
         self.tokenizer = AutoTokenizer.from_pretrained(model, revision=revision)
-        self.model = AutoModelForCausalLM.from_pretrained(model, revision=revision, torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32).to(device).eval()
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model,
+            revision=revision,
+            dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+        ).to(device).eval()
         capacity = getattr(self.model.config, "max_position_embeddings", None)
         if capacity and max_input_tokens + max_new_tokens > capacity:
             raise ValueError("requested input + generation exceeds native capacity")
@@ -135,7 +139,8 @@ class ShieldGemmaBackend:
             raise ValueError("ShieldGemma Yes/No vocabulary mismatch")
         self.identity = {"kind": "shieldgemma_prompt", **chat.identity, "policies": policies,
             "aggregation": "max_category_probability", "threshold": threshold,
-            "serialization": "role_delimited_json_transcript_v1", "yes_no_ids": self.ids}
+            "serialization": "role_delimited_json_transcript_v1", "yes_no_ids": self.ids,
+            "logit_projection": "final_token_only", "use_cache": False}
 
     def predict(self, turns):
         # The native template uses only the last message. Serialize the entire
@@ -146,7 +151,10 @@ class ShieldGemmaBackend:
         for category, policy in self.policies.items():
             inputs = self.chat.encode(messages, guideline=policy)
             with self.chat.torch.inference_mode():
-                logits = self.chat.model(**inputs).logits[0, -1, self.ids].float()
+                output = self.chat.model(**inputs, use_cache=False, logits_to_keep=1)
+                if output.logits.ndim != 3 or output.logits.shape[-2] != 1:
+                    raise RuntimeError("ShieldGemma did not honor final-token-only logit projection")
+                logits = output.logits[0, 0, self.ids].float()
                 scores[category] = float(logits.softmax(dim=0)[0])
             prompts[category] = {"input_tokens": inputs["input_ids"].shape[-1],
                 "prompt_sha256": digest(self.chat.tokenizer.decode(inputs["input_ids"][0]))}

@@ -84,8 +84,12 @@ class RuntimeTests(unittest.TestCase):
             tokenizer = Tokenizer()
             def __init__(self):
                 self.calls = []
+                self.model_calls = []
                 self.torch = torch
-                self.model = lambda **kwargs: SimpleNamespace(logits=torch.tensor([[[2., 0.]]]))
+                self.model = self.forward
+            def forward(self, *, input_ids, use_cache, logits_to_keep):
+                self.model_calls.append({"use_cache": use_cache, "logits_to_keep": logits_to_keep})
+                return SimpleNamespace(logits=torch.tensor([[[2., 0.]]]))
             def encode(self, messages, **kwargs):
                 self.calls.append((messages, kwargs))
                 return {"input_ids": torch.tensor([[2]])}
@@ -94,6 +98,7 @@ class RuntimeTests(unittest.TestCase):
         backend = ShieldGemmaBackend(chat, policies)
         output = backend.predict(record()["turns"])
         self.assertEqual(len(chat.calls), 4)
+        self.assertEqual(chat.model_calls, [{"use_cache": False, "logits_to_keep": 1}] * 4)
         self.assertEqual(set(output["category_scores"]), set(policies))
         self.assertAlmostEqual(output["probability"], .880797, places=5)
         self.assertIn("alpha", chat.calls[0][0][0]["content"])
