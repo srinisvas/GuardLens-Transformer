@@ -38,7 +38,7 @@ from guardlens.training.schedule import get_current_phase, get_lambda_schedule
 
 
 ARCHITECTURE_VERSION = "causal_localization_v2"
-TRAINING_CONTRACT_VERSION = "restored_a_primary_plus_auxiliary_v1"
+TRAINING_CONTRACT_VERSION = "restored_a_primary_plus_auxiliary_v2"
 
 
 def load_records(path: str) -> List[Dict]:
