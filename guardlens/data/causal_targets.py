@@ -72,11 +72,22 @@ def _validate_turn_id(
 
 
 def _positive_weight_from_spans(turn: Dict) -> Optional[float]:
+    """Return turn-level support from explicit span interventions.
+
+    semantic_token_supervision_ignore masks token labels only. A span with a
+    valid supported intervention can still establish that its containing turn
+    is evidence for the independent turn-localization objective.
+    """
     weights = []
     for span in turn.get("span_annotations", []) or []:
-        target = span_supervision_target(span)
-        if target is not None and target[0] == 1:
-            weights.append(float(target[1]))
+        tier = str(span.get("supervision_tier", "ignore"))
+        if (
+            tier in SPAN_POSITIVE_TIERS
+            and str(span.get("causal_type", "unvalidated")) == "causal"
+            and str(span.get("evidence_status", "unassessed"))
+            == SPAN_POSITIVE_STATUS_BY_TIER[tier]
+        ):
+            weights.append(float(SPAN_POSITIVE_TIERS[tier]))
     return max(weights) if weights else None
 
 
@@ -138,6 +149,12 @@ def build_evidence_turn_targets(
         _validate_turn_id(
             tid, turns, conversation_id=cid, source=source
         )
+        previous_status = status_by_turn.get(tid)
+        if previous_status is not None and previous_status != status:
+            raise RuntimeError(
+                f"{cid}: conflicting turn intervention statuses for turn {tid}: "
+                f"{previous_status!r} versus {status!r}"
+            )
         status_by_turn[tid] = status
         if status in TURN_POSITIVE_STATUS:
             labels[tid] = 1
@@ -150,17 +167,58 @@ def build_evidence_turn_targets(
     if evidence_ids is None:
         evidence_ids = []
 
+    validated_evidence_ids = []
     seen = set()
-    for raw_tid in evidence_ids:
-        tid = int(raw_tid) if isinstance(raw_tid, int) and not isinstance(raw_tid, bool) else raw_tid
-        _validate_turn_id(tid, turns, conversation_id=cid, source="evidence_turn_ids")
+    for tid in evidence_ids:
+        _validate_turn_id(
+            tid, turns, conversation_id=cid, source="evidence_turn_ids"
+        )
         if tid in seen:
-            continue
+            raise RuntimeError(
+                f"{cid}: evidence_turn_ids contains duplicate turn {tid}"
+            )
         seen.add(tid)
+        validated_evidence_ids.append(tid)
 
+    span_weight_by_turn: Dict[int, float] = {}
+    for tid, turn in enumerate(turns):
+        # Assistant annotations never enter model targets. The representation
+        # audit independently rejects target-bearing assistant spans so they
+        # cannot be silently admitted to a canonical run.
+        if str(turn.get("role", "")).lower() != "user":
+            continue
+        span_weight = _positive_weight_from_spans(turn)
+        if span_weight is None:
+            continue
+        span_weight_by_turn[tid] = span_weight
+
+    locally_supported_ids = {
+        tid
+        for tid, status in status_by_turn.items()
+        if status in TURN_POSITIVE_STATUS
+    } | set(span_weight_by_turn)
+    declared_ids = set(validated_evidence_ids)
+    unbacked_ids = sorted(declared_ids - locally_supported_ids)
+    if unbacked_ids:
+        if len(unbacked_ids) == 1:
+            detail = f"turn {unbacked_ids[0]}"
+        else:
+            detail = f"turns {unbacked_ids}"
+        raise RuntimeError(
+            f"{cid}: evidence_turn_ids contains {detail} without an explicit "
+            "supported turn intervention or supported span"
+        )
+    undeclared_ids = sorted(locally_supported_ids - declared_ids)
+    if undeclared_ids:
+        raise RuntimeError(
+            f"{cid}: intervention-backed positive turns {undeclared_ids} are "
+            "missing from evidence_turn_ids"
+        )
+
+    for tid in validated_evidence_ids:
         prev_label = labels[tid]
         status = status_by_turn.get(tid)
-        span_weight = _positive_weight_from_spans(turns[tid])
+        span_weight = span_weight_by_turn.get(tid)
         if status in TURN_POSITIVE_STATUS:
             weight = TURN_POSITIVE_STATUS[status]
             if span_weight is not None:
@@ -178,10 +236,12 @@ def build_evidence_turn_targets(
         elif span_weight is not None:
             weight = span_weight
         else:
-            # evidence_turn_ids is itself intervention-backed membership, but
-            # without turn-local status/span evidence we do not inherit the
-            # record-level tier. Fall back conservatively to weak confidence.
-            weight = 0.70
+            # Reconciliation above makes this branch unreachable. Keep the
+            # explicit failure so future schema changes cannot turn provenance
+            # or pivot metadata into positive supervision.
+            raise RuntimeError(
+                f"{cid}: evidence turn {tid} lacks local intervention support"
+            )
 
         labels[tid] = 1
         # Only combine confidences when the turn was already positive. If this
