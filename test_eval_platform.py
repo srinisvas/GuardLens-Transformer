@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from eval_platform.adapters import adapt, check_overlap, validate_collection
+from eval_platform.calibration import calibrate_operating_points
 from eval_platform.contract import RunStore, canonical, visible, validate_protocol
 from eval_platform.interventions import words, select, edit, risk_scores, project_tokens, eligible_indices, loto_scores
 from eval_platform.metrics import binary, cluster_interval, effects, localization, utility_grid, break_even
@@ -193,6 +194,25 @@ class InterventionTests(unittest.TestCase):
 
 
 class MetricTests(unittest.TestCase):
+    def test_dev_calibration_freezes_fpr_constrained_operating_points(self):
+        rows = [
+            {"source_family": "B", "label": 1, "probability": .9},
+            {"source_family": "B", "label": 1, "probability": .6},
+            {"source_family": "B", "label": 0, "probability": .7},
+            {"source_family": "B", "label": 0, "probability": .2},
+            {"source_family": "A", "label": 1, "probability": .8},
+            {"source_family": "A", "label": 0, "probability": .1},
+        ]
+        report = calibrate_operating_points(rows, fpr_caps=(0, .5))
+        strict = report["policies"]["max_recall_at_b_fpr_0pct"]
+        permissive = report["policies"]["max_recall_at_b_fpr_50pct"]
+        self.assertEqual(strict["threshold"], .9)
+        self.assertEqual(strict["metrics"]["fpr"], 0)
+        self.assertEqual(strict["metrics"]["recall"], .5)
+        self.assertEqual(permissive["threshold"], .6)
+        self.assertEqual(permissive["metrics"]["recall"], 1)
+        self.assertIn("all_dev_metrics", strict)
+
     def test_single_class_mhj_does_not_report_f1_or_ap(self):
         r = binary([1, 1, 1], [.9, .2, .8], .5)
         self.assertAlmostEqual(r["recall"], 2 / 3)

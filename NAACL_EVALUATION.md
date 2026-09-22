@@ -216,8 +216,20 @@ python -m eval_platform shield-config --output "$PREP/shieldgemma.json"
 After training completes, explicitly select `best_joint.pt`. Do not replace it
 with separate detection and attribution checkpoints within one reported run.
 
+Before opening held-out test data, audit detector operating points on the exact
+prepared dev partition. `calibrate` records the checkpoint, source data and code
+hashes and freezes maximum-F1 plus 1%, 5% and 10% canonical-B FPR policies. This
+is a calibration audit only. It does not overwrite the checkpoint or silently
+change the primary evaluation threshold.
+
 ```bash
 export EVAL_CHECKPOINT=~/work/results/guardlens_naacl_redesign/primary_plus_auxiliary/guardlens/restored-a-v2-seed42-20260922/checkpoints/best_joint.pt
+export EVAL_DEV="$PREP/dev.jsonl"
+python -m eval_platform calibrate --data "$EVAL_DEV" \
+  --data-sha256 "$(sha256sum "$EVAL_DEV" | cut -d' ' -f1)" \
+  --checkpoint "$EVAL_CHECKPOINT" \
+  --output ~/work/results/guardlens_eval_v1/dev_operating_points.json
+
 export EVAL_DATA="$PREP/mhj.jsonl"
 export EVAL_DATA_SHA256=$(sha256sum "$EVAL_DATA" | cut -d' ' -f1)
 export EVAL_TRAIN_EXCLUDE="$PREP/train.jsonl"

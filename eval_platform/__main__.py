@@ -9,7 +9,7 @@ from importlib import metadata
 from pathlib import Path
 
 from .adapters import adapt, check_overlap, validate_collection
-from .contract import RunStore, canonical, digest, file_hash, read_jsonl, validate_protocol, write_json
+from .contract import RunStore, canonical, digest, file_hash, read_jsonl, validate_protocol, visible, write_json
 from .runtime import GuardLensBackend, HFChat, ShieldGemmaBackend, LLMAttributor
 
 
@@ -141,6 +141,34 @@ def shield_config(args):
     print(args.output)
 
 
+def calibrate(args):
+    from guardlens.data.training_contract import source_family
+    from .calibration import calibrate_operating_points
+
+    records = load_dataset(args.data, args.data_sha256)
+    if any(r["split"] not in {"dev", "valid", "validation"} for r in records):
+        raise ValueError("threshold calibration accepts dev records only")
+    sidecar = load(args.data + ".manifest.json")
+    detector = GuardLensBackend(args.checkpoint, args.device)
+    expected = detector.identity["training_data_sha256"]["dev"]
+    if sidecar.get("input_sha256") != expected:
+        raise ValueError("prepared dev input does not match checkpoint dev SHA256")
+    rows = []
+    for index, record in enumerate(records):
+        prediction = detector.predict(visible(record, "retrospective"))
+        corpus_source = record.get("strata", {}).get("corpus_source")
+        family = source_family({"conversation_id": record["id"], "corpus_source": corpus_source})
+        rows.append({"id": record["id"], "label": record["label"],
+                     "source_family": family, "probability": prediction["probability"]})
+        print(f"[{index + 1}/{len(records)}] {record['id']}", flush=True)
+    report = calibrate_operating_points(rows)
+    report.update({"checkpoint": detector.identity, "dataset_sha256": args.data_sha256,
+                   "prepared_input_sha256": sidecar["input_sha256"], "rows": rows,
+                   "code": source_identity()})
+    write_json(args.output, report)
+    print(args.output)
+
+
 def task_export(a):
     from .studies import human_tasks
     write_json(a.output, human_tasks(validate_collection(list(read_jsonl(a.data)))))
@@ -213,6 +241,11 @@ def parser():
     q.add_argument("--max-input-tokens", type=int, default=8191)
     q.add_argument("--output", required=True)
     q.set_defaults(func=shield_config)
+    q = sub.add_parser("calibrate", help="freeze dev-only detector operating points")
+    for name in ("data", "data-sha256", "checkpoint", "output"):
+        q.add_argument("--" + name, required=True)
+    q.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
+    q.set_defaults(func=calibrate)
     for name, func, arguments in [("human-tasks", task_export, ["data", "output"]),
             ("human-report", human, ["data", "annotations", "run", "output"]),
             ("robustness-report", robustness, ["original-run", "variant-run", "pairs", "output"]),

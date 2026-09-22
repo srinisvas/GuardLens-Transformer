@@ -917,31 +917,33 @@ Training redesign:
 
 Frozen-data SHA verification code:
 
-    implemented for the restored-A primary_plus_auxiliary freeze
+    passed for the restored-A primary_plus_auxiliary freeze
 
 Representation/truncation audit:
 
-    native-8K ModernBERT audit must be rerun against the final restored-A freeze
+    passed with zero records over the native 8K ceiling
 
 CPU unit/contract suite:
 
-    execution required at the current repair commit
+    80 tests passed at the current evaluation commit
 
 GPU architecture smoke:
 
-    prior smoke is obsolete because it used older code and data
-    auxiliary-inclusive smoke required at the current repair commit
+    passed on the restored-A primary_plus_auxiliary freeze at training code
+    8981856f58c5f70d718a112f18b1bb5a30e2cf65
 
 Full training:
 
-    blocked until final-freeze preflight and current GPU smoke pass
+    completed for restored-a-v2-seed42-20260922
+    best_joint.pt selected and copied byte-identically to best.pt
+    checkpoint SHA256 007d60195752dbf57e527b8cd74cf077b23e11f8e63aac92b687bbaeef5388f1
 
 Evaluation migration:
 
     unified platform implemented, see NAACL_EVALUATION.md
-    79 CPU regression tests passed, including an ASCII-locale portability run
+    dev-only operating-point calibration must precede held-out access
     actual-checkpoint GPU evaluation and empirical review experiments remain
 
 Held-out test access:
 
-    requires completed training and a frozen evaluation protocol
+    not accessed during training; access follows frozen dev calibration
