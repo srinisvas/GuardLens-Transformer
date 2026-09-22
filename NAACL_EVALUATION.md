@@ -146,6 +146,9 @@ End-to-end flips count detector misses as zero and give bounds for unavailable
 outcomes. Random repeats are averaged inside each conversation before resampling.
 Paired method differences use the same conversation IDs. Bootstrap samples whole
 clusters, preserving twins and goal-level rollouts, with negative effects retained.
+Utility is reported separately for all benign records, hard benign records,
+frontier-authored benign records and interactive benign records using the frozen
+dataset strata. Empty named populations remain explicit rather than being replaced.
 
 ShieldGemma uses the pinned official chat template and the four official prompt
 policies, scored separately with vocabulary `Yes`/`No` logits. The aggregate is the

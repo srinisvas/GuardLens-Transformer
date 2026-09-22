@@ -217,9 +217,12 @@ def summarize(records, predictions, interventions, protocol, detection_threshold
             output["paired_differences"][f"{key}-minus-{comparator}"] = ci(paired, lambda rows: average([r["delta"] for r in rows]))
     # Utility must name the benign population. Shared detector FPR is the same
     # for every attribution method, so this cannot establish attribution specificity.
-    families = {"false_lead_benign", "hard_benign", "research_technical", "topic_matched_safe"}
-    benign_groups = {"all_benign": [r for r in valid if r["label"] == 0],
-                     "review_high_risk_union": [r for r in valid if r["label"] == 0 and r["strata"].get("family") in families]}
+    benign_groups = {
+        "all_benign": [r for r in valid if r["label"] == 0],
+        "hard_benign": [r for r in valid if r["label"] == 0 and r["strata"].get("difficulty") == "hard"],
+        "frontier_authored_benign": [r for r in valid if r["label"] == 0 and r["strata"].get("family") == "frontier_authored_benign"],
+        "interactive_benign": [r for r in valid if r["label"] == 0 and r["strata"].get("family") == "interactive_benign"],
+    }
     for population, benign in benign_groups.items():
         fpr = detect(benign)["fpr"]
         population_entry = {"benign_ids": [r["id"] for r in benign], "n": len(benign), "fpr": fpr,

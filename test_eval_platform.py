@@ -364,6 +364,7 @@ class IntegrationTests(unittest.TestCase):
     def test_full_run_preserves_misses_failures_and_resume(self):
         a, b, c = record(), record("b", 0), record("c")
         b["turns"][0]["text"] = "safe café beta"
+        b["strata"].update(family="frontier_authored_benign", difficulty="hard")
         c["turns"][0]["text"] = "OVERFLOW"
         detector = FakeDetector()
         with tempfile.TemporaryDirectory() as d:
@@ -374,6 +375,10 @@ class IntegrationTests(unittest.TestCase):
             effect = report["effects"]["self/guardlens/0.2"]
             self.assertEqual(effect["positive_attempted_n"], 2)
             self.assertEqual(effect["missing_n"], 1)
+            self.assertEqual(report["utility"]["all_benign"]["n"], 1)
+            self.assertEqual(report["utility"]["hard_benign"]["n"], 1)
+            self.assertEqual(report["utility"]["frontier_authored_benign"]["n"], 1)
+            self.assertEqual(report["utility"]["interactive_benign"]["n"], 0)
             calls = len(detector.calls)
             self.assertEqual(report, run([a, b, c], detector, {"self": detector}, protocol(), ["alpha"], store))
             self.assertEqual(len(detector.calls), calls)
