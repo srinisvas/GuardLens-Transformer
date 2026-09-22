@@ -3,7 +3,7 @@ import itertools
 import math
 from collections import defaultdict
 
-from .contract import digest, probability, validate_record
+from .contract import validate_record
 from .metrics import binary, average, localization, span_agreement, cluster_interval, utility_grid, break_even
 
 
@@ -18,7 +18,7 @@ def human_tasks(records):
 def kappa(a, b):
     if not a:
         return None
-    agreement = average([float(x == y) for x, y in zip(a, b)])
+    agreement = average([float(x == y) for x, y in zip(a, b, strict=True)])
     pa, pb = average(a), average(b)
     expected = pa * pb + (1 - pa) * (1 - pb)
     return (agreement - expected) / (1 - expected) if expected < 1 else None
@@ -97,7 +97,7 @@ def spearman(a, b):
         return None
     a, b = ranks(a), ranks(b)
     ma, mb = average(a), average(b)
-    numerator = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    numerator = sum((x - ma) * (y - mb) for x, y in zip(a, b, strict=True))
     denominator = math.sqrt(sum((x - ma)**2 for x in a) * sum((y - mb)**2 for y in b))
     return numerator / denominator if denominator else None
 

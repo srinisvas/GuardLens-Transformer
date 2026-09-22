@@ -165,6 +165,9 @@ history before that point stays fixed. All later assistant responses are generat
 fresh for both original and edited conditions, with matched per-turn random seeds.
 Future user messages remain a fixed script. This is **scripted continuation**, not
 an adaptive attacker or a total causal effect in an unconstrained conversation.
+Declared seeds are deterministically namespaced by conversation ID. Original,
+edited and method-control conditions share a stream within a conversation, while
+unrelated conversations do not reuse an identical RNG stream.
 
 Use at least three generation seeds and two target families, each in a separate
 manifest. The original objective is held fixed for the independent behavior judge.

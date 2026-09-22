@@ -939,7 +939,7 @@ Full training:
 Evaluation migration:
 
     unified platform implemented, see NAACL_EVALUATION.md
-    77 CPU regression tests passed
+    79 CPU regression tests passed, including an ASCII-locale portability run
     actual-checkpoint GPU evaluation and empirical review experiments remain
 
 Held-out test access:

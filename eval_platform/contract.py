@@ -99,6 +99,15 @@ def visible(r, view):
 
 
 def validate_protocol(p):
+    allowed_fields = {
+        "version", "view", "threshold_source", "turn_threshold",
+        "span_threshold", "guard_threshold", "budgets", "methods", "scope",
+        "operation", "context_diagnostics", "random_repeats", "seed",
+        "bootstrap_repeats", "utility_lambdas",
+    }
+    unknown_fields = set(p) - allowed_fields
+    if unknown_fields:
+        raise ValueError(f"unknown protocol fields: {sorted(unknown_fields)}")
     if p.get("version") != VERSION:
         raise ValueError(f"protocol version must be {VERSION}")
     if p.get("view") not in {"pre_response", "retrospective"}:
@@ -107,7 +116,7 @@ def validate_protocol(p):
         raise ValueError("external/test threshold fitting is forbidden")
     for k in ("turn_threshold", "span_threshold", "guard_threshold"):
         probability(p[k])
-    if not p.get("budgets") or any(not 0 < b <= 1 for b in p["budgets"]):
+    if not p.get("budgets") or any(isinstance(b, bool) or not isinstance(b, (int, float)) or not math.isfinite(b) or not 0 < b <= 1 for b in p["budgets"]):
         raise ValueError("budgets must be fractions in (0,1]")
     if type(p.get("random_repeats")) is not int or p["random_repeats"] < 2:
         raise ValueError("at least two random repeats required")
@@ -115,6 +124,8 @@ def validate_protocol(p):
         raise ValueError("invalid intervention scope")
     if p.get("operation") not in {"delete", "blank"}:
         raise ValueError("invalid intervention operation")
+    if type(p.get("context_diagnostics")) is not bool:
+        raise ValueError("context_diagnostics must be boolean")
     allowed = {"guardlens", "random", "span_random", "surface", "last_user", "loto", "llm"}
     if not p.get("methods") or set(p["methods"]) - allowed:
         raise ValueError("unknown attribution method")
@@ -122,7 +133,7 @@ def validate_protocol(p):
         raise ValueError("duplicate methods")
     if p.get("bootstrap_repeats", 0) < 100:
         raise ValueError("use at least 100 cluster bootstrap replicates")
-    if type(p.get("seed")) is not int or not p.get("utility_lambdas") or any(not isinstance(x, (int, float)) or not math.isfinite(x) or x < 0 for x in p["utility_lambdas"]):
+    if type(p.get("seed")) is not int or not p.get("utility_lambdas") or any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) or x < 0 for x in p["utility_lambdas"]):
         raise ValueError("freeze a seed and nonnegative finite utility penalties")
     if len(set(p["budgets"])) != len(p["budgets"]):
         raise ValueError("duplicate budgets")
@@ -138,7 +149,7 @@ class RunStore:
         self.manifest_id = digest(self.manifest)
         path = self.root / "manifest.json"
         envelope = {"manifest_id": self.manifest_id, **self.manifest}
-        if path.exists() and json.loads(path.read_text()) != envelope:
+        if path.exists() and json.loads(path.read_text(encoding="utf-8")) != envelope:
             raise ValueError("run directory belongs to a different manifest")
         write_json(path, envelope)
 
@@ -146,7 +157,7 @@ class RunStore:
         key = digest({"manifest": self.manifest_id, "namespace": namespace, "payload": payload})
         path = self.root / "cache" / namespace / (key + ".json")
         if path.exists():
-            row = json.loads(path.read_text())
+            row = json.loads(path.read_text(encoding="utf-8"))
             if row.get("key") != key or row.get("payload") != payload or digest(row["result"]) != row.get("result_sha256"):
                 raise ValueError("cache corruption")
             return row["result"]

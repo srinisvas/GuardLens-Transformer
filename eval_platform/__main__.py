@@ -127,7 +127,7 @@ def shield_config(args):
     revision = args.revision or HfApi().model_info(args.model).sha
     pinned(revision)
     card_path = hf_hub_download(args.model, "README.md", revision=revision)
-    card = Path(card_path).read_text()
+    card = Path(card_path).read_text(encoding="utf-8")
     table = card.split("Use Case 1: Prompt-only Content Classification", 1)[1].split("Use Case 2:", 1)[0]
     labels = {"Dangerous Content": "dangerous", "Harassment": "harassment", "Hate Speech": "hate", "Sexually Explicit Information": "sexual"}
     policies = {}

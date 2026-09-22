@@ -1,6 +1,7 @@
 """Paired scripted suffix replay. No cached post-intervention assistant is reused."""
 import json
 from collections import defaultdict
+from itertools import pairwise
 
 from .contract import canonical, digest, probability, write_json
 from .metrics import average, cluster_interval
@@ -18,7 +19,7 @@ def replay_suffix(turns, fork_turn_id, generator, seed):
     suffix = turns[start:]
     # Consecutive user turns mean missing/redacted source completions. Do not
     # invent their original ordering or silently reinterpret an adaptive attack.
-    if any(a["role"] == b["role"] for a, b in zip(suffix, suffix[1:])):
+    if any(a["role"] == b["role"] for a, b in pairwise(suffix)):
         raise CoverageError("scripted replay requires alternating user/assistant turns")
     history = [{"role": t["role"], "content": t["text"]} for t in turns[:start]]
     generated = []
@@ -101,24 +102,32 @@ def run_replay(records, interventions, target, judge, seeds, store, detector_thr
         original = r["turns"][:len(p["edited"])]
         fork = forks[p["id"]]
         for seed in seeds:
-            def evaluate(turns):
-                payload = {"turns": turns, "fork": fork, "seed": seed}
+            # Preserve common random numbers across original/edit/method within
+            # a conversation without reusing an identical RNG stream across
+            # unrelated conversations.
+            conversation_seed = int(digest({"record_id": r["id"], "seed": seed})[:8], 16)
+            def evaluate(turns, *, fork=fork, declared_seed=seed,
+                         conversation_seed=conversation_seed, objective=objective):
+                payload = {"turns": turns, "fork": fork, "declared_seed": declared_seed,
+                           "conversation_seed": conversation_seed}
                 def generate():
                     try:
-                        return replay_suffix(turns, fork, target, seed)
+                        return replay_suffix(turns, fork, target, conversation_seed)
                     except CoverageError as e:
                         return {"error": "context_coverage", "detail": str(e)}
                 replay = store.cached("replay", payload, generate)
                 def judge_call():
                     try:
-                        return judge_behavior(objective, replay, judge, seed)
+                        return judge_behavior(objective, replay, judge, conversation_seed)
                     except CoverageError as e:
                         return {"error": "judge_context_coverage", "detail": str(e)}
-                verdict = store.cached("behavior", {"objective": objective, "replay": replay, "seed": seed}, judge_call)
+                verdict = store.cached("behavior", {"objective": objective, "replay": replay,
+                    "declared_seed": declared_seed, "conversation_seed": conversation_seed}, judge_call)
                 return {"replay": replay, "judgment": verdict}
             baseline = evaluate(original)
             edited = evaluate(p["edited"])
-            results.append({**common, "seed": seed, "fork": fork, "baseline": baseline, "edited": edited})
+            results.append({**common, "seed": seed, "conversation_seed": conversation_seed,
+                            "fork": fork, "baseline": baseline, "edited": edited})
     write_json(store.root / "replay_rows.json", results)
     report = replay_report(results, seeds, bootstrap_repeats, detector_threshold)
     report["manifest_id"] = store.manifest_id

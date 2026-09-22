@@ -131,7 +131,7 @@ class ShieldGemmaBackend:
         self.chat, self.policies, self.threshold = chat, policies, probability(threshold)
         vocab = chat.tokenizer.get_vocab()
         self.ids = [vocab["Yes"], vocab["No"]]
-        if self.ids[0] == self.ids[1] or any(chat.tokenizer.decode([i]).strip() != s for i, s in zip(self.ids, ("Yes", "No"))):
+        if self.ids[0] == self.ids[1] or any(chat.tokenizer.decode([i]).strip() != s for i, s in zip(self.ids, ("Yes", "No"), strict=True)):
             raise ValueError("ShieldGemma Yes/No vocabulary mismatch")
         self.identity = {"kind": "shieldgemma_prompt", **chat.identity, "policies": policies,
             "aggregation": "max_category_probability", "threshold": threshold,

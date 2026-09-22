@@ -103,4 +103,4 @@ def loto_scores(turns, score):
 def audit_edit(turns, units, selected, changed):
     return {"selected_words": [units[i] for i in selected], "selected_count": len(selected),
             "total_user_words": len(units), "per_turn_count": dict(Counter(units[i]["turn_id"] for i in selected)),
-            "changed_turn_ids": [a["turn_id"] for a, b in zip(turns, changed) if a["text"] != b["text"]]}
+            "changed_turn_ids": [a["turn_id"] for a, b in zip(turns, changed, strict=True) if a["text"] != b["text"]]}

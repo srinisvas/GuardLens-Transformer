@@ -1,23 +1,20 @@
 """Scientific-contract regressions and end-to-end CPU platform tests."""
 import copy
 import json
-import math
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
 
 from eval_platform.adapters import adapt, check_overlap, validate_collection
-from eval_platform.contract import RunStore, canonical, digest, file_hash, validate_record, visible, validate_protocol
+from eval_platform.contract import RunStore, canonical, visible, validate_protocol
 from eval_platform.interventions import words, select, edit, risk_scores, project_tokens, eligible_indices, loto_scores
 from eval_platform.metrics import binary, cluster_interval, effects, localization, utility_grid, break_even
 from eval_platform.replay import replay_suffix, judge_behavior, run_replay
 from eval_platform.runner import run, intervention_plan
-from eval_platform.runtime import CoverageError, ShieldGemmaBackend, LLMAttributor, GuardLensBackend
-from eval_platform.studies import human_report, robustness_report, method_utility, compare_runs, spearman
+from eval_platform.runtime import CoverageError
+from eval_platform.studies import human_report, robustness_report, method_utility, spearman
 
 
 def record(cid="a", label=1):
@@ -31,7 +28,7 @@ def record(cid="a", label=1):
 
 
 def protocol():
-    value = json.loads(Path("configs/eval_protocol.json").read_text())
+    value = json.loads(Path("configs/eval_protocol.json").read_text(encoding="utf-8"))
     value.update(budgets=[.2, .4], random_repeats=3, bootstrap_repeats=100)
     return value
 
@@ -123,15 +120,23 @@ class ContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 RunStore(d, {"checkpoint": "two"})
             path = next((Path(d) / "cache" / "x").glob("*.json"))
-            row = json.loads(path.read_text())
+            row = json.loads(path.read_text(encoding="utf-8"))
             row["result"]["p"] = .8
-            path.write_text(canonical(row))
+            path.write_text(canonical(row), encoding="utf-8")
             with self.assertRaises(ValueError):
                 s.cached("x", {"input": 1}, lambda: None)
 
     def test_protocol_rejects_external_tuning(self):
         with self.assertRaises(ValueError):
             validate_protocol({**protocol(), "threshold_source": "external_dev"})
+
+    def test_protocol_rejects_typos_and_boolean_numeric_values(self):
+        with self.assertRaisesRegex(ValueError, "unknown protocol fields"):
+            validate_protocol({**protocol(), "context_diagnostic": True})
+        with self.assertRaisesRegex(ValueError, "budgets"):
+            validate_protocol({**protocol(), "budgets": [True]})
+        with self.assertRaisesRegex(ValueError, "utility penalties"):
+            validate_protocol({**protocol(), "utility_lambdas": [False]})
 
 
 class InterventionTests(unittest.TestCase):
@@ -249,6 +254,25 @@ class ReplayTests(unittest.TestCase):
             self.assertEqual(row["end_to_end_rescue_full_cohort"]["missing_bounds"], [0., 1.])
             self.assertIsNone(row["end_to_end_rescue_full_cohort"]["estimate"])
 
+    def test_replay_rng_is_paired_within_record_and_isolated_across_records(self):
+        a, b = record("a"), record("b")
+        plans = []
+        for r in (a, b):
+            units = words(r["turns"])
+            from eval_platform.interventions import audit_edit
+            changed = edit(r["turns"], units, [0])
+            plans.append({"id": r["id"], "cluster_id": r["cluster_id"], "label": 1,
+                "method": "guardlens", "fraction": .2, "repeat": 0,
+                "detector_probability": .8, "edited": changed,
+                "audit": audit_edit(r["turns"], units, [0], changed)})
+        with tempfile.TemporaryDirectory() as d:
+            run_replay([a, b], plans, FakeGenerator(), FakeJudge(), [42, 43, 44],
+                       RunStore(d, {"test": True}), .5, 100)
+            rows = json.loads((Path(d) / "replay_rows.json").read_text(encoding="utf-8"))
+        streams = {(r["id"], r["seed"]): r["conversation_seed"] for r in rows}
+        self.assertNotEqual(streams[("a", 42)], streams[("b", 42)])
+        self.assertEqual(len(streams), len(rows))
+
     def test_suffix_has_no_stale_assistant_and_seeds_are_paired(self):
         ts = record()["turns"]
         generator = FakeGenerator()
@@ -277,7 +301,7 @@ class ReplayTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             store = RunStore(d, {"test": True})
             report = run_replay([r], plans, FakeGenerator(), judge, [42, 43, 44], store, .5, 100)
-            rows = json.loads((Path(d) / "replay_rows.json").read_text())
+            rows = json.loads((Path(d) / "replay_rows.json").read_text(encoding="utf-8"))
             self.assertEqual({row["fork"] for row in rows}, {0})
             self.assertTrue(all(json.loads(messages[1]["content"])["original_objective"] == r["objective"] for messages, _ in judge.calls))
             self.assertIsNone(report["methods"]["guardlens/0.2"]["rescue_given_fresh_unsafe"]["estimate"])
@@ -292,6 +316,9 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(report["effects"]["self/guardlens/0.2"]["positive_attempted_n"], 1)
             self.assertEqual(report["effects"]["self/guardlens/0.2"]["missing_n"], 1)
             self.assertEqual(report["detection"]["recall_full_cohort_bounds"], [0., 1.])
+            group = report["strata"]["dataset"]["fixture"]
+            self.assertEqual(group["coverage"], {"attempted_n": 1, "scored_n": 0, "missing_n": 1})
+            self.assertEqual(group["detection"]["recall_full_cohort_bounds"], [0., 1.])
 
     def test_full_run_preserves_misses_failures_and_resume(self):
         a, b, c = record(), record("b", 0), record("c")
@@ -314,10 +341,10 @@ class IntegrationTests(unittest.TestCase):
     def test_prepare_cli_is_strict_and_does_not_invent_annotations(self):
         with tempfile.TemporaryDirectory() as d:
             source, output = Path(d) / "source.jsonl", Path(d) / "out.jsonl"
-            source.write_text(canonical({"conversation_id": "a", "turns": [{"role": "human", "content": "hello"}]}) + "\n")
+            source.write_text(canonical({"conversation_id": "a", "turns": [{"role": "human", "content": "hello"}]}) + "\n", encoding="utf-8")
             command = [sys.executable, "-m", "eval_platform", "prepare", "--source", "mhj", "--source-revision", "fixed", "--split", "test", "--input", str(source), "--output", str(output)]
             subprocess.run(command, check=True, capture_output=True)
-            self.assertEqual(json.loads(output.read_text())["gold"], {})
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["gold"], {})
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
     def test_human_agreement_and_robustness_require_real_alignment(self):

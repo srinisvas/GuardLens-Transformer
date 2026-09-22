@@ -1,10 +1,9 @@
 """One attribution plan shared by self-faithfulness, independent guards and replay."""
-import math
 from collections import defaultdict
 
 from .contract import digest, visible, write_json
 from .interventions import words, risk_scores, eligible_indices, select, edit, project_tokens, loto_scores, audit_edit
-from .metrics import binary, average, localization, span_agreement, effects, cluster_interval, utility_grid, break_even
+from .metrics import binary, average, localization, span_agreement, effects, cluster_interval, utility_grid
 from .runtime import CoverageError
 
 
@@ -128,6 +127,7 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None):
 
 def summarize(records, predictions, interventions, protocol, detection_threshold, guard_names=None):
     valid = [r for r in predictions if "error" not in r["prediction"]]
+    valid_by_id = {r["id"]: r for r in valid}
     ci = lambda rows, stat: cluster_interval(rows, stat, protocol["bootstrap_repeats"], protocol["seed"])
     def detect(rows):
         return binary([r["label"] for r in rows], [r["prediction"]["probability"] for r in rows], detection_threshold)
@@ -141,10 +141,21 @@ def summarize(records, predictions, interventions, protocol, detection_threshold
     detection["uncertainty"] = {k: ci(valid, lambda rows, k=k: detect(rows)[k]) for k in ("recall", "fpr", "f1", "ap", "auroc")}
     strata = {}
     for key in ("dataset", "family", "supervision_tier", "corpus_source", "difficulty", "pivot_kind", "transfer_tier"):
-        groups = defaultdict(list)
-        for r in valid:
-            groups[r["dataset"] if key == "dataset" else r["strata"].get(key, "unknown")].append(r)
-        strata[key] = {name: {"detection": detect(rs), "localization": summarize_localization(rs)} for name, rs in groups.items()}
+        attempted_groups = defaultdict(list)
+        for r in records:
+            attempted_groups[r["dataset"] if key == "dataset" else r.get("strata", {}).get(key, "unknown")].append(r)
+        strata[key] = {}
+        for name, attempted in attempted_groups.items():
+            scored = [valid_by_id[r["id"]] for r in attempted if r["id"] in valid_by_id]
+            metrics = detect(scored)
+            attempted_pos = sum(r["label"] for r in attempted)
+            attempted_neg = len(attempted) - attempted_pos
+            missing_pos = attempted_pos - metrics["positive_n"]
+            missing_neg = attempted_neg - metrics["negative_n"]
+            metrics["recall_full_cohort_bounds"] = [(metrics["tp"] + m) / attempted_pos for m in (0, missing_pos)] if attempted_pos else None
+            metrics["fpr_full_cohort_bounds"] = [(metrics["fp"] + m) / attempted_neg for m in (0, missing_neg)] if attempted_neg else None
+            strata[key][name] = {"coverage": {"attempted_n": len(attempted), "scored_n": len(scored), "missing_n": len(attempted) - len(scored)},
+                                 "detection": metrics, "localization": summarize_localization(scored)}
     output = {"task": records[0]["label_semantics"], "view": protocol["view"],
               "coverage": {"total": len(records), "scored": len(valid), "failures": [{"id": r["id"], **r["prediction"]} for r in predictions if "error" in r["prediction"]]},
               "detection": detection, "localization": summarize_localization(valid), "strata": strata,
@@ -180,7 +191,7 @@ def summarize(records, predictions, interventions, protocol, detection_threshold
         for method in protocol["methods"]:
             for fraction in protocol["budgets"]:
                 collapsed[(name, method, fraction)] = []
-    for (guard, method, fraction, rid), rs in grouped.items():
+    for (guard, method, fraction, _rid), rs in grouped.items():
         threshold = detection_threshold if guard == "self" else protocol["guard_threshold"]
         complete = all(r.get("before") is not None and r.get("after") is not None for r in rs)
         row = {k: rs[0][k] for k in ("id", "cluster_id", "label", "detector_probability")}

@@ -22,12 +22,12 @@ def binary(labels, scores, threshold):
     scores = [probability(p) for p in scores]
     n, pos = len(labels), sum(labels)
     neg = n - pos
-    tp = sum(y == 1 and p >= threshold for y, p in zip(labels, scores))
-    fp = sum(y == 0 and p >= threshold for y, p in zip(labels, scores))
+    tp = sum(y == 1 and p >= threshold for y, p in zip(labels, scores, strict=True))
+    fp = sum(y == 0 and p >= threshold for y, p in zip(labels, scores, strict=True))
     tn, fn = neg - fp, pos - tp
     # Average precision uses tied thresholds together, as does standard PR AP.
     groups = defaultdict(lambda: [0, 0])
-    for y, s in zip(labels, scores):
+    for y, s in zip(labels, scores, strict=True):
         groups[s][y] += 1
     seen, hits, ap, concordant, lower_neg = 0, 0, 0.0, 0.0, 0
     for s in sorted(groups):
@@ -127,7 +127,6 @@ def effects(rows, guard_threshold, detector_threshold, repeats=1000, seed=42):
                "guard_original_unsafe_complete": [r for r in complete if r["before"] >= guard_threshold]}
     out = {"positive_attempted_n": len(all_pos), "complete_n": len(complete), "missing_n": len(all_pos) - len(complete), "cohorts": {}}
     for name, cohort in cohorts.items():
-        stat = lambda key: cluster_interval(cohort, lambda rs: average([r[key] for r in rs]), repeats, seed)
         transformed = []
         for r in cohort:
             transformed.append({**r, "drop": r["before"] - r["after"],
@@ -135,7 +134,10 @@ def effects(rows, guard_threshold, detector_threshold, repeats=1000, seed=42):
                 "relative_drop": (r["before"] - r["after"]) / r["before"] if r["before"] > 0 else None,
                 "sufficiency_gap": r["before"] - r["kept"] if r.get("kept") is not None else None})
         cohort = transformed
-        out["cohorts"][name] = {k: stat(k) for k in ("drop", "relative_drop", "flip", "sufficiency_gap")}
+        out["cohorts"][name] = {
+            key: cluster_interval(cohort, lambda rs, key=key: average([r[key] for r in rs]), repeats, seed)
+            for key in ("drop", "relative_drop", "flip", "sufficiency_gap")
+        }
     # Misses contribute zero; failures are unknown with explicit bounds.
     successes = sum(r.get("gated_flip", float(r["detector_probability"] >= detector_threshold and r["before"] >= guard_threshold and r["after"] < guard_threshold)) for r in complete)
     out["end_to_end_flip"] = {"denominator": len(all_pos), "complete_success_mass": successes,
