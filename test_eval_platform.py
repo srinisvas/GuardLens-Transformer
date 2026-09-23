@@ -406,6 +406,8 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(serial, finalize_shards(records, store, 4))
             self.assertEqual(json.loads((root / "serial" / "predictions.json").read_text()),
                              json.loads((root / "parallel" / "predictions.json").read_text()))
+            self.assertEqual(json.loads((root / "serial" / "interventions.json").read_text()),
+                             json.loads((root / "parallel" / "interventions.json").read_text()))
             (root / "parallel" / "shards" / "record-000006.json").unlink()
             with self.assertRaisesRegex(ValueError, "shards incomplete"):
                 finalize_shards(records, store, 4)

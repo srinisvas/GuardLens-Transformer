@@ -287,6 +287,9 @@ sbatch --export=ALL,EVAL_RECOVER_LEGACY_SHARDS=1 eval_mhj_finalize.slurm
 Use the existing `mhj-pre-response-parallel-v2` root for this recovery. Do not
 submit the GPU array after updating the code because the new code identity
 does not match that completed run's manifest.
+The recovery finalizer streams the full predictions and interventions to disk,
+retaining only metric inputs in memory. It requests 32 GB CPU memory and four
+hours. An earlier 16 GB finalizer was OOM killed while assembling full records.
 
 The launcher fails on any command error, uses the current environment, and has no
 checkpoint/path fallback. Exact manifest resume is supported. Changing data,

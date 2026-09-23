@@ -3,8 +3,8 @@
 #SBATCH --account=V_cs_hat_capstone_mkhan74
 #SBATCH --partition=defq
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=16G
-#SBATCH --time=01:00:00
+#SBATCH --mem=32G
+#SBATCH --time=04:00:00
 #SBATCH --output=logs/eval_public_finalize_%j.out
 #SBATCH --error=logs/eval_public_finalize_%j.err
 

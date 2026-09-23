@@ -1,8 +1,11 @@
 """One attribution plan shared by self-faithfulness, independent guards and replay."""
 import json
+import os
 from collections import defaultdict
+from contextlib import contextmanager
+from pathlib import Path
 
-from .contract import digest, visible, write_json
+from .contract import canonical, digest, visible, write_json
 from .interventions import words, risk_scores, eligible_indices, select, edit, project_tokens, loto_scores, audit_edit
 from .metrics import binary, average, localization, span_agreement, effects, cluster_interval, utility_grid
 from .runtime import CoverageError
@@ -179,6 +182,52 @@ def load_shard_record(path, manifest_id, index, record_id, recover_legacy=False)
     return result
 
 
+@contextmanager
+def json_array_writer(path):
+    """Write a large JSON array atomically without retaining its elements."""
+    path = Path(path)
+    temp = path.with_name(path.name + f".{os.getpid()}.tmp")
+    try:
+        with temp.open("w", encoding="utf-8") as stream:
+            stream.write("[")
+            first = True
+            def append(value):
+                nonlocal first
+                if not first:
+                    stream.write(",")
+                stream.write(canonical(value))
+                first = False
+            yield append
+            stream.write("]\n")
+        temp.replace(path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def summary_prediction(row):
+    """Keep exactly the fields consumed by summarize(), not token arrays."""
+    result = {k: row[k] for k in ("id", "cluster_id", "label", "dataset", "strata")}
+    prediction = row["prediction"]
+    result["prediction"] = prediction if "error" in prediction else {"probability": prediction["probability"]}
+    for name in ("localization", "span_agreement", "baseline_localization"):
+        if name in row:
+            result[name] = row[name]
+    for name in ("context_diagnostics", "guard_originals"):
+        if name in row:
+            result[name] = {k: {"probability": v["probability"]} if "probability" in v else {}
+                            for k, v in row[name].items()}
+    if "llm_prediction" in row:
+        p = row["llm_prediction"]
+        result["llm_prediction"] = {"probability": p["probability"]} if "probability" in p else {}
+    return result
+
+
+def summary_intervention(row):
+    return {k: row[k] for k in ("id", "cluster_id", "label", "detector_probability",
+                                  "guard", "method", "fraction", "before", "after") if k in row} | {
+        "kept": row.get("kept")}
+
+
 def finalize_shards(records, store, shard_count, recover_legacy=False):
     """Assemble the full cohort in source order and compute statistics only once."""
     if type(shard_count) is not int or shard_count < 1:
@@ -189,13 +238,18 @@ def finalize_shards(records, store, shard_count, recover_legacy=False):
     if actual != expected:
         raise ValueError(f"shards incomplete: {len(expected - actual)} missing, {len(actual - expected)} unexpected")
     predictions, interventions = [], []
-    for index, record in enumerate(records):
-        row = load_shard_record(directory / f"record-{index:06d}.json", store.manifest_id, index, record["id"], recover_legacy)
-        predictions.append(row["prediction"])
-        interventions.extend(row["interventions"])
+    with json_array_writer(store.root / "predictions.json") as add_prediction, \
+            json_array_writer(store.root / "interventions.json") as add_intervention:
+        for index, record in enumerate(records):
+            row = load_shard_record(directory / f"record-{index:06d}.json", store.manifest_id, index, record["id"], recover_legacy)
+            add_prediction(row["prediction"])
+            predictions.append(summary_prediction(row["prediction"]))
+            for intervention in row["interventions"]:
+                add_intervention(intervention)
+                interventions.append(summary_intervention(intervention))
+            if (index + 1) % 25 == 0 or index + 1 == len(records):
+                print(f"finalize verified {index + 1}/{len(records)} records", flush=True)
     protocol = store.manifest["protocol"]
-    write_json(store.root / "predictions.json", predictions)
-    write_json(store.root / "interventions.json", interventions)
     report = summarize(records, predictions, interventions, protocol,
                        store.manifest["detector"]["threshold"], list(store.manifest["guards"]))
     report["manifest_id"] = store.manifest_id
