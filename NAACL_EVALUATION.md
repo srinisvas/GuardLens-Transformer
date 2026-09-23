@@ -273,6 +273,21 @@ Completed records are skipped after their manifest, identity, and checksum
 validate. A successful retry triggers a new finalization job. The old dependency
 remains unsatisfied and can be cancelled with `scancel OLD_FINALIZE_JOB_ID`.
 
+For the already completed four-shard MHJ run whose manifest has code commit
+`fb30f115d49065013f072fa7b3d891d5ca8c7cb5`, an older audit serializer
+hashed integer turn IDs before writing JSON. The recovery finalizer verifies
+that exact legacy checksum after restoring only `audit.per_turn_count` keys.
+It does not load models or rewrite any shard. With the original `EVAL_DATA`,
+`EVAL_RUN_ROOT`, and `EVAL_SHARDS=4` exported, run:
+
+```bash
+sbatch --export=ALL,EVAL_RECOVER_LEGACY_SHARDS=1 eval_mhj_finalize.slurm
+```
+
+Use the existing `mhj-pre-response-parallel-v2` root for this recovery. Do not
+submit the GPU array after updating the code because the new code identity
+does not match that completed run's manifest.
+
 The launcher fails on any command error, uses the current environment, and has no
 checkpoint/path fallback. Exact manifest resume is supported. Changing data,
 checkpoint, protocol, policy, lexicon or evaluation source requires a new run root.

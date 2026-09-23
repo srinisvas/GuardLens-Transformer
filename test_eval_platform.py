@@ -9,11 +9,11 @@ from pathlib import Path
 
 from eval_platform.adapters import adapt, check_overlap, validate_collection
 from eval_platform.calibration import apply_calibration, calibrate_operating_points
-from eval_platform.contract import RunStore, canonical, visible, validate_protocol
+from eval_platform.contract import RunStore, canonical, digest, visible, validate_protocol, write_json
 from eval_platform.interventions import words, select, edit, risk_scores, project_tokens, eligible_indices, loto_scores
 from eval_platform.metrics import binary, cluster_interval, effects, localization, utility_grid, break_even
 from eval_platform.replay import replay_suffix, judge_behavior, run_replay
-from eval_platform.runner import run, intervention_plan, finalize_shards
+from eval_platform.runner import run, intervention_plan, finalize_shards, load_shard_record
 from eval_platform.runtime import CoverageError, require_transformers_dtype_support, verify_floating_dtype
 from eval_platform.studies import human_report, robustness_report, method_utility, spearman
 
@@ -73,6 +73,23 @@ class FakeJudge:
 
 
 class ContractTests(unittest.TestCase):
+    def test_recover_integer_key_shard_without_ignoring_corruption(self):
+        result = {"prediction": {"id": "sample", "label": 1}, "interventions": [
+            {"id": "sample", "audit": {"per_turn_count": {2: 1, 10: 1}}}]}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "record-000000.json"
+            write_json(path, {"manifest_id": "frozen", "index": 0, "id": "sample",
+                              "result": result, "result_sha256": digest(result)})
+            with self.assertRaisesRegex(ValueError, "invalid shard record"):
+                load_shard_record(path, "frozen", 0, "sample")
+            recovered = load_shard_record(path, "frozen", 0, "sample", recover_legacy=True)
+            self.assertEqual(recovered["interventions"][0]["audit"]["per_turn_count"], {"2": 1, "10": 1})
+            tampered = json.loads(path.read_text())
+            tampered["result"]["prediction"]["label"] = 0
+            write_json(path, tampered)
+            with self.assertRaisesRegex(ValueError, "invalid shard record"):
+                load_shard_record(path, "frozen", 0, "sample", recover_legacy=True)
+
     def test_dtype_version_gate_and_model_precision(self):
         for version in ("4.48.0", "4.55.4", "5.0.0"):
             with self.assertRaisesRegex(RuntimeError, "transformers"):

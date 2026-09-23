@@ -147,19 +147,39 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_ind
     return report
 
 
-def load_shard_record(path, manifest_id, index, record_id):
+def legacy_shard_digest(result):
+    """Recreate the old writer's integer audit keys for checksum verification."""
+    restored = {**result, "interventions": []}
+    for intervention in result["interventions"]:
+        audit = intervention.get("audit")
+        if isinstance(audit, dict) and isinstance(audit.get("per_turn_count"), dict):
+            counts = audit["per_turn_count"]
+            if any(not isinstance(k, str) or not k.isdecimal() or str(int(k)) != k for k in counts):
+                raise ValueError("invalid legacy audit turn ID")
+            intervention = {**intervention, "audit": {**audit,
+                "per_turn_count": {int(k): v for k, v in counts.items()}}}
+        restored["interventions"].append(intervention)
+    return digest(restored)
+
+
+def load_shard_record(path, manifest_id, index, record_id, recover_legacy=False):
     row = json.loads(path.read_text(encoding="utf-8"))
     result = row.get("result", {})
     if (row.get("manifest_id") != manifest_id or row.get("index") != index or
-            row.get("id") != record_id or digest(result) != row.get("result_sha256") or
+            row.get("id") != record_id or not isinstance(result, dict) or
+            not isinstance(result.get("interventions"), list)):
+        raise ValueError(f"invalid shard record identity: {path}")
+    checksum_ok = digest(result) == row.get("result_sha256")
+    if recover_legacy and not checksum_ok:
+        checksum_ok = legacy_shard_digest(result) == row.get("result_sha256")
+    if (not checksum_ok or
             result.get("prediction", {}).get("id") != record_id or
-            not isinstance(result.get("interventions"), list) or
             any(x.get("id") != record_id for x in result["interventions"])):
         raise ValueError(f"invalid shard record: {path}")
     return result
 
 
-def finalize_shards(records, store, shard_count):
+def finalize_shards(records, store, shard_count, recover_legacy=False):
     """Assemble the full cohort in source order and compute statistics only once."""
     if type(shard_count) is not int or shard_count < 1:
         raise ValueError("invalid shard count")
@@ -170,7 +190,7 @@ def finalize_shards(records, store, shard_count):
         raise ValueError(f"shards incomplete: {len(expected - actual)} missing, {len(actual - expected)} unexpected")
     predictions, interventions = [], []
     for index, record in enumerate(records):
-        row = load_shard_record(directory / f"record-{index:06d}.json", store.manifest_id, index, record["id"])
+        row = load_shard_record(directory / f"record-{index:06d}.json", store.manifest_id, index, record["id"], recover_legacy)
         predictions.append(row["prediction"])
         interventions.extend(row["interventions"])
     protocol = store.manifest["protocol"]

@@ -17,4 +17,8 @@ CONDA_BASE=$(conda info --base)
 source "$CONDA_BASE/etc/profile.d/conda.sh"
 conda activate "${EVAL_CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
 cd "$SLURM_SUBMIT_DIR"
-python -u -m eval_platform finalize --data "$EVAL_DATA" --output "$EVAL_RUN_ROOT" --shard-count "$EVAL_SHARDS"
+extra=()
+if [[ "${EVAL_RECOVER_LEGACY_SHARDS:-0}" == 1 ]]; then
+  extra+=(--recover-legacy-shards)
+fi
+python -u -m eval_platform finalize --data "$EVAL_DATA" --output "$EVAL_RUN_ROOT" --shard-count "$EVAL_SHARDS" "${extra[@]}"

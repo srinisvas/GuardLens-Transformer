@@ -115,11 +115,13 @@ def finalize(args):
     from .runner import finalize_shards
     root = Path(args.output)
     manifest = load(root / "manifest.json")
-    if manifest["code"] != source_identity():
+    legacy_commit = "fb30f115d49065013f072fa7b3d891d5ca8c7cb5"
+    if manifest["code"] != source_identity() and not (args.recover_legacy_shards and
+            manifest["code"].get("git_sha") == legacy_commit):
         raise ValueError("code changed since shard execution")
     records = load_dataset(args.data, manifest["dataset_sha256"])
     store = RunStore(root, {k: v for k, v in manifest.items() if k not in {"manifest_id", "platform_version"}})
-    report = finalize_shards(records, store, args.shard_count)
+    report = finalize_shards(records, store, args.shard_count, args.recover_legacy_shards)
     print(canonical({"report": str(root / "report.json"), "coverage": report["coverage"], "detection": report["detection"]}))
 
 
@@ -257,6 +259,8 @@ def parser():
     q.add_argument("--data", required=True)
     q.add_argument("--output", required=True)
     q.add_argument("--shard-count", type=int, required=True)
+    q.add_argument("--recover-legacy-shards", action="store_true",
+                   help="verify and finalize the fb30f11 integer-key audit shards")
     q.set_defaults(func=finalize)
     q = sub.add_parser("replay", help="paired fresh generations and independent behavior judging")
     for name in ("run", "data", "target-config", "judge-config", "output"):
