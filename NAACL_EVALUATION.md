@@ -243,9 +243,26 @@ export EVAL_DATA_SHA256=$(sha256sum "$EVAL_DATA" | cut -d' ' -f1)
 export EVAL_TRAIN_EXCLUDE="$PREP/train.jsonl"
 export EVAL_DEV_EXCLUDE="$PREP/dev.jsonl"
 export EVAL_SHIELD_CONFIG="$PREP/shieldgemma.json"
-export EVAL_RUN_ROOT=~/work/results/guardlens_eval_v1/mhj-pre-response
-sbatch --export=ALL eval_mhj.slurm
+export EVAL_RUN_ROOT=~/work/results/guardlens_eval_v1/mhj-pre-response-parallel-v1
+./submit_eval_mhj.sh
 ```
+
+The launcher submits a four-task Slurm array with one A100 per task and a CPU
+finalization job that runs only after every task succeeds. Each task handles
+indices `index % 4 == task_id` and writes an atomic record result under
+`$EVAL_RUN_ROOT/shards/`. The finalizer checks all input records, combines them
+in original order, and writes `predictions.json`, `interventions.json`, and
+`report.json`. The prior single-GPU run cannot reuse this directory because the
+evaluation code identity has changed. Use the new root above for the full run.
+The 26–30 GPU-hour estimate corresponds to roughly 6.5–7.5 hours of compute
+with four busy A100s, plus scheduling and record-length imbalance.
+
+Monitor with `squeue -u "$USER"` and `tail -f logs/eval_public_ARRAYID_0.out`
+(substitute the printed array job ID and task 0–3). If a task times out or fails,
+submit `./submit_eval_mhj.sh` again with the same environment and run root.
+Completed records are skipped after their manifest, identity, and checksum
+validate. A successful retry triggers a new finalization job. The old dependency
+remains unsatisfied and can be cancelled with `scancel OLD_FINALIZE_JOB_ID`.
 
 The launcher fails on any command error, uses the current environment, and has no
 checkpoint/path fallback. Exact manifest resume is supported. Changing data,

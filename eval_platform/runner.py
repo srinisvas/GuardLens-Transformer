@@ -1,4 +1,5 @@
 """One attribution plan shared by self-faithfulness, independent guards and replay."""
+import json
 from collections import defaultdict
 
 from .contract import digest, visible, write_json
@@ -68,9 +69,23 @@ def intervention_plan(turns, prediction, protocol, lexicon, detector_score=None,
                        "audit": audit_edit(turns, units, selected, changed)}
 
 
-def run(records, detector, guards, protocol, lexicon, store, llm=None):
+def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_index=None, shard_count=None):
+    sharded = shard_index is not None
+    if sharded and (type(shard_index) is not int or type(shard_count) is not int or
+                    shard_count < 1 or not 0 <= shard_index < shard_count):
+        raise ValueError("invalid shard index/count")
     predictions, interventions = [], []
     for index, r in enumerate(records):
+        if sharded and index % shard_count != shard_index:
+            continue
+        artifact = store.root / "shards" / f"record-{index:06d}.json" if sharded else None
+        if artifact is not None and artifact.exists():
+            completed = load_shard_record(artifact, store.manifest_id, index, r["id"])
+            predictions.append(completed["prediction"])
+            interventions.extend(completed["interventions"])
+            print(f"[{index + 1}/{len(records)}] {r['id']} cached record", flush=True)
+            continue
+        start = len(interventions)
         turns = visible(r, protocol["view"])
         prediction = infer(store, "detector", detector, turns)
         row = {"id": r["id"], "cluster_id": r["cluster_id"], "label": r["label"], "dataset": r["dataset"],
@@ -114,12 +129,55 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None):
                         "after": changed.get("probability"), "kept": kept.get("probability"),
                         "original_result": before[name], "edited_result": changed, "kept_result": kept})
         predictions.append(row)
-        # Durable progress + content-addressed inference supports exact resume.
-        write_json(store.root / "progress.json", {"completed": index + 1, "total": len(records), "last_id": r["id"]})
+        if sharded:
+            result = {"prediction": row, "interventions": interventions[start:]}
+            write_json(artifact, {"manifest_id": store.manifest_id, "index": index, "id": r["id"],
+                                  "result": result, "result_sha256": digest(result)})
+        else:
+            write_json(store.root / "progress.json", {"completed": index + 1, "total": len(records), "last_id": r["id"]})
         print(f"[{index + 1}/{len(records)}] {r['id']}", flush=True)
+    if sharded:
+        print(f"shard {shard_index}/{shard_count} complete: {len(predictions)} records", flush=True)
+        return None
     write_json(store.root / "predictions.json", predictions)
     write_json(store.root / "interventions.json", interventions)
     report = summarize(records, predictions, interventions, protocol, detector.threshold, list(guards))
+    report["manifest_id"] = store.manifest_id
+    write_json(store.root / "report.json", report)
+    return report
+
+
+def load_shard_record(path, manifest_id, index, record_id):
+    row = json.loads(path.read_text(encoding="utf-8"))
+    result = row.get("result", {})
+    if (row.get("manifest_id") != manifest_id or row.get("index") != index or
+            row.get("id") != record_id or digest(result) != row.get("result_sha256") or
+            result.get("prediction", {}).get("id") != record_id or
+            not isinstance(result.get("interventions"), list) or
+            any(x.get("id") != record_id for x in result["interventions"])):
+        raise ValueError(f"invalid shard record: {path}")
+    return result
+
+
+def finalize_shards(records, store, shard_count):
+    """Assemble the full cohort in source order and compute statistics only once."""
+    if type(shard_count) is not int or shard_count < 1:
+        raise ValueError("invalid shard count")
+    directory = store.root / "shards"
+    expected = {f"record-{i:06d}.json" for i in range(len(records))}
+    actual = {p.name for p in directory.glob("record-*.json")}
+    if actual != expected:
+        raise ValueError(f"shards incomplete: {len(expected - actual)} missing, {len(actual - expected)} unexpected")
+    predictions, interventions = [], []
+    for index, record in enumerate(records):
+        row = load_shard_record(directory / f"record-{index:06d}.json", store.manifest_id, index, record["id"])
+        predictions.append(row["prediction"])
+        interventions.extend(row["interventions"])
+    protocol = store.manifest["protocol"]
+    write_json(store.root / "predictions.json", predictions)
+    write_json(store.root / "interventions.json", interventions)
+    report = summarize(records, predictions, interventions, protocol,
+                       store.manifest["detector"]["threshold"], list(store.manifest["guards"]))
     report["manifest_id"] = store.manifest_id
     write_json(store.root / "report.json", report)
     return report

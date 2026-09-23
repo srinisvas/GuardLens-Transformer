@@ -13,7 +13,7 @@ from eval_platform.contract import RunStore, canonical, visible, validate_protoc
 from eval_platform.interventions import words, select, edit, risk_scores, project_tokens, eligible_indices, loto_scores
 from eval_platform.metrics import binary, cluster_interval, effects, localization, utility_grid, break_even
 from eval_platform.replay import replay_suffix, judge_behavior, run_replay
-from eval_platform.runner import run, intervention_plan
+from eval_platform.runner import run, intervention_plan, finalize_shards
 from eval_platform.runtime import CoverageError
 from eval_platform.studies import human_report, robustness_report, method_utility, spearman
 
@@ -349,6 +349,30 @@ class ReplayTests(unittest.TestCase):
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_parallel_shards_resume_and_match_single_run(self):
+        records = [record(str(i), i % 2) for i in range(7)]
+        p = protocol()
+        p.update(methods=["guardlens", "random"], budgets=[.2], context_diagnostics=False)
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            manifest = {"protocol": p, "detector": {"threshold": .5}, "guards": {"self": {"fixture": True}}}
+            serial = run(records, FakeDetector(), {"self": FakeDetector()}, p, ["alpha"],
+                         RunStore(root / "serial", manifest))
+            store = RunStore(root / "parallel", manifest)
+            for index in range(4):
+                run(records, FakeDetector(), {"self": FakeDetector()}, p, ["alpha"], store,
+                    shard_index=index, shard_count=4)
+            detector = FakeDetector()
+            run(records, detector, {"self": FakeDetector()}, p, ["alpha"], store,
+                shard_index=0, shard_count=4)
+            self.assertEqual(detector.calls, [])
+            self.assertEqual(serial, finalize_shards(records, store, 4))
+            self.assertEqual(json.loads((root / "serial" / "predictions.json").read_text()),
+                             json.loads((root / "parallel" / "predictions.json").read_text()))
+            (root / "parallel" / "shards" / "record-000006.json").unlink()
+            with self.assertRaisesRegex(ValueError, "shards incomplete"):
+                finalize_shards(records, store, 4)
+
     def test_all_overflow_still_reports_each_effect_denominator(self):
         r = record()
         r["turns"][0]["text"] = "OVERFLOW"

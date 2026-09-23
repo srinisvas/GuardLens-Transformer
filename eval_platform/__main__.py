@@ -105,8 +105,22 @@ def evaluate(args):
         "detector": detector.identity, "guards": {k: v.identity for k, v in guards.items()},
         "llm": llm.identity if llm else None, "exclusion_hashes": exclusion_hashes, "code": source_identity()}
     store = RunStore(args.output, manifest)
-    report = run(records, detector, guards, protocol, lexicon, store, llm)
+    report = run(records, detector, guards, protocol, lexicon, store, llm, args.shard_index, args.shard_count)
+    if report is None:
+        return
     print(canonical({"report": str(store.root / "report.json"), "coverage": report["coverage"], "detection": report["detection"]}))
+
+
+def finalize(args):
+    from .runner import finalize_shards
+    root = Path(args.output)
+    manifest = load(root / "manifest.json")
+    if manifest["code"] != source_identity():
+        raise ValueError("code changed since shard execution")
+    records = load_dataset(args.data, manifest["dataset_sha256"])
+    store = RunStore(root, {k: v for k, v in manifest.items() if k not in {"manifest_id", "platform_version"}})
+    report = finalize_shards(records, store, args.shard_count)
+    print(canonical({"report": str(root / "report.json"), "coverage": report["coverage"], "detection": report["detection"]}))
 
 
 def replay(args):
@@ -236,7 +250,14 @@ def parser():
     q.add_argument("--calibration")
     q.add_argument("--calibration-policy")
     q.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
+    q.add_argument("--shard-index", type=int)
+    q.add_argument("--shard-count", type=int)
     q.set_defaults(func=evaluate)
+    q = sub.add_parser("finalize", help="combine complete parallel shards without loading a model")
+    q.add_argument("--data", required=True)
+    q.add_argument("--output", required=True)
+    q.add_argument("--shard-count", type=int, required=True)
+    q.set_defaults(func=finalize)
     q = sub.add_parser("replay", help="paired fresh generations and independent behavior judging")
     for name in ("run", "data", "target-config", "judge-config", "output"):
         q.add_argument("--" + name, required=True)
