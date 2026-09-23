@@ -11,6 +11,28 @@ class CoverageError(ValueError):
     """A record cannot be scored without changing the preregistered context."""
 
 
+def require_transformers_dtype_support(version):
+    from packaging.version import Version
+    if not Version("4.56.2") <= Version(version) < Version("5"):
+        raise RuntimeError(f"transformers {version} cannot run this evaluator: install transformers>=4.56.2,<5")
+
+
+def verify_floating_dtype(model, expected, name):
+    """Fail before GPU transfer when a loader ignored the requested precision."""
+    checked = 0
+    mismatched = []
+    for parameter_name, parameter in model.named_parameters():
+        if parameter.is_floating_point():
+            checked += 1
+            if parameter.dtype != expected:
+                mismatched.append((parameter_name, str(parameter.dtype)))
+                if len(mismatched) == 3:
+                    break
+    if not checked or mismatched:
+        raise RuntimeError(f"{name} requested {expected} but loaded {checked} floating parameters; "
+                           f"dtype mismatches: {mismatched}")
+
+
 def pinned(revision):
     if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("HF models require an immutable 40-character commit SHA")
@@ -86,17 +108,21 @@ class GuardLensBackend:
 class HFChat:
     def __init__(self, model, revision, max_input_tokens, device="cuda", max_new_tokens=512, temperature=.7):
         import torch
+        import transformers
         from transformers import AutoModelForCausalLM, AutoTokenizer
+        require_transformers_dtype_support(transformers.__version__)
         pinned(revision)
         if device == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("CUDA requested but unavailable")
         self.torch, self.device = torch, device
         self.tokenizer = AutoTokenizer.from_pretrained(model, revision=revision)
-        self.model = AutoModelForCausalLM.from_pretrained(
+        loaded = AutoModelForCausalLM.from_pretrained(
             model,
             revision=revision,
             dtype=torch.bfloat16 if device == "cuda" else torch.float32,
-        ).to(device).eval()
+        )
+        verify_floating_dtype(loaded, torch.bfloat16 if device == "cuda" else torch.float32, model)
+        self.model = loaded.to(device).eval()
         capacity = getattr(self.model.config, "max_position_embeddings", None)
         if capacity and max_input_tokens + max_new_tokens > capacity:
             raise ValueError("requested input + generation exceeds native capacity")

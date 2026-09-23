@@ -14,7 +14,7 @@
 
 # Core training / inference
 torch>=2.2,<3
-transformers>=4.48,<5
+transformers>=4.56.2,<5
 accelerate>=0.28,<2
 
 # Numeric / evaluation utilities

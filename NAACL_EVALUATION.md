@@ -243,13 +243,22 @@ export EVAL_DATA_SHA256=$(sha256sum "$EVAL_DATA" | cut -d' ' -f1)
 export EVAL_TRAIN_EXCLUDE="$PREP/train.jsonl"
 export EVAL_DEV_EXCLUDE="$PREP/dev.jsonl"
 export EVAL_SHIELD_CONFIG="$PREP/shieldgemma.json"
-export EVAL_RUN_ROOT=~/work/results/guardlens_eval_v1/mhj-pre-response-parallel-v1
+export EVAL_RUN_ROOT=~/work/results/guardlens_eval_v1/mhj-pre-response-parallel-v2
+export EVAL_SHARDS=4
 ./submit_eval_mhj.sh
 ```
 
-The launcher submits a four-task Slurm array with one A100 per task and a CPU
+The launcher requires `transformers>=4.56.2,<5` in the evaluation environment
+and checks this before Slurm submission. To update an older environment, run
+`~/work/conda_envs/guardlens_train/bin/python -m pip install 'transformers>=4.56.2,<5'`
+before submitting. The ShieldGemma loader verifies all floating parameters have
+the requested dtype before transfer to CUDA. The GuardLens backbone uses the
+same `dtype=` loader argument and verifies its floating parameters after load.
+
+The launcher accepts `EVAL_SHARDS` from 1 to 4, defaulting to 4. It submits a
+Slurm array with one A100 per task and a CPU
 finalization job that runs only after every task succeeds. Each task handles
-indices `index % 4 == task_id` and writes an atomic record result under
+indices `index % EVAL_SHARDS == task_id` and writes an atomic record result under
 `$EVAL_RUN_ROOT/shards/`. The finalizer checks all input records, combines them
 in original order, and writes `predictions.json`, `interventions.json`, and
 `report.json`. The prior single-GPU run cannot reuse this directory because the

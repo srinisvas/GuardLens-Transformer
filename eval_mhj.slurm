@@ -2,7 +2,6 @@
 #SBATCH --job-name=gl-public-eval
 #SBATCH --account=V_cs_hat_capstone_mkhan74
 #SBATCH --partition=defq
-#SBATCH --array=0-3%4
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=80G
@@ -20,6 +19,7 @@ set -euo pipefail
 : "${EVAL_CALIBRATION:?dev-only detector calibration required}"
 : "${EVAL_CALIBRATION_POLICY:?frozen detector operating point required}"
 : "${EVAL_RUN_ROOT:?output directory required}"
+: "${EVAL_SHARDS:?submit with submit_eval_mhj.sh}"
 : "${SLURM_ARRAY_TASK_ID:?submit as a Slurm array}"
 
 CONDA_BASE=$(conda info --base)
@@ -41,4 +41,4 @@ python -u -m eval_platform run \
   --protocol "${EVAL_PROTOCOL:-configs/eval_protocol.json}" \
   --guard both --shield-config "$EVAL_SHIELD_CONFIG" \
   --output "$EVAL_RUN_ROOT" \
-  --shard-index "$SLURM_ARRAY_TASK_ID" --shard-count 4
+  --shard-index "$SLURM_ARRAY_TASK_ID" --shard-count "$EVAL_SHARDS"

@@ -14,7 +14,7 @@ from eval_platform.interventions import words, select, edit, risk_scores, projec
 from eval_platform.metrics import binary, cluster_interval, effects, localization, utility_grid, break_even
 from eval_platform.replay import replay_suffix, judge_behavior, run_replay
 from eval_platform.runner import run, intervention_plan, finalize_shards
-from eval_platform.runtime import CoverageError
+from eval_platform.runtime import CoverageError, require_transformers_dtype_support, verify_floating_dtype
 from eval_platform.studies import human_report, robustness_report, method_utility, spearman
 
 
@@ -73,6 +73,26 @@ class FakeJudge:
 
 
 class ContractTests(unittest.TestCase):
+    def test_dtype_version_gate_and_model_precision(self):
+        for version in ("4.48.0", "4.55.4", "5.0.0"):
+            with self.assertRaisesRegex(RuntimeError, "transformers"):
+                require_transformers_dtype_support(version)
+        require_transformers_dtype_support("4.56.2")
+
+        class Parameter:
+            def __init__(self, dtype):
+                self.dtype = dtype
+            def is_floating_point(self):
+                return True
+        class Model:
+            def __init__(self, dtype):
+                self.dtype = dtype
+            def named_parameters(self):
+                yield "embedding.weight", Parameter(self.dtype)
+        verify_floating_dtype(Model("bfloat16"), "bfloat16", "ShieldGemma")
+        with self.assertRaisesRegex(RuntimeError, "embedding.weight"):
+            verify_floating_dtype(Model("float32"), "bfloat16", "ShieldGemma")
+
     def test_model_view_never_contains_metadata_or_final_response(self):
         r = record()
         r["hidden_rationale"] = "secret"

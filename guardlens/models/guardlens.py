@@ -53,9 +53,17 @@ class GuardLens(nn.Module):
             self.config.backbone_name,
             revision=self.config.backbone_revision,
             output_hidden_states=False,
-            torch_dtype=dtype_map[self.config.backbone_dtype],
+            dtype=dtype_map[self.config.backbone_dtype],
             attn_implementation=self.config.backbone_attn_implementation,
         )
+        expected_dtype = dtype_map[self.config.backbone_dtype]
+        mismatched = [(name, str(param.dtype)) for name, param in self.backbone.named_parameters()
+                      if param.is_floating_point() and param.dtype != expected_dtype]
+        if mismatched:
+            raise RuntimeError(
+                f"backbone requested {expected_dtype} but loaded parameters with different dtype: "
+                f"{mismatched[:3]}"
+            )
         max_positions = getattr(self.backbone.config, "max_position_embeddings", None)
         hidden_size = getattr(self.backbone.config, "hidden_size", None)
         if hidden_size != self.config.backbone_dim:
