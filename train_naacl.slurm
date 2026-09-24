@@ -6,6 +6,9 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=80G
 #SBATCH --time=18:00:00
+#SBATCH --requeue
+#SBATCH --signal=B:USR1@300
+#SBATCH --open-mode=append
 #SBATCH --output=logs/train_naacl_%j.out
 #SBATCH --error=logs/train_naacl_%j.err
 
@@ -35,6 +38,24 @@ LOCALIZATION_RAMP_EPOCHS="${LOCALIZATION_RAMP_EPOCHS:-5}"
 MODEL="${MODEL:-guardlens}"
 RUN_ID="${RUN_ID:-${SLURM_JOB_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
 TRAIN_RESUME="${TRAIN_RESUME:-0}"
+MAX_REQUEUES="${MAX_REQUEUES:-3}"
+RESTART_COUNT="${SLURM_RESTART_COUNT:-0}"
+
+[[ "$MAX_REQUEUES" =~ ^[0-9]+$ ]] || {
+  echo "ERROR: MAX_REQUEUES must be a non-negative integer"
+  exit 2
+}
+[[ "$RESTART_COUNT" =~ ^[0-9]+$ ]] || {
+  echo "ERROR: SLURM_RESTART_COUNT must be a non-negative integer"
+  exit 2
+}
+if (( RESTART_COUNT > MAX_REQUEUES )); then
+  echo "ERROR: restart count $RESTART_COUNT exceeds MAX_REQUEUES=$MAX_REQUEUES"
+  exit 2
+fi
+if (( RESTART_COUNT > 0 )); then
+  TRAIN_RESUME=1
+fi
 
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
 SHARED_PREFLIGHT_DIR="${SHARED_PREFLIGHT_DIR:-}"
@@ -134,6 +155,7 @@ echo " Pooling: $TURN_POOLING"
 echo " Architecture: $ARCHITECTURE_MODE"
 echo " Attribution fusion: $ATTRIBUTION_FUSION"
 echo " Resume:  $TRAIN_RESUME"
+echo " Slurm restart: $RESTART_COUNT/$MAX_REQUEUES"
 echo " Trainable backbone layers: $BACKBONE_TRAINABLE_LAYERS"
 echo " Learning rates: heads=$HEAD_LR backbone=$BACKBONE_LR"
 echo " Window:  turns=$MAX_TURNS hard_token_ceiling=$MAX_TOKENS"
@@ -208,6 +230,18 @@ elif [[ "$ATTRIBUTION_FUSION" != "0" ]]; then
   exit 2
 fi
 
+requeue_requested=0
+train_pid=""
+request_requeue() {
+  requeue_requested=1
+  echo "Received Slurm pre-timeout signal; stopping at the latest atomic epoch checkpoint"
+  if [[ -n "$train_pid" ]]; then
+    kill -TERM "$train_pid" 2>/dev/null || true
+  fi
+}
+trap request_requeue USR1
+
+set +e
 python -m guardlens.train \
   --train-path "$TRAIN_PATH" \
   --dev-path "$DEV_PATH" \
@@ -233,7 +267,33 @@ python -m guardlens.train \
   --seed 42 \
   --device cuda \
   "${resume_args[@]}" \
-  "${fusion_args[@]}"
+  "${fusion_args[@]}" &
+train_pid=$!
+wait "$train_pid"
+train_status=$?
+if (( requeue_requested == 1 )); then
+  wait "$train_pid" 2>/dev/null || true
+fi
+set -e
+trap - USR1
+
+if (( requeue_requested == 1 )); then
+  if (( RESTART_COUNT >= MAX_REQUEUES )); then
+    echo "ERROR: training needs another allocation but MAX_REQUEUES=$MAX_REQUEUES is exhausted"
+    exit 2
+  fi
+  [[ -f "$OUTPUT/last.pt" ]] || {
+    echo "ERROR: cannot requeue because no completed-epoch checkpoint exists: $OUTPUT/last.pt"
+    exit 2
+  }
+  echo "Requeuing Slurm job $SLURM_JOB_ID from $OUTPUT/last.pt"
+  scontrol requeue "$SLURM_JOB_ID"
+  exit 0
+fi
+if (( train_status != 0 )); then
+  echo "ERROR: training process exited with status $train_status"
+  exit "$train_status"
+fi
 
 echo "========================================================"
 echo "Training complete"

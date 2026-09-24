@@ -79,6 +79,27 @@ class LauncherEmbargoTests(unittest.TestCase):
         for candidate in expected:
             self.assertIn(candidate, comparison)
 
+    def test_long_gpu_jobs_requeue_without_hiding_hard_failures(self):
+        for name, checkpoint in (
+            ("train_naacl.slurm", '"$OUTPUT/last.pt"'),
+            ("eval_internal_dev.slurm", '"$EVAL_OUTPUT/manifest.json"'),
+        ):
+            with self.subTest(name=name):
+                text = (ROOT / name).read_text(encoding="utf-8")
+                self.assertIn("#SBATCH --requeue", text)
+                self.assertIn("#SBATCH --signal=B:USR1@300", text)
+                self.assertIn("SLURM_RESTART_COUNT", text)
+                self.assertIn("scontrol requeue", text)
+                self.assertIn(checkpoint, text)
+                self.assertIn("if (( requeue_requested == 1 )); then", text)
+
+        train = (ROOT / "train_naacl.slurm").read_text(encoding="utf-8")
+        self.assertIn("if (( train_status != 0 )); then", train)
+        diagnostic = (ROOT / "eval_internal_dev.slurm").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("if (( diagnostic_status != 0 )); then", diagnostic)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

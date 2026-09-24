@@ -13,6 +13,11 @@ FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/fina
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
 TRAIN_TIME="${TRAIN_TIME:-24:00:00}"
 DIAGNOSTIC_TIME="${DIAGNOSTIC_TIME:-24:00:00}"
+MAX_REQUEUES="${MAX_REQUEUES:-3}"
+[[ "$MAX_REQUEUES" =~ ^[0-9]+$ ]] || {
+  echo "ERROR: MAX_REQUEUES must be a non-negative integer"
+  exit 2
+}
 BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 MAX_TURNS="${MAX_TURNS:-64}"
@@ -81,7 +86,7 @@ cancel_submitted_jobs() {
 trap cancel_submitted_jobs ERR INT TERM
 
 common_export="CONDA_ENV=$CONDA_ENV,FREEZE_DIR=$FREEZE_DIR,REPORT_PATH=$REPORT_PATH,BACKBONE=$BACKBONE,BACKBONE_REVISION=$BACKBONE_REVISION,MAX_TURNS=$MAX_TURNS,MAX_TOKENS=$MAX_TOKENS,LENGTH_AUC_CEILING=$LENGTH_AUC_CEILING"
-train_export="$common_export,TRAIN_VARIANT=$TRAIN_VARIANT,TRAIN_PATH=$TRAIN_PATH,DEV_PATH=$DEV_PATH,MODEL=guardlens,BATCH_SIZE=$BATCH_SIZE,GRAD_ACCUMULATION=$GRAD_ACCUMULATION,HEAD_LR=$HEAD_LR,BACKBONE_LR=$BACKBONE_LR,EPOCHS=$EPOCHS,LOCALIZATION_RAMP_EPOCHS=$LOCALIZATION_RAMP_EPOCHS,TURN_POOLING=attention"
+train_export="$common_export,TRAIN_VARIANT=$TRAIN_VARIANT,TRAIN_PATH=$TRAIN_PATH,DEV_PATH=$DEV_PATH,MODEL=guardlens,BATCH_SIZE=$BATCH_SIZE,GRAD_ACCUMULATION=$GRAD_ACCUMULATION,HEAD_LR=$HEAD_LR,BACKBONE_LR=$BACKBONE_LR,EPOCHS=$EPOCHS,LOCALIZATION_RAMP_EPOCHS=$LOCALIZATION_RAMP_EPOCHS,TURN_POOLING=attention,MAX_REQUEUES=$MAX_REQUEUES"
 expected_records=$(wc -l < "$PREPARED_DEV")
 finalize_jobs=()
 
@@ -119,7 +124,7 @@ for index in "${!names[@]}"; do
     diagnostic_job=$(sbatch --parsable \
       --time="$DIAGNOSTIC_TIME" \
       "${dependency[@]}" \
-      --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$train_root/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]}" \
+      --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$train_root/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},MAX_REQUEUES=$MAX_REQUEUES" \
       eval_internal_dev.slurm)
     diagnostic_job="${diagnostic_job%%;*}"
     submitted_jobs+=("$diagnostic_job")
@@ -152,5 +157,6 @@ submitted_jobs+=("$compare_job")
 trap - ERR INT TERM
 echo "compare matrix: $compare_job"
 echo "matrix root: $MATRIX_ROOT"
+echo "automatic requeues per training/diagnostic job: $MAX_REQUEUES"
 echo "held-out test accessed: NO"
 echo "external evaluation submitted: NO"

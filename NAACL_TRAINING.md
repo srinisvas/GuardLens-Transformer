@@ -630,6 +630,14 @@ data hashes, runtime versions, and full config. It is written atomically after
 each completed epoch. Any mismatch fails closed. CUDA requests fail closed
 instead of falling back to CPU.
 
+The full training and internal diagnostic jobs receive a Slurm signal five
+minutes before their wall-time limit. They stop the active process, require an
+atomic epoch checkpoint or manifest-bound diagnostic cache, and requeue the
+same job ID. Downstream `afterok` dependencies remain attached across the
+requeue. The default permits three requeues, for up to four allocations per
+job. Ordinary nonzero exits such as CUDA OOM, invalid data, or code errors are
+not requeued.
+
 The matrix runs one shared CPU preflight before reserving any GPU. It runs the
 complete `test*.py` contract suite, verifies the exact
 `primary_plus_auxiliary` freeze used by all four candidates, audits the
@@ -973,8 +981,10 @@ Review `internal_dev_comparison.json` before selecting any candidate. Do not run
 held-out or external evaluation until the architecture, training population and
 internal causal results receive explicit signoff.
 
-If a training or diagnostic job times out, resubmit only incomplete work as
-Slurm jobs with:
+Wall-time exhaustion is handled automatically by Slurm requeue. If a job is
+cancelled manually, encounters a node failure that is not requeued by the
+cluster, or exhausts its configured requeue limit, resubmit only incomplete
+work with:
 
     bash resume_train_naacl_diagnostic.sh "$MATRIX_ROOT"
 
