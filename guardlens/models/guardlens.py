@@ -1,4 +1,4 @@
-"""GuardLens hierarchical causal-localization model."""
+"""GuardLens dual-architecture causal-localization model."""
 
 from typing import Dict, Optional
 
@@ -9,17 +9,20 @@ from guardlens.config import GuardLensConfig
 from guardlens.models.components import (
     ClassificationHead,
     ContextualSpanHead,
+    CrossTokenContextEncoder,
     ConversationPooler,
+    DirectSpanHead,
     EvidenceTurnHead,
     TurnContextEncoder,
 )
 
 
 class GuardLens(nn.Module):
-    """Joint trajectory detection, multi-turn evidence localization and spans.
+    """Configurable multi-turn detector and causal-localization model.
 
-    Detection and localization are sibling heads over shared contextual
-    representations. Attribution never gates or otherwise feeds the detector.
+    ``hierarchical_turn`` uses sibling heads over contextualized turn states.
+    ``cross_token`` restores direct token-to-token attention across turns and
+    optionally restores attribution-aware gated fusion into detection.
     """
 
     def __init__(self, config: GuardLensConfig):
@@ -29,16 +32,54 @@ class GuardLens(nn.Module):
         self.backbone_loaded = False
         self.backbone_fully_frozen = True
 
-        self.turn_context = TurnContextEncoder(config)
-        self.pooler = ConversationPooler(config)
+        self.architecture_mode = getattr(
+            config, "architecture_mode", "hierarchical_turn"
+        )
+        if self.architecture_mode not in {
+            "hierarchical_turn", "cross_token"
+        }:
+            raise ValueError(
+                f"unsupported architecture_mode={self.architecture_mode!r}"
+            )
+        self.use_attribution_fusion = bool(
+            getattr(config, "use_attribution_fusion", False)
+        )
+        if self.use_attribution_fusion and self.architecture_mode != "cross_token":
+            raise ValueError(
+                "attribution-aware fusion requires architecture_mode=cross_token"
+            )
+
+        self.turn_context = None
+        self.cross_token_context = None
+        self.pooler = None
+        if self.architecture_mode == "hierarchical_turn":
+            self.turn_context = TurnContextEncoder(config)
+            self.pooler = ConversationPooler(config)
+            self.attr_head = ContextualSpanHead(config)
+        else:
+            self.cross_token_context = CrossTokenContextEncoder(config)
+            self.attr_head = DirectSpanHead(config)
         self.cls_head = ClassificationHead(config)
         self.turn_head = EvidenceTurnHead(config)
-        self.attr_head = ContextualSpanHead(config)
+        self.fusion_gate = None
+        if self.use_attribution_fusion:
+            self.fusion_gate = nn.Sequential(
+                nn.Linear(config.cross_turn_dim, config.cross_turn_dim),
+                nn.Sigmoid(),
+            )
 
     def setup_backbone(self):
         if self.backbone_loaded:
             return
+        import transformers
+        from packaging.version import Version
         from transformers import AutoModel
+
+        if not Version("4.56.2") <= Version(transformers.__version__) < Version("5"):
+            raise RuntimeError(
+                f"transformers {transformers.__version__} cannot load the "
+                "pinned GuardLens dtype contract; install transformers>=4.56.2,<5"
+            )
 
         dtype_map = {
             "float32": torch.float32,
@@ -102,10 +143,15 @@ class GuardLens(nn.Module):
                     f"but backbone exposes {len(layers)}"
                 )
             for layer in layers[-trainable_layers:]:
+                # Keep trainable weights and Adam moments in FP32. CUDA
+                # autocast still executes supported A100 kernels in BF16 while
+                # the frozen prefix remains stored in BF16.
+                layer.float()
                 for param in layer.parameters():
                     param.requires_grad = True
             final_norm = getattr(self.backbone, "final_norm", None)
             if final_norm is not None:
+                final_norm.float()
                 for param in final_norm.parameters():
                     param.requires_grad = True
             if hasattr(self.backbone, "gradient_checkpointing_enable"):
@@ -189,6 +235,7 @@ class GuardLens(nn.Module):
         compute_localization: bool = True,
         attribution_mask: Optional[torch.Tensor] = None,
         compute_attribution: Optional[bool] = None,
+        localization_mask: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         # Temporary keyword compatibility while the evaluation suite is migrated.
         if compute_attribution is not None:
@@ -196,20 +243,54 @@ class GuardLens(nn.Module):
 
         token_embeds = self.encode_turns(input_ids, attention_mask)
         effective_attention = attention_mask
+        if localization_mask is None:
+            # Compatibility for historical callers. Canonical V4 training and
+            # runtime always supply the offset-derived text-token mask.
+            localization_mask = attention_mask
+        if localization_mask.shape != attention_mask.shape:
+            raise RuntimeError("localization_mask shape must match attention_mask")
+        localization_mask = (
+            localization_mask.to(attention_mask.device).ne(0).long()
+            * attention_mask.ne(0).long()
+        )
 
         if attribution_mask is not None:
             mask = attribution_mask.to(token_embeds.device).float()
             token_embeds = token_embeds * mask.unsqueeze(-1)
             effective_attention = attention_mask * (mask > 0).long()
 
-        turn_context = self.turn_context(
-            token_embeds,
-            effective_attention,
-            turn_mask,
-            role_ids,
+        valid_token_mask = (
+            effective_attention * turn_mask.unsqueeze(-1)
         )
-        pooled, pool_weights = self.pooler(turn_context, turn_mask)
-        cls_logits = self.cls_head(pooled)
+        valid_localization_mask = (
+            localization_mask
+            * effective_attention
+            * turn_mask.unsqueeze(-1)
+            * (role_ids == 0).long().unsqueeze(-1)
+        )
+        token_context = None
+        if self.architecture_mode == "hierarchical_turn":
+            turn_context = self.turn_context(
+                token_embeds,
+                effective_attention,
+                turn_mask,
+                role_ids,
+            )
+            pooled, pool_weights = self.pooler(turn_context, turn_mask)
+        else:
+            token_context = self.cross_token_context(
+                token_embeds,
+                effective_attention,
+                turn_mask,
+                role_ids,
+            )
+            turn_context = self._pool_per_turn(
+                token_context, valid_token_mask
+            )
+            pooled = self._pool_all_tokens(
+                token_context, valid_token_mask
+            )
+            pool_weights = None
 
         attr_logits = None
         attr_probs = None
@@ -223,13 +304,29 @@ class GuardLens(nn.Module):
             turn_logits = turn_logits.masked_fill(invalid_turn, -1e9)
             turn_probs = torch.sigmoid(turn_logits)
 
-            attr_logits = self.attr_head(token_embeds, turn_context)
+        # In the gated candidate, token attribution is part of the detector
+        # itself and therefore must be evaluated even when callers request
+        # detection-only output (including Phase 1 and threshold tuning).
+        if compute_localization or self.use_attribution_fusion:
+            if self.architecture_mode == "hierarchical_turn":
+                attr_logits = self.attr_head(token_embeds, turn_context)
+            else:
+                attr_logits = self.attr_head(token_context)
             invalid_span = (
-                (attention_mask == 0)
+                (valid_localization_mask == 0)
                 | (role_ids.unsqueeze(-1) != 0)
             )
             attr_logits = attr_logits.masked_fill(invalid_span, -1e9)
             attr_probs = torch.sigmoid(attr_logits)
+
+        attributed = None
+        if self.use_attribution_fusion and attr_probs is not None:
+            gate = self.fusion_gate(token_context)
+            attributed = self._pool_all_tokens(
+                token_context * attr_probs.unsqueeze(-1) * gate,
+                valid_localization_mask,
+            )
+        cls_logits = self.cls_head(pooled, attributed)
 
         return {
             "cls_logits": cls_logits,
@@ -240,4 +337,26 @@ class GuardLens(nn.Module):
             "pooled": pooled,
             "pool_weights": pool_weights,
             "turn_context": turn_context,
+            "token_context": token_context,
+            "attributed_pooled": attributed,
         }
+
+    @staticmethod
+    def _pool_all_tokens(
+        token_context: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        mask = valid_mask.unsqueeze(-1).float()
+        summed = (token_context * mask).sum(dim=(1, 2))
+        count = mask.sum(dim=(1, 2)).clamp(min=1.0)
+        return summed / count
+
+    @staticmethod
+    def _pool_per_turn(
+        token_context: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        mask = valid_mask.unsqueeze(-1).float()
+        summed = (token_context * mask).sum(dim=2)
+        count = mask.sum(dim=2).clamp(min=1.0)
+        return summed / count

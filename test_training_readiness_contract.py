@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from guardlens.training.trainer import (
+    _average_precision,
     _canonical_detection_score,
     _detection_metrics,
     _prepare_output_dir,
@@ -61,6 +62,11 @@ class TrainingReadinessContractTests(unittest.TestCase):
             _canonical_detection_score(metrics), by_source["B"]["auprc"]
         )
 
+    def test_checkpoint_selection_average_precision_is_tie_aware(self):
+        labels = [1, 0, 1, 0, 1]
+        scores = [.4, .4, .9, .1, .4]
+        self.assertAlmostEqual(_average_precision(scores, labels), 5 / 6)
+
     def test_canonical_variant_requires_both_auxiliary_sources(self):
         train = [
             primary("ta", "legacy_restored_primary", 0),
@@ -90,6 +96,9 @@ class TrainingReadinessContractTests(unittest.TestCase):
             self.assertTrue(os.path.isdir(output))
             with self.assertRaisesRegex(RuntimeError, "already exists"):
                 _prepare_output_dir(output)
+            _prepare_output_dir(output, resume=True)
+            with self.assertRaisesRegex(RuntimeError, "does not exist"):
+                _prepare_output_dir(os.path.join(root, "missing"), resume=True)
 
     def test_canonical_launchers_use_auxiliary_training(self):
         root = Path(__file__).resolve().parent

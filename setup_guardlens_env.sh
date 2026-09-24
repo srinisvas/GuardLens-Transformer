@@ -125,6 +125,7 @@ import importlib
 required = [
     "torch",
     "transformers",
+    "packaging",
     "accelerate",
     "tokenizers",
     "numpy",
@@ -139,6 +140,13 @@ for name in required:
     print(f"  {name:14s} {version}")
 
 import torch
+import transformers
+from packaging.version import Version
+
+if not Version("4.56.2") <= Version(transformers.__version__) < Version("5"):
+    raise RuntimeError(
+        "GuardLens requires transformers>=4.56.2,<5 for the dtype loader contract"
+    )
 print(f"  torch CUDA build:     {torch.version.cuda}")
 print(f"  torch CUDA available: {torch.cuda.is_available()}")
 if torch.version.cuda is None:

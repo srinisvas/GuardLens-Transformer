@@ -74,7 +74,7 @@ def base_record(label=1):
 
 
 class NaaclDatasetContractTests(unittest.TestCase):
-    def test_pre_response_is_default_and_retrospective_is_explicit(self):
+    def test_retrospective_is_default_and_pre_response_is_explicit(self):
         record = base_record(0)
         record["turns"].append({
             "turn_id": 3,
@@ -82,9 +82,9 @@ class NaaclDatasetContractTests(unittest.TestCase):
             "text": "final answer unavailable at decision time",
             "span_annotations": [],
         })
-        pre = GuardLensDataset([record], GuardLensConfig())[0]
-        retrospective = GuardLensDataset(
-            [record], GuardLensConfig(input_view="retrospective")
+        retrospective = GuardLensDataset([record], GuardLensConfig())[0]
+        pre = GuardLensDataset(
+            [record], GuardLensConfig(input_view="pre_response")
         )[0]
         self.assertEqual(pre["turn_texts"], ["alpha", "beta", "gamma"])
         self.assertEqual(len(retrospective["turn_texts"]), 4)
@@ -510,6 +510,14 @@ class NaaclDatasetContractTests(unittest.TestCase):
         ds = GuardLensDataset([short, long], config)
         batch = GuardLensCollator(_FakeTokenizer(), config)([ds[0], ds[1]])
         self.assertEqual(batch["input_ids"].shape[-1], 8)
+        self.assertEqual(
+            batch["localization_mask"][0, 0].tolist(),
+            [0, 1, 1, 1, 0, 0, 0, 0],
+        )
+        self.assertEqual(
+            batch["localization_mask"][1, 0].tolist(),
+            [0, 1, 1, 1, 1, 1, 1, 0],
+        )
 
 
 if __name__ == "__main__":

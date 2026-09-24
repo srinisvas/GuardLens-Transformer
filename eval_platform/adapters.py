@@ -1,6 +1,8 @@
 """Source-specific conversion. Never manufacture evidence labels or benign controls."""
 from __future__ import annotations
 
+from collections import Counter
+
 from .contract import digest, validate_record
 
 ROLE = {"user": "user", "human": "user", "assistant": "assistant", "model": "assistant", "gpt": "assistant", "ai": "assistant", "system": "system"}
@@ -84,6 +86,31 @@ def require_mhj_cohort(records):
     if not records or any(r.get("dataset") != "mhj" or r.get("label_semantics") != "attack_intent" for r in records):
         raise ValueError("eval_mhj requires prepared MHJ attack_intent records, not an internal or mixed cohort")
     return len(records)
+
+
+def require_internal_dev_strata(records):
+    """Verify named benign utility cohorts on the real prepared dev freeze."""
+    if not records or any(
+        r.get("dataset") != "internal"
+        or r.get("split") not in {"dev", "valid", "validation"}
+        or r.get("label_semantics") != "unsafe_trajectory"
+        for r in records
+    ):
+        raise ValueError("expected one prepared internal unsafe-trajectory dev cohort")
+    families = Counter(
+        r.get("strata", {}).get("family")
+        for r in records if r.get("label") == 0
+    )
+    missing = sorted(
+        name for name in ("frontier_authored_benign", "interactive_benign_twin")
+        if families[name] == 0
+    )
+    if missing:
+        raise ValueError(
+            "prepared internal dev is missing named benign utility strata: "
+            + ", ".join(missing)
+        )
+    return dict(sorted(families.items()))
 
 
 def validate_collection(records):

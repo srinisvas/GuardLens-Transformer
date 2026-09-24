@@ -26,12 +26,11 @@ OUTPUT="$MATRIX_ROOT/internal_dev_comparison.json"
 
 python -m eval_platform compare-runs \
   --runs \
-    "mean_frozen_aux=$MATRIX_ROOT/diagnostics/mean_frozen_aux" \
-    "attention_frozen_aux=$MATRIX_ROOT/diagnostics/attention_frozen_aux" \
-    "attention_top4_aux=$MATRIX_ROOT/diagnostics/attention_top4_aux" \
-    "attention_top4_primary=$MATRIX_ROOT/diagnostics/attention_top4_primary" \
+    "hierarchical_sibling_retro_frozen=$MATRIX_ROOT/diagnostics/hierarchical_sibling_retro_frozen" \
+    "cross_token_sibling_retro_frozen=$MATRIX_ROOT/diagnostics/cross_token_sibling_retro_frozen" \
+    "cross_token_gated_retro_frozen=$MATRIX_ROOT/diagnostics/cross_token_gated_retro_frozen" \
+    "cross_token_gated_retro_top4=$MATRIX_ROOT/diagnostics/cross_token_gated_retro_top4" \
   --output "$OUTPUT"
 
 echo "Internal dev matrix comparison: $OUTPUT"
 echo "Held-out test accessed: NO"
-

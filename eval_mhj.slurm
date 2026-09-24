@@ -10,9 +10,13 @@
 #SBATCH --error=logs/eval_public_%A_%a.err
 
 set -euo pipefail
+if [[ "${EVAL_EXTERNAL_SIGNOFF:-}" != "APPROVED_AFTER_INTERNAL_SIGNOFF" ]]; then
+  echo "ERROR: MHJ/external evaluation is embargoed until internal V4 signoff." >&2
+  exit 2
+fi
 : "${EVAL_DATA:?canonical dataset required}"
 : "${EVAL_DATA_SHA256:?frozen dataset hash required}"
-: "${EVAL_CHECKPOINT:?explicit joint checkpoint required}"
+: "${EVAL_CHECKPOINT:?explicit signed-off checkpoint required}"
 : "${EVAL_TRAIN_EXCLUDE:?prepared training exclusion required}"
 : "${EVAL_DEV_EXCLUDE:?prepared dev exclusion required}"
 : "${EVAL_SHIELD_CONFIG:?pinned ShieldGemma config required}"

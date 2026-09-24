@@ -78,17 +78,19 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_ind
                     shard_count < 1 or not 0 <= shard_index < shard_count):
         raise ValueError("invalid shard index/count")
     predictions, interventions = [], []
+    completed_count = 0
     for index, r in enumerate(records):
         if sharded and index % shard_count != shard_index:
             continue
         artifact = store.root / "shards" / f"record-{index:06d}.json" if sharded else None
         if artifact is not None and artifact.exists():
-            completed = load_shard_record(artifact, store.manifest_id, index, r["id"])
-            predictions.append(completed["prediction"])
-            interventions.extend(completed["interventions"])
+            load_shard_record(
+                artifact, store.manifest_id, index, r["id"]
+            )
+            completed_count += 1
             print(f"[{index + 1}/{len(records)}] {r['id']} cached record", flush=True)
             continue
-        start = len(interventions)
+        record_interventions = []
         turns = visible(r, protocol["view"])
         prediction = infer(store, "detector", detector, turns)
         row = {"id": r["id"], "cluster_id": r["cluster_id"], "label": r["label"], "dataset": r["dataset"],
@@ -108,7 +110,15 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_ind
                 if "error" in value:
                     raise CoverageError(value["detail"])
                 return value["probability"]
-            before = {name: infer(store, name, backend, turns) for name, backend in guards.items()}
+            before = {
+                name: infer(
+                    store,
+                    "detector" if backend is detector else name,
+                    backend,
+                    turns,
+                )
+                for name, backend in guards.items()
+            }
             row["guard_originals"] = before
             try:
                 plans = list(intervention_plan(turns, prediction, protocol, lexicon, detector_score, llm_pred)) if guards else []
@@ -123,24 +133,30 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_ind
                     "detector_probability": prediction["probability"], **plan}
                 if "error" in plan:
                     for name in guards:
-                        interventions.append({**common, "guard": name, "before": None, "after": None})
+                        record_interventions.append({**common, "guard": name, "before": None, "after": None})
                     continue
                 for name, backend in guards.items():
-                    changed = infer(store, name, backend, plan["edited"])
-                    kept = infer(store, name, backend, plan["kept"])
-                    interventions.append({**common, "guard": name, "before": before[name].get("probability"),
+                    namespace = "detector" if backend is detector else name
+                    changed = infer(store, namespace, backend, plan["edited"])
+                    kept = infer(store, namespace, backend, plan["kept"])
+                    record_interventions.append({**common, "guard": name, "before": before[name].get("probability"),
                         "after": changed.get("probability"), "kept": kept.get("probability"),
                         "original_result": before[name], "edited_result": changed, "kept_result": kept})
-        predictions.append(row)
         if sharded:
-            result = {"prediction": row, "interventions": interventions[start:]}
+            result = {
+                "prediction": row,
+                "interventions": record_interventions,
+            }
             write_json(artifact, {"manifest_id": store.manifest_id, "index": index, "id": r["id"],
                                   "result": result, "result_sha256": digest(result)})
+            completed_count += 1
         else:
+            predictions.append(row)
+            interventions.extend(record_interventions)
             write_json(store.root / "progress.json", {"completed": index + 1, "total": len(records), "last_id": r["id"]})
         print(f"[{index + 1}/{len(records)}] {r['id']}", flush=True)
     if sharded:
-        print(f"shard {shard_index}/{shard_count} complete: {len(predictions)} records", flush=True)
+        print(f"shard {shard_index}/{shard_count} complete: {completed_count} records", flush=True)
         return None
     write_json(store.root / "predictions.json", predictions)
     write_json(store.root / "interventions.json", interventions)
@@ -355,21 +371,23 @@ def summarize(records, predictions, interventions, protocol, detection_threshold
     # The aggregate can hide a failure confined to one data source or causal
     # structure. Recompute intervention outcomes on each frozen subgroup using
     # the same attempted-record accounting and paired comparisons.
+    def stratum_value(record, stratum):
+        if stratum == "dataset":
+            value = record.get("dataset")
+        else:
+            value = record.get("strata", {}).get(stratum)
+        return str(value) if value not in (None, "") else "unknown"
+
     for stratum in (
         "dataset", "corpus_source", "family", "pivot_kind", "supervision_tier"
     ):
-        values = sorted({
-            r["dataset"] if stratum == "dataset"
-            else r.get("strata", {}).get(stratum, "unknown")
-            for r in records
-        })
+        values = sorted({stratum_value(r, stratum) for r in records})
         output["effects_by_stratum"][stratum] = {}
         output["paired_differences_by_stratum"][stratum] = {}
         for value in values:
             attempted = [
                 r for r in records
-                if (r["dataset"] if stratum == "dataset"
-                    else r.get("strata", {}).get(stratum, "unknown")) == value
+                if stratum_value(r, stratum) == value
             ]
             ids = {r["id"] for r in attempted}
             effect_rows = {}

@@ -133,47 +133,61 @@ changes subsequent unsafe behavior under the frozen replay/evaluation protocol.
 The model does not claim globally necessary and sufficient "true causal
 tokens".
 
-## 3. V3 architecture diagnostic
+## 3. V4 dual-architecture diagnostic
 
-The completed V2 internal evaluation is not the final model. V3 first aligns
-training, dev calibration and evaluation to the `pre_response` view, then runs a
-controlled four-model diagnostic matrix before any held-out or external access.
+The completed V2 internal evaluation and the V3 hierarchical redesign are not
+accepted as the final model. V4 restores the original global cross-token
+hypothesis and keeps the hierarchical model as a controlled alternative. No
+held-out or external evaluation is permitted before this internal comparison is
+reviewed.
 
-The shared model skeleton is:
+Both candidates use the same pinned ModernBERT-large token encoder, frozen A+B
+train/dev data, loss schedule, optimizer, and supervision. They differ only in
+the declared architectural axes.
 
-    realized turn text
-        |
-        v
-    ModernBERT-large per turn (native 8,192-token context)
-        |
-        +--> token representations -----------------------------+
-        |                                                       |
-        v                                                       |
-    masked mean or learned attention pool within turn           |
-        |                                                       |
-        + role embedding + sinusoidal turn position             |
-        |                                                       |
-        v                                                       |
-    2-layer turn-context Transformer                            |
-        |                                                       |
-        +--> learned conversation pooling --> detection head     |
-        |                                                       |
-        +--> independent evidence-turn sigmoid head             |
-        |                                                       |
-        +-------------------------------------------------------+
-                                |
-                                v
-                 context-conditioned span head
+`hierarchical_turn` is the V3 sibling-head design:
 
-The turn-context Transformer operates over T turn vectors rather than flattening
-T x S tokens into one global self-attention sequence. Cross-turn attention is
-therefore O(T^2), while ModernBERT models the complete within-turn token
-context natively.
+    ModernBERT tokens
+        -> learned within-turn pooling
+        -> one vector per turn
+        -> 2-layer Transformer over turns
+        -> learned conversation pool and independent detection head
+        -> independent evidence-turn and context-conditioned span heads
 
-The contextual span head combines each raw token representation with the
-conversation-aware representation of the containing turn. Attention pooling
-and selective fine-tuning of the final four ModernBERT layers are diagnostic
-axes. They are not paper claims until the internal dev comparison is reviewed.
+Its custom cross-turn cost is O(T^2). Cross-turn information reaches a token's
+span score only through the contextualized state of its containing turn.
+
+`cross_token` restores the original design principle:
+
+    ModernBERT tokens for all realized turns
+        -> project 1024 to 256
+        -> add role and turn-position encodings
+        -> compact every valid token in the conversation
+        -> 2-layer Transformer over the complete token sequence
+        -> direct span head on globally contextualized token states
+
+A token in a later turn can therefore attend directly to tokens in every earlier
+turn. The custom attention cost is O(N^2), where N is the total realized token
+count across turns. Padding is removed before this attention and restored only
+afterward; no token or turn is truncated.
+
+The cross-token detector mean-pools all valid globally contextualized token
+states. It has two controlled variants:
+
+- `sibling`: detection does not consume attribution outputs.
+- `gated`: the direct span probabilities and a learned token gate form an
+  attribution-weighted representation that is concatenated with the normal
+  token pool before classification. Classification gradients therefore reach
+  the attribution head, matching the original coupling under test.
+
+Retrospective candidates observe the complete realized conversation because the
+primary scientific target is post-hoc evidence attribution. Assistant content is
+available as context, but turn and span localization remain hard-masked to user
+content. The current four-GPU selection matrix is retrospective end to end. A
+pre-response view remains implemented for a later, separately labelled safety
+diagnostic, but it does not consume a candidate slot before the retrospective
+attribution architecture and training recipe are selected. Retrospective
+detection must never be described as pre-response prediction.
 
 ### Backbone choice
 
@@ -201,26 +215,28 @@ through ModernBERT in length-local microbatches. Frozen candidates default to
 eight turns per microbatch. Selectively fine-tuned candidates use one turn per
 microbatch plus gradient checkpointing. Only each
 microbatch's local maximum length enters the backbone. The dense tensor is
-reconstructed afterward for the hierarchical heads.
+reconstructed afterward for the selected contextualizer.
 
 All V3 candidates train on the exact `pre_response` view. The final observed
 assistant response is never available to training, calibration or diagnostics.
 Earlier assistant history remains visible.
 
 Assistant/padded turns are masked from evidence-turn output, and assistant or
-padding tokens are also masked from causal span output. Span supervision is
+padding tokens are also masked from causal span output. Offset-free tokenizer
+special tokens are excluded from span probabilities and from the gated
+attribution pool, while remaining available to the normal contextual encoder.
+Span supervision is
 therefore user-turn-only end to end: the Dataset emits no assistant-turn span
 targets, the training coverage gate counts only user-turn span targets, and the
 representation audit fails closed if frozen data contains any target-bearing
 assistant span annotation.
 
-### Excluded from the canonical model
+### Excluded mechanisms
 
 The following mechanisms are intentionally absent:
 
 - single softmax pivot head
 - pivot-kind classifier
-- gated attribution-to-detection fusion
 - Phase-3 self-counterfactual consistency loss
 - CF record oversampling
 
@@ -228,13 +244,12 @@ Reasons:
 
 - the frozen corpus now contains direct intervention-backed turn/span targets
 - multi-evidence trajectories cannot be represented by one pivot class
-- gated fusion couples the explanation to the prediction it later explains
 - the old self-CF objective could create a model-induced faithfulness loop
 - CF examples are no longer rare enough to justify x3 sampling
 - x3 CF sampling would distort the balanced detection prior
 
-Fusion and SelfCF may return later only as explicit ablations against the
-canonical model.
+Attribution-gated fusion is restored only as an explicit candidate. Its coupling
+is the experimental question, not an assumed virtue. SelfCF remains excluded.
 
 ## 4. Causal supervision contract
 
@@ -479,6 +494,8 @@ The audit is train/dev only and reports:
 - p95 tokens per turn
 - p99 tokens per turn
 - maximum tokens per turn
+- p95, p99 and maximum total tokens per realized conversation
+- maximum dense cross-token attention cells (`total_tokens ** 2`)
 - turns beyond the configured ceiling
 - intervention-backed positive spans beyond the ceiling
 - positive / negative / ignored span target counts
@@ -503,7 +520,7 @@ from silently turning a joint run into a one-class or detection-only run.
 
 The length-only probe is computed on the exact configured model view. Training
 fails closed if dev ROC AUC exceeds the frozen 0.650 ceiling. The ceiling must
-not be raised to make a run pass. Repair the data if the pre-response view fails.
+not be raised to make a run pass. Repair the data if either frozen view fails.
 Train/dev direction reversal and all source-stratified detection results remain
 visible in the reported diagnostics.
 
@@ -528,8 +545,10 @@ The trainer saves:
             dev span AUPRC
         )
 
-`best.pt` resolves to `best_joint.pt` when it exists. Localization-only and
-detection-only checkpoints remain diagnostics.
+`best.pt` resolves to `best_localization.pt` when it exists because attribution
+is the primary task. The joint and detection checkpoints remain diagnostics and
+make any detection tradeoff visible; they are not silently substituted during
+the architecture comparison.
 
 The paper's primary detection claim must be based on Dataset B, matching the
 selection population. Dataset A detection remains a separately reported
@@ -537,14 +556,14 @@ paired-generation diagnostic. Combined and macro A/B results are supplemental
 and must not be substituted for the B-primary claim.
 
 The canonical run does not early-stop; all 20 default epochs execute and the
-joint dev score selects the checkpoint afterward. If early stopping is
-explicitly enabled as a non-canonical override, it follows the same joint
+localization dev score selects the checkpoint afterward. If early stopping is
+explicitly enabled as a non-canonical override, it follows the same localization
 selection score.
 
 Every checkpoint records:
 
-- architecture_version=causal_localization_v3
-- training_contract_version=restored_a_pre_response_v3
+- architecture_version=causal_localization_v4
+- training_contract_version=restored_a_multiview_v4
 - exact training-code Git SHA
 - exact ModernBERT model revision through the stored config
 - exact train SHA-256
@@ -556,8 +575,8 @@ Every checkpoint records:
 - canonical_detection_source_family=B
 - epoch and phase
 
-This prevents a localization-only peak from becoming the canonical checkpoint
-while materially sacrificing detection.
+This prevents detection from dominating checkpoint choice while the source-B
+detection diagnostics still expose any material tradeoff.
 
 ## 12. Held-out test embargo
 
@@ -586,8 +605,10 @@ Canonical:
     smoke_naacl_window.slurm
     preflight_naacl_matrix.slurm
     eval_internal_dev.slurm
+    eval_internal_dev_finalize.slurm
     compare_internal_dev_matrix.slurm
     submit_train_naacl_diagnostic.sh
+    resume_train_naacl_diagnostic.sh
 
 The canonical training launcher permits only `MODEL=guardlens` until baseline
 migration is complete.
@@ -601,15 +622,26 @@ determinism; it removes batch-order nondeterminism.
 
 The single-run launchers default to `primary_plus_auxiliary`. The trainer independently
 validates that canonical training contains both A and B auxiliary sources and
-that dev remains primary-only with both A and B source families. Every full run
-uses a new run-specific output directory and refuses to reuse an existing path.
-CUDA requests fail closed instead of falling back to CPU.
+that dev remains primary-only with both A and B source families. Every new run
+uses a fresh run-specific output directory. An interrupted run may reuse only
+that exact directory with `TRAIN_RESUME=1`; `last.pt` binds the model, optimizer,
+scheduler, DataLoader generator, Python/NumPy/PyTorch/CUDA RNG states, code SHA,
+data hashes, runtime versions, and full config. It is written atomically after
+each completed epoch. Any mismatch fails closed. CUDA requests fail closed
+instead of falling back to CPU.
 
 The matrix runs one shared CPU preflight before reserving any GPU. It runs the
-complete `test*.py` contract suite, verifies both frozen training variants,
-audits the pre-response representation, enforces the length-only AUC ceiling and prepares only internal dev. Its content-addressed
-marker lets the GPU jobs verify and reuse those exact results instead of idling
-four GPUs during duplicate audits.
+complete `test*.py` contract suite, verifies the exact
+`primary_plus_auxiliary` freeze used by all four candidates, audits the
+retrospective representation, enforces its length-only AUC ceiling, and prepares
+only internal dev. Its content-addressed marker lets the GPU jobs verify and
+reuse those exact results instead of idling four GPUs during duplicate audits.
+
+The same preflight runs target construction over every real train/dev record,
+so `evidence_turn_ids` must reconcile with local turn/span interventions. After
+preparing dev it also requires non-empty `frontier_authored_benign` and
+`interactive_benign_twin` strata, preventing the prior utility-family naming
+mismatch from silently producing an empty cohort.
 
 The smoke launcher is pinned to the train/dev hashes and exact
 ModernBERT revision before it touches the GPU. It executes a localization batch,
@@ -619,19 +651,32 @@ executed batches report peak CUDA allocation.
 
 The four internal candidates are:
 
-| Candidate | Pooling | Trainable backbone layers | Training population |
-| --- | --- | ---: | --- |
-| `mean_frozen_aux` | mean | 0 | primary + auxiliary |
-| `attention_frozen_aux` | attention | 0 | primary + auxiliary |
-| `attention_top4_aux` | attention | 4 | primary + auxiliary |
-| `attention_top4_primary` | attention | 4 | primary only |
+| Candidate | Architecture | Fusion | View | Backbone | Training population |
+| --- | --- | --- | --- | --- | --- |
+| `hierarchical_sibling_retro_frozen` | hierarchical turn | no | retrospective | frozen | primary + auxiliary |
+| `cross_token_sibling_retro_frozen` | global cross-token | no | retrospective | frozen | primary + auxiliary |
+| `cross_token_gated_retro_frozen` | global cross-token | yes | retrospective | frozen | primary + auxiliary |
+| `cross_token_gated_retro_top4` | global cross-token | yes | retrospective | top 4 layers trainable | primary + auxiliary |
 
-Selective fine-tuning uses a separate backbone learning rate of 2e-5 while the
-hierarchical heads use 2e-4. All four candidates run concurrently on one A100
-each. After training, four self-guard internal-dev causal diagnostics run
-concurrently and report effects plus GuardLens-minus-baseline paired differences
-by dataset, corpus source, family, pivot kind and supervision tier. The comparison job starts
-only after all four reports complete.
+All use attention turn pooling where applicable and the same head learning rate.
+The first versus second candidate isolates conversation architecture, the second
+versus third isolates attribution-gated fusion, and the third versus fourth
+isolates selective backbone training. The top-four candidate uses its separately
+declared backbone learning rate and one-turn backbone microbatches with gradient
+checkpointing. All four use the same full-conversation view.
+
+All four candidates run concurrently on one A100 each. After training, each
+candidate independently launches its self-guard internal-dev diagnostic as soon
+as its own training job completes, followed by a CPU finalizer. The finalizer
+streams record shards and does not reload a model. The comparison job starts only
+after all four finalized reports exist and retains detection, localization,
+paired intervention effects, stratum-specific effects, context diagnostics, and
+utility outputs.
+
+This four-GPU pass is a seed-42 architecture screen, not a variance estimate.
+After internal signoff, the selected design and any close competitor require
+predeclared multi-seed confirmation on train/dev before one final checkpoint is
+frozen for held-out evaluation.
 
 The following historical launchers are intentionally disabled on this branch:
 
@@ -645,7 +690,7 @@ See `NAACL_EVALUATION.md` for review coverage, commands and experiment gates.
 
 This is intentional. The pre-redesign evaluators use stale target and
 representation semantics and must not silently run against
-the current `causal_localization_v3` contract.
+the current `causal_localization_v4` contract.
 
 ## 14. Baseline status
 
@@ -661,8 +706,8 @@ Planned matched-coverage baselines:
   no turn-context Transformer
 - ModernBERT independent-turn detector: classify turns independently and
   aggregate conversation risk
-- canonical GuardLens: full-turn ModernBERT + turn-context Transformer +
-  evidence-turn/span supervision
+- global cross-token GuardLens and hierarchical-turn GuardLens under the same
+  full-turn ModernBERT coverage and evidence-turn/span supervision
 
 Primary ablations:
 
@@ -672,10 +717,11 @@ Primary ablations:
 - frozen versus selectively fine-tuned backbone if dev evidence justifies it
 - auxiliary detection-only on/off
 - optional +SelfCF
-- optional +Fusion
+- sibling versus attribution-gated detection
 
-There is no requirement to reproduce the old DeBERTa architecture in the NAACL
-paper.
+The original cross-token hypothesis is now a required candidate. The comparison
+uses ModernBERT for both architectures so the result is not confounded by the old
+DeBERTa backbone or by silent token truncation.
 
 ## 15. Evaluation migration contract
 
@@ -760,12 +806,11 @@ Ablations:
 - no span supervision
 - no turn supervision
 - optional +SelfCF
-- optional +Fusion
+- sibling versus attribution-gated detection
 - auxiliary detection-only on/off
 
-`NoCF` and `NoFusion` are not reference models for NAACL. If those ideas are
-reintroduced, they appear only as `+SelfCF` and `+Fusion` ablations against
-the native-long-context canonical GuardLens.
+SelfCF is not a reference model for NAACL. Fusion is a declared architecture
+candidate and must be reported under its own checkpoint identity.
 
 ## 16. Code-review findings fixed on this branch
 
@@ -792,7 +837,8 @@ assumptions:
 16. token overlap could let an incidental weight upgrade a weak positive token
 17. padded turns were unnecessarily sent through the backbone with zero masks
 18. a configured token ceiling could exceed the backbone position capacity
-19. localization-only checkpoint selection could sacrifice detection
+19. checkpoint selection lacked an explicit task priority; V4 selects on mean
+    turn/span dev AUPRC and reports separate joint and source-B detection peaks
 20. legacy training/evaluation launchers remained runnable despite stale
     semantics
 21. the generic evaluation entry point imported a trainer evaluation function
@@ -879,7 +925,8 @@ assumptions:
     supervision; it is removed, and CF-tier records without intervention-backed
     positive evidence fail closed.
 50. run outputs could reuse an existing directory and mix checkpoints; launchers
-    now create run-specific paths and the trainer refuses an existing output.
+    now create run-specific paths. The sole reuse path is explicit exact-state
+    resume from a validated atomic `last.pt` checkpoint.
 51. a requested CUDA run silently fell back to CPU when CUDA was unavailable;
     device resolution now fails closed.
 52. source and auxiliary schema fields were carried inconsistently; all
@@ -917,13 +964,23 @@ Submit the complete internal matrix from the repository root:
     bash submit_train_naacl_diagnostic.sh
 
 The checked-in submitter creates four concurrent smoke jobs, four concurrent
-training jobs, four concurrent internal-dev causal diagnostic jobs and one CPU
-comparison job with `afterok` dependencies. It does not open held-out test data
-and cannot load ShieldGemma or a public dataset.
+training jobs, four internal-dev GPU diagnostic jobs, four CPU finalizers and
+one CPU comparison job with `afterok` dependencies. Each diagnostic starts when
+its matching training run completes. It does not open held-out test data and
+cannot load ShieldGemma or a public dataset.
 
 Review `internal_dev_comparison.json` before selecting any candidate. Do not run
 held-out or external evaluation until the architecture, training population and
 internal causal results receive explicit signoff.
+
+If a training or diagnostic job times out, resubmit only incomplete work as
+Slurm jobs with:
+
+    bash resume_train_naacl_diagnostic.sh "$MATRIX_ROOT"
+
+The resume submitter reuses validated epoch checkpoints and per-record diagnostic
+shards, sends already complete diagnostic shards straight to a CPU finalizer,
+and rebuilds the final comparison only after all four reports exist.
 
 ## 18. Current readiness status
 
@@ -938,11 +995,11 @@ Runtime test execution:
 
 Architecture redesign:
 
-    V3 diagnostic matrix implemented, empirical selection pending
+    V4 dual-architecture diagnostic matrix implemented, empirical selection pending
 
 Training redesign:
 
-    pre-response alignment and four-candidate launcher implemented
+    four retrospective candidates isolate architecture, fusion, and top-four backbone tuning
 
 Frozen-data SHA verification code:
 
@@ -960,12 +1017,12 @@ CPU unit/contract suite:
 GPU architecture smoke:
 
     historical V2 smoke passed
-    all four V3 candidate smokes pending
+    all four V4 candidate smokes pending
 
 Full training:
 
     historical V2 run completed but is not accepted as the final architecture
-    four V3 candidate runs pending
+    four V4 candidate runs pending
 
 Evaluation migration:
 

@@ -44,7 +44,7 @@ def main() -> None:
     parser.add_argument(
         "--input-view",
         choices=["pre_response", "retrospective"],
-        default="pre_response",
+        default="retrospective",
     )
     args = parser.parse_args()
 

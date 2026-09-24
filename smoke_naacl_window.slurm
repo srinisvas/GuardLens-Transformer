@@ -24,8 +24,10 @@ BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 BACKBONE_TURN_MICROBATCH="${BACKBONE_TURN_MICROBATCH:-8}"
 BACKBONE_TRAINABLE_LAYERS="${BACKBONE_TRAINABLE_LAYERS:-0}"
+ARCHITECTURE_MODE="${ARCHITECTURE_MODE:-hierarchical_turn}"
+ATTRIBUTION_FUSION="${ATTRIBUTION_FUSION:-0}"
 TURN_POOLING="${TURN_POOLING:-attention}"
-INPUT_VIEW="${INPUT_VIEW:-pre_response}"
+INPUT_VIEW="${INPUT_VIEW:-retrospective}"
 SMOKE_RUN_ID="${SMOKE_RUN_ID:-${SLURM_JOB_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
 SMOKE_OUTPUT_DIR="${SMOKE_OUTPUT_DIR:-$HOME/work/results/guardlens_naacl_redesign/smoke/$SMOKE_RUN_ID}"
 
@@ -88,12 +90,16 @@ done
 
 if [[ -n "$SHARED_PREFLIGHT_DIR" ]]; then
   python -m guardlens.data.preflight_marker verify \
-    --marker "$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/marker.json" \
+    --marker "$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/$INPUT_VIEW/marker.json" \
     --variant "$VERIFY_VARIANT" \
     --train "$TRAIN_PATH" \
     --dev "$DEV_PATH" \
     --code-sha "$CODE_SHA" \
-    --input-view "$INPUT_VIEW"
+    --input-view "$INPUT_VIEW" \
+    --backbone "$BACKBONE" \
+    --backbone-revision "$BACKBONE_REVISION" \
+    --max-turns "$MAX_TURNS" \
+    --max-tokens "$MAX_TOKENS"
 else
   python -m guardlens.data.verify_freeze \
     --report "$REPORT_PATH" \
@@ -121,10 +127,20 @@ echo " Backbone: $BACKBONE"
 echo " Revision: $BACKBONE_REVISION"
 echo " Input: $INPUT_VIEW"
 echo " Pooling: $TURN_POOLING"
+echo " Architecture: $ARCHITECTURE_MODE"
+echo " Attribution fusion: $ATTRIBUTION_FUSION"
 echo " Trainable backbone layers: $BACKBONE_TRAINABLE_LAYERS"
 echo " max_turns=$MAX_TURNS max_tokens=$MAX_TOKENS batch=$BATCH_SIZE"
 echo "========================================================"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader || true
+
+fusion_args=()
+if [[ "$ATTRIBUTION_FUSION" == "1" ]]; then
+  fusion_args+=(--attribution-fusion)
+elif [[ "$ATTRIBUTION_FUSION" != "0" ]]; then
+  echo "ERROR: ATTRIBUTION_FUSION must be 0 or 1"
+  exit 2
+fi
 
 python -m guardlens.evaluation.smoke_training_window \
   --train "$TRAIN_PATH" \
@@ -133,9 +149,11 @@ python -m guardlens.evaluation.smoke_training_window \
   --backbone-revision "$BACKBONE_REVISION" \
   --backbone-turn-microbatch "$BACKBONE_TURN_MICROBATCH" \
   --backbone-trainable-layers "$BACKBONE_TRAINABLE_LAYERS" \
+  --architecture-mode "$ARCHITECTURE_MODE" \
   --turn-pooling "$TURN_POOLING" \
   --input-view "$INPUT_VIEW" \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --batch-size "$BATCH_SIZE" \
-  --seed 42
+  --seed 42 \
+  "${fusion_args[@]}"

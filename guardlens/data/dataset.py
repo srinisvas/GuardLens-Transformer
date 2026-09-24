@@ -24,8 +24,10 @@ from guardlens.data.training_contract import (
 def model_visible_turns(record: Dict, view: str) -> List[Dict]:
     """Return the exact conversation view used by model training.
 
-    The primary task is pre-response prediction. Removing only the suffix after
-    the final user turn preserves original turn IDs and all earlier history.
+    Retrospective attribution keeps the complete realized conversation.
+    ``pre_response`` is a separately labelled detection diagnostic; removing
+    only the suffix after the final user turn preserves original turn IDs and
+    all earlier history.
     """
     if view not in {"pre_response", "retrospective"}:
         raise RuntimeError(f"unsupported model input view {view!r}")
@@ -214,11 +216,13 @@ class GuardLensCollator:
         char_weights = item["char_tier_weights"][t_idx]
         token_labels = [-1] * len(ids)
         token_weights = [0.0] * len(ids)
+        localization_mask = [0] * len(ids)
 
         for tok_idx, pair in enumerate(offsets):
             start_i, end_i = int(pair[0]), int(pair[1])
             if end_i <= start_i:
                 continue
+            localization_mask[tok_idx] = 1
             span_labels = char_labels[start_i:end_i]
             span_weights = char_weights[start_i:end_i]
             if not span_labels:
@@ -246,6 +250,7 @@ class GuardLensCollator:
             "ids": ids,
             "token_labels": token_labels,
             "token_weights": token_weights,
+            "localization_mask": localization_mask,
         }
 
     def __call__(self, batch: List[Dict]) -> Dict[str, torch.Tensor]:
@@ -268,6 +273,7 @@ class GuardLensCollator:
 
         all_input_ids = []
         all_attention_masks = []
+        all_localization_masks = []
         all_turn_masks = []
         all_role_ids = []
         all_token_labels = []
@@ -281,6 +287,7 @@ class GuardLensCollator:
         for item, encoded_turns in zip(batch, encoded_batch):
             turn_input_ids = []
             turn_attention_masks = []
+            turn_localization_masks = []
             turn_mask = []
             turn_role_ids = []
             turn_token_labels = []
@@ -300,6 +307,10 @@ class GuardLensCollator:
                     turn_attention_masks.append(torch.tensor(
                         [1] * n + [0] * pad, dtype=torch.long
                     ))
+                    turn_localization_masks.append(torch.tensor(
+                        encoded["localization_mask"] + [0] * pad,
+                        dtype=torch.long,
+                    ))
                     turn_token_labels.append(torch.tensor(
                         encoded["token_labels"] + [-1] * pad, dtype=torch.long
                     ))
@@ -317,6 +328,9 @@ class GuardLensCollator:
                     turn_attention_masks.append(torch.zeros(
                         max_seq_len, dtype=torch.long
                     ))
+                    turn_localization_masks.append(torch.zeros(
+                        max_seq_len, dtype=torch.long
+                    ))
                     turn_token_labels.append(torch.full(
                         (max_seq_len,), -1, dtype=torch.long
                     ))
@@ -330,6 +344,7 @@ class GuardLensCollator:
 
             all_input_ids.append(torch.stack(turn_input_ids))
             all_attention_masks.append(torch.stack(turn_attention_masks))
+            all_localization_masks.append(torch.stack(turn_localization_masks))
             all_turn_masks.append(torch.tensor(turn_mask, dtype=torch.long))
             all_role_ids.append(torch.tensor(turn_role_ids, dtype=torch.long))
             all_token_labels.append(torch.stack(turn_token_labels))
@@ -361,6 +376,7 @@ class GuardLensCollator:
         return {
             "input_ids": torch.stack(all_input_ids),
             "attention_mask": torch.stack(all_attention_masks),
+            "localization_mask": torch.stack(all_localization_masks),
             "turn_mask": torch.stack(all_turn_masks),
             "role_ids": torch.stack(all_role_ids),
             "token_labels": torch.stack(all_token_labels),

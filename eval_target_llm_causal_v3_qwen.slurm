@@ -23,6 +23,8 @@
 # ============================================================
 
 set -euo pipefail
+echo "ERROR: legacy evaluation launcher disabled pending V4 internal signoff and migration." >&2
+exit 2
 
 PROJECT_DIR="/gpfs/home/s001/ssubram7/projects/GuardLens-Transformer"
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"

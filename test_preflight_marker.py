@@ -31,6 +31,10 @@ class PreflightMarkerTests(unittest.TestCase):
             code_sha="a" * 40,
             variant="primary",
             input_view="pre_response",
+            backbone="answerdotai/ModernBERT-large",
+            backbone_revision="b" * 40,
+            max_turns=64,
+            max_tokens=8192,
             freeze_report=str(paths["freeze"]),
             representation_report=str(paths["representation"]),
             length_report=str(paths["length"]),
@@ -50,6 +54,10 @@ class PreflightMarkerTests(unittest.TestCase):
                 code_sha=args.code_sha,
                 variant=args.variant,
                 input_view=args.input_view,
+                backbone=args.backbone,
+                backbone_revision=args.backbone_revision,
+                max_turns=args.max_turns,
+                max_tokens=args.max_tokens,
             ))
             paths["train"].write_text("changed\n", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "train SHA256 mismatch"):
@@ -60,6 +68,10 @@ class PreflightMarkerTests(unittest.TestCase):
                     code_sha=args.code_sha,
                     variant=args.variant,
                     input_view=args.input_view,
+                    backbone=args.backbone,
+                    backbone_revision=args.backbone_revision,
+                    max_turns=args.max_turns,
+                    max_tokens=args.max_tokens,
                 ))
 
     def test_length_auc_ceiling_fails_closed(self):
@@ -71,4 +83,3 @@ class PreflightMarkerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-

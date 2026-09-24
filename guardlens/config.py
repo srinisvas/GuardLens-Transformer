@@ -17,12 +17,22 @@ class GuardLensConfig:
     # frozen. This is an explicit diagnostic axis, not an automatic fallback.
     backbone_trainable_layers: int = 0
 
-    # Hierarchical turn-context encoder
+    # Conversation architecture. ``cross_token`` preserves the original
+    # GuardLens hypothesis: every realized token can attend directly to every
+    # other realized token across turns. ``hierarchical_turn`` is the newer
+    # token -> turn -> conversation design and remains a controlled candidate.
+    architecture_mode: str = "hierarchical_turn"
+
+    # Cross-turn contextualizer
     cross_turn_layers: int = 2
     cross_turn_heads: int = 8
     cross_turn_dim: int = 256
     cross_turn_dropout: float = 0.1
     turn_pooling: str = "attention"
+
+    # Attribution-aware gated fusion is valid only for cross_token mode. The
+    # independent sibling-head candidate leaves this false.
+    use_attribution_fusion: bool = False
 
     # Heads
     cls_hidden_dim: int = 256
@@ -72,4 +82,4 @@ class GuardLensConfig:
     train_path: str = ""
     dev_path: str = ""
     train_variant: str = "primary_plus_auxiliary"
-    input_view: str = "pre_response"
+    input_view: str = "retrospective"

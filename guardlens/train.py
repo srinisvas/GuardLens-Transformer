@@ -35,11 +35,21 @@ def main():
     parser.add_argument("--backbone-turn-microbatch", type=int, default=8)
     parser.add_argument("--backbone-trainable-layers", type=int, default=0)
     parser.add_argument(
+        "--architecture-mode",
+        choices=["hierarchical_turn", "cross_token"],
+        default="hierarchical_turn",
+    )
+    parser.add_argument(
+        "--attribution-fusion",
+        action="store_true",
+        help="feed attribution-weighted cross-token states to detection",
+    )
+    parser.add_argument(
         "--turn-pooling", choices=["mean", "attention"], default="attention"
     )
     parser.add_argument(
         "--input-view", choices=["pre_response", "retrospective"],
-        default="pre_response",
+        default="retrospective",
     )
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--grad-accumulation", type=int, default=8)
@@ -54,6 +64,11 @@ def main():
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--no-threshold-tune", action="store_true")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="resume exactly from OUTPUT/last.pt after validating code, data, runtime, and config",
+    )
 
     args = parser.parse_args()
     for name, value in [
@@ -71,6 +86,8 @@ def main():
         parser.error("--phase1-epochs must be >=0 and smaller than --epochs")
     if args.backbone_trainable_layers < 0:
         parser.error("--backbone-trainable-layers must be nonnegative")
+    if args.attribution_fusion and args.architecture_mode != "cross_token":
+        parser.error("--attribution-fusion requires --architecture-mode cross_token")
     if args.lr <= 0 or args.backbone_lr <= 0:
         parser.error("--lr and --backbone-lr must be positive")
 
@@ -79,6 +96,8 @@ def main():
         backbone_revision=args.backbone_revision,
         backbone_turn_microbatch=args.backbone_turn_microbatch,
         backbone_trainable_layers=args.backbone_trainable_layers,
+        architecture_mode=args.architecture_mode,
+        use_attribution_fusion=args.attribution_fusion,
         turn_pooling=args.turn_pooling,
         batch_size=args.batch_size,
         gradient_accumulation=args.grad_accumulation,
@@ -98,7 +117,7 @@ def main():
         input_view=args.input_view,
         tune_threshold=not args.no_threshold_tune,
     )
-    train(config, args.output, model_name=args.model)
+    train(config, args.output, model_name=args.model, resume=args.resume)
 
 
 if __name__ == "__main__":

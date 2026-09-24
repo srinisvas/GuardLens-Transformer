@@ -2,6 +2,7 @@
 import argparse
 import csv
 import json
+import os
 import platform
 import re
 import subprocess
@@ -11,6 +12,17 @@ from pathlib import Path
 from .adapters import adapt, check_overlap, validate_collection
 from .contract import RunStore, canonical, digest, file_hash, read_jsonl, validate_protocol, visible, write_json
 from .runtime import GuardLensBackend, HFChat, ShieldGemmaBackend, LLMAttributor
+
+
+EXTERNAL_SIGNOFF = "APPROVED_AFTER_INTERNAL_SIGNOFF"
+
+
+def require_external_signoff(stage):
+    if os.environ.get("EVAL_EXTERNAL_SIGNOFF") != EXTERNAL_SIGNOFF:
+        raise RuntimeError(
+            f"{stage} is embargoed until internal V4 signoff; set "
+            f"EVAL_EXTERNAL_SIGNOFF={EXTERNAL_SIGNOFF} only after approval"
+        )
 
 
 def load(path):
@@ -35,6 +47,12 @@ def source_identity():
 
 
 def prepare(args):
+    internal_development_split = (
+        args.source == "internal"
+        and args.split in {"train", "dev", "valid", "validation"}
+    )
+    if not internal_development_split:
+        require_external_signoff("held-out/external dataset preparation")
     path = Path(args.input)
     if path.suffix == ".csv":
         if not args.messages_column:
@@ -65,6 +83,7 @@ def load_dataset(path, expected):
 
 def evaluate(args):
     from .runner import run
+    require_external_signoff("held-out/external evaluation")
     protocol = validate_protocol(load(args.protocol))
     records = load_dataset(args.data, args.data_sha256)
     if any(r["split"] in {"train", "dev", "valid", "validation"} for r in records):
@@ -119,14 +138,27 @@ def finalize(args):
     if manifest["code"] != source_identity() and not (args.recover_legacy_shards and
             manifest["code"].get("git_sha") == legacy_commit):
         raise ValueError("code changed since shard execution")
+    if (
+        manifest.get("stage") != "internal_dev_causal_diagnostic"
+        and not args.recover_legacy_shards
+    ):
+        require_external_signoff("held-out/external finalization")
     records = load_dataset(args.data, manifest["dataset_sha256"])
     store = RunStore(root, {k: v for k, v in manifest.items() if k not in {"manifest_id", "platform_version"}})
     report = finalize_shards(records, store, args.shard_count, args.recover_legacy_shards)
+    if manifest.get("stage") == "internal_dev_causal_diagnostic":
+        report.update({
+            "development_only": True,
+            "held_out_test_accessed": False,
+            "selection_use": "architecture_diagnostic_not_paper_result",
+        })
+        write_json(root / "report.json", report)
     print(canonical({"report": str(root / "report.json"), "coverage": report["coverage"], "detection": report["detection"]}))
 
 
 def replay(args):
     from .replay import run_replay, BEHAVIOR_RUBRIC
+    require_external_signoff("held-out/external replay")
     source = Path(args.run)
     manifest = load(source / "manifest.json")
     records = load_dataset(args.data, manifest["dataset_sha256"])
@@ -146,6 +178,7 @@ def replay(args):
 def shield_config(args):
     from huggingface_hub import HfApi, hf_hub_download
     from .runtime import pinned
+    require_external_signoff("ShieldGemma configuration")
     revision = args.revision or HfApi().model_info(args.model).sha
     pinned(revision)
     card_path = hf_hub_download(args.model, "README.md", revision=revision)
@@ -171,6 +204,12 @@ def calibrate(args):
     if any(r["split"] not in {"dev", "valid", "validation"} for r in records):
         raise ValueError("threshold calibration accepts dev records only")
     sidecar = load(args.data + ".manifest.json")
+    if (
+        sidecar.get("source") != "internal"
+        or sidecar.get("split") not in {"dev", "valid", "validation"}
+        or sidecar.get("output_sha256") != args.data_sha256
+    ):
+        raise ValueError("calibration requires an unchanged prepared internal dev cohort")
     detector = GuardLensBackend(args.checkpoint, args.device)
     expected = detector.identity["training_data_sha256"]["dev"]
     if sidecar.get("input_sha256") != expected:
@@ -246,7 +285,17 @@ def diagnose_dev(args):
         lexicon,
         store,
         llm=None,
+        shard_index=args.shard_index,
+        shard_count=args.shard_count,
     )
+    if report is None:
+        print(canonical({
+            "output": str(store.root),
+            "shard_index": args.shard_index,
+            "shard_count": args.shard_count,
+            "development_only": True,
+        }))
+        return
     report.update({
         "development_only": True,
         "held_out_test_accessed": False,
@@ -263,11 +312,13 @@ def diagnose_dev(args):
 
 def task_export(a):
     from .studies import human_tasks
+    require_external_signoff("held-out/external human-task export")
     write_json(a.output, human_tasks(validate_collection(list(read_jsonl(a.data)))))
 
 
 def human(a):
     from .studies import human_report
+    require_external_signoff("held-out/external human report")
     manifest = load(Path(a.run) / "manifest.json")
     records = load_dataset(a.data, manifest["dataset_sha256"])
     write_json(a.output, {"parent_manifest_id": manifest["manifest_id"], "annotations_sha256": file_hash(a.annotations),
@@ -276,6 +327,7 @@ def human(a):
 
 def robustness(a):
     from .studies import robustness_report
+    require_external_signoff("held-out/external robustness report")
     left, right = Path(a.original_run), Path(a.variant_run)
     ma, mb = load(left / "manifest.json"), load(right / "manifest.json")
     if ma["detector"] != mb["detector"] or ma["protocol"] != mb["protocol"]:
@@ -358,6 +410,8 @@ def parser():
     q.add_argument("--protocol", default="configs/eval_protocol.json")
     q.add_argument("--lexicon", default="configs/eval_surface_lexicon.json")
     q.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
+    q.add_argument("--shard-index", type=int)
+    q.add_argument("--shard-count", type=int)
     q.set_defaults(func=diagnose_dev)
     for name, func, arguments in [("human-tasks", task_export, ["data", "output"]),
             ("human-report", human, ["data", "annotations", "run", "output"]),

@@ -10,6 +10,8 @@
 #SBATCH --error=logs/eval_boundary_%j.err
 
 set -uo pipefail
+echo "ERROR: legacy evaluation launcher disabled pending V4 internal signoff and migration." >&2
+exit 2
 
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -34,4 +36,3 @@ python -m guardlens.evaluation.eval_boundary_stress \
     --device cuda
 
 echo "Done: $(date)"
-

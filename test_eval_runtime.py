@@ -72,6 +72,49 @@ class RuntimeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 GuardLensBackend(path, "cpu")
 
+    def test_v4_cross_token_gated_checkpoint_loads_with_bound_identity(self):
+        config = GuardLensConfig(
+            backbone_dim=12,
+            cross_turn_dim=8,
+            cross_turn_heads=2,
+            cross_turn_layers=1,
+            attr_hidden_dim=6,
+            cls_hidden_dim=8,
+            max_turns=4,
+            max_tokens_per_turn=40,
+            architecture_mode="cross_token",
+            use_attribution_fusion=True,
+            input_view="retrospective",
+        )
+        model = GuardLens(config)
+        setup(model)
+        checkpoint = {
+            "architecture_version": "causal_localization_v4",
+            "training_contract_version": "restored_a_multiview_v4",
+            "model_name": "guardlens",
+            "phase": 2,
+            "config": config,
+            "threshold": 0.5,
+            "model_state_dict": model.state_dict(),
+            "data_sha256": {"train": "a", "dev": "b"},
+            "code_sha": "c",
+            "epoch": 9,
+            "score_name": "mean_dev_turn_span_auprc",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "best.pt"
+            torch.save(checkpoint, path)
+            with patch(
+                "transformers.AutoTokenizer.from_pretrained",
+                return_value=TinyTokenizer(),
+            ), patch.object(GuardLens, "setup_backbone", setup):
+                backend = GuardLensBackend(path, "cpu")
+            prediction = backend.predict(record()["turns"])
+        self.assertEqual(backend.identity["architecture_mode"], "cross_token")
+        self.assertTrue(backend.identity["use_attribution_fusion"])
+        self.assertEqual(set(prediction["turn_scores"]), {"0", "2"})
+        self.assertGreater(len(prediction["token_scores"]), 0)
+
     def test_shield_scores_four_policies_and_preserves_early_context(self):
         class Tokenizer:
             def get_vocab(self):

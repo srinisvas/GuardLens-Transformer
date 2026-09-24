@@ -11,6 +11,8 @@
 # No GPU needed — pure numpy computation.
 
 set -uo pipefail
+echo "ERROR: legacy evaluation launcher disabled pending V4 internal signoff and migration." >&2
+exit 2
 
 RESULTS_DIR="$HOME/work/results/guardlens_v11/results"
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"

@@ -23,7 +23,7 @@ def load_jsonl(path: str) -> List[Dict]:
     return rows
 
 
-def audit_split(name, path, tokenizer, max_turns, max_tokens, input_view="pre_response"):
+def audit_split(name, path, tokenizer, max_turns, max_tokens, input_view="retrospective"):
     records = load_jsonl(path)
     dataset = GuardLensDataset(
         records,
@@ -44,6 +44,7 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens, input_view="pre_re
     turn_targets = {"positive": 0, "negative": 0, "ignored": 0}
     max_tokens_seen = 0
     max_turns_seen = 0
+    total_tokens_per_record = []
 
     for idx, record in enumerate(records):
         cid = str(record.get("conversation_id", "")) or "<missing>"
@@ -63,6 +64,7 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens, input_view="pre_re
             structural_errors.append(
                 f"{cid}: realized turn_id values must equal indices 0..{len(turns)-1}"
             )
+        record_total_tokens = 0
         for t_idx, turn in enumerate(turns):
             role = str(turn.get("role", "")).lower()
             if role not in {"user", "assistant"}:
@@ -99,6 +101,7 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens, input_view="pre_re
             )
             length = len(enc["input_ids"])
             token_lengths.append(length)
+            record_total_tokens += length
             max_tokens_seen = max(max_tokens_seen, length)
 
             supervised_spans = []
@@ -140,8 +143,10 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens, input_view="pre_re
                 f"{cid}: turn {t_idx} tokenizes to {length} tokens, "
                 f"exceeding max_tokens={max_tokens}"
             )
+        total_tokens_per_record.append(record_total_tokens)
 
     arr = np.asarray(token_lengths, dtype=np.float64)
+    total_arr = np.asarray(total_tokens_per_record, dtype=np.float64)
     return {
         "split": name,
         "input_view": input_view,
@@ -151,6 +156,10 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens, input_view="pre_re
         "max_tokens_per_turn_seen": max_tokens_seen,
         "p95_tokens_per_turn": float(np.percentile(arr, 95)) if len(arr) else 0.0,
         "p99_tokens_per_turn": float(np.percentile(arr, 99)) if len(arr) else 0.0,
+        "max_total_tokens_per_conversation": int(total_arr.max()) if len(total_arr) else 0,
+        "p95_total_tokens_per_conversation": float(np.percentile(total_arr, 95)) if len(total_arr) else 0.0,
+        "p99_total_tokens_per_conversation": float(np.percentile(total_arr, 99)) if len(total_arr) else 0.0,
+        "max_cross_token_attention_cells": int(total_arr.max() ** 2) if len(total_arr) else 0,
         "turns_over_token_cap": over_token_cap,
         "span_target_annotations": {
             "positive": positive_spans,
@@ -176,7 +185,7 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument(
         "--input-view", choices=["pre_response", "retrospective"],
-        default="pre_response",
+        default="retrospective",
     )
     parser.add_argument("--output", default="")
     args = parser.parse_args()
@@ -255,6 +264,7 @@ def main():
             f"token_p95={summary['p95_tokens_per_turn']:.1f} "
             f"token_p99={summary['p99_tokens_per_turn']:.1f} "
             f"token_max={summary['max_tokens_per_turn_seen']} "
+            f"conversation_token_max={summary['max_total_tokens_per_conversation']} "
             f"over_cap={summary['turns_over_token_cap']} "
             f"turn_targets={summary['turn_targets']} "
             f"span_targets={summary['span_target_annotations']} "

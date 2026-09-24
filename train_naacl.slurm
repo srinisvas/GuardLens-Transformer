@@ -23,8 +23,10 @@ BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 BACKBONE_TURN_MICROBATCH="${BACKBONE_TURN_MICROBATCH:-8}"
 BACKBONE_TRAINABLE_LAYERS="${BACKBONE_TRAINABLE_LAYERS:-0}"
+ARCHITECTURE_MODE="${ARCHITECTURE_MODE:-hierarchical_turn}"
+ATTRIBUTION_FUSION="${ATTRIBUTION_FUSION:-0}"
 TURN_POOLING="${TURN_POOLING:-attention}"
-INPUT_VIEW="${INPUT_VIEW:-pre_response}"
+INPUT_VIEW="${INPUT_VIEW:-retrospective}"
 GRAD_ACCUMULATION="${GRAD_ACCUMULATION:-8}"
 HEAD_LR="${HEAD_LR:-2e-4}"
 BACKBONE_LR="${BACKBONE_LR:-2e-5}"
@@ -32,6 +34,7 @@ EPOCHS="${EPOCHS:-20}"
 LOCALIZATION_RAMP_EPOCHS="${LOCALIZATION_RAMP_EPOCHS:-5}"
 MODEL="${MODEL:-guardlens}"
 RUN_ID="${RUN_ID:-${SLURM_JOB_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
+TRAIN_RESUME="${TRAIN_RESUME:-0}"
 
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
 SHARED_PREFLIGHT_DIR="${SHARED_PREFLIGHT_DIR:-}"
@@ -69,9 +72,19 @@ export HF_HOME="${GUARDLENS_HF_HOME:-$HOME/work/hf_models}"
 export HF_HUB_CACHE="$HF_HOME/hub"
 unset TRANSFORMERS_CACHE HUGGINGFACE_HUB_CACHE
 export HF_HUB_OFFLINE=1
-if [[ -e "$RUN_ROOT" || -e "$PRECHECK_DIR" || -e "$OUTPUT" ]]; then
-  echo "ERROR: run output already exists; choose a fresh RUN_ID"
-  echo "RUN_ROOT=$RUN_ROOT"
+resume_args=()
+if [[ "$TRAIN_RESUME" == "1" ]]; then
+  [[ -d "$RUN_ROOT" ]] || { echo "ERROR: resume run root missing: $RUN_ROOT"; exit 2; }
+  [[ -f "$OUTPUT/last.pt" ]] || { echo "ERROR: resume checkpoint missing: $OUTPUT/last.pt"; exit 2; }
+  resume_args+=(--resume)
+elif [[ "$TRAIN_RESUME" == "0" ]]; then
+  if [[ -e "$RUN_ROOT" || -e "$PRECHECK_DIR" || -e "$OUTPUT" ]]; then
+    echo "ERROR: run output already exists; choose a fresh RUN_ID"
+    echo "RUN_ROOT=$RUN_ROOT"
+    exit 2
+  fi
+else
+  echo "ERROR: TRAIN_RESUME must be 0 or 1"
   exit 2
 fi
 mkdir -p "$TMPDIR" "$HF_HUB_CACHE" "$PRECHECK_DIR" logs
@@ -118,6 +131,9 @@ echo " Backbone:$BACKBONE"
 echo " Revision:$BACKBONE_REVISION"
 echo " Input:   $INPUT_VIEW"
 echo " Pooling: $TURN_POOLING"
+echo " Architecture: $ARCHITECTURE_MODE"
+echo " Attribution fusion: $ATTRIBUTION_FUSION"
+echo " Resume:  $TRAIN_RESUME"
 echo " Trainable backbone layers: $BACKBONE_TRAINABLE_LAYERS"
 echo " Learning rates: heads=$HEAD_LR backbone=$BACKBONE_LR"
 echo " Window:  turns=$MAX_TURNS hard_token_ceiling=$MAX_TOKENS"
@@ -127,13 +143,17 @@ echo "========================================================"
 
 if [[ -n "$SHARED_PREFLIGHT_DIR" ]]; then
   python -m guardlens.data.preflight_marker verify \
-    --marker "$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/marker.json" \
+    --marker "$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/$INPUT_VIEW/marker.json" \
     --variant "$VERIFY_VARIANT" \
     --train "$TRAIN_PATH" \
     --dev "$DEV_PATH" \
     --code-sha "$CODE_SHA" \
-    --input-view "$INPUT_VIEW"
-  LENGTH_REPORT="$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/length_probe_dev.json"
+    --input-view "$INPUT_VIEW" \
+    --backbone "$BACKBONE" \
+    --backbone-revision "$BACKBONE_REVISION" \
+    --max-turns "$MAX_TURNS" \
+    --max-tokens "$MAX_TOKENS"
+  LENGTH_REPORT="$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/$INPUT_VIEW/length_probe_dev.json"
 else
   python -m guardlens.data.verify_freeze \
     --report "$REPORT_PATH" \
@@ -180,6 +200,14 @@ if auc > ceiling:
 print(f"Length shortcut gate passed: AUC <= {ceiling:.3f}")
 PY
 
+fusion_args=()
+if [[ "$ATTRIBUTION_FUSION" == "1" ]]; then
+  fusion_args+=(--attribution-fusion)
+elif [[ "$ATTRIBUTION_FUSION" != "0" ]]; then
+  echo "ERROR: ATTRIBUTION_FUSION must be 0 or 1"
+  exit 2
+fi
+
 python -m guardlens.train \
   --train-path "$TRAIN_PATH" \
   --dev-path "$DEV_PATH" \
@@ -190,6 +218,7 @@ python -m guardlens.train \
   --backbone-revision "$BACKBONE_REVISION" \
   --backbone-turn-microbatch "$BACKBONE_TURN_MICROBATCH" \
   --backbone-trainable-layers "$BACKBONE_TRAINABLE_LAYERS" \
+  --architecture-mode "$ARCHITECTURE_MODE" \
   --turn-pooling "$TURN_POOLING" \
   --input-view "$INPUT_VIEW" \
   --batch-size "$BATCH_SIZE" \
@@ -202,7 +231,9 @@ python -m guardlens.train \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --seed 42 \
-  --device cuda
+  --device cuda \
+  "${resume_args[@]}" \
+  "${fusion_args[@]}"
 
 echo "========================================================"
 echo "Training complete"

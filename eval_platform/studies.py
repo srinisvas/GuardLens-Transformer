@@ -134,14 +134,34 @@ def robustness_report(original_predictions, variant_predictions, pairs):
 
 
 def compare_runs(named_runs):
-    """Same evaluation cohort/protocol, separate checkpoint identities and dev thresholds."""
+    """Collate internal candidates without pretending different views are paired.
+
+    Architecture and fusion settings may differ by design. Everything that
+    defines the cohort, evaluator, intervention policy, and code must match.
+    The sole permitted protocol difference is ``view``; runs with different
+    views are placed in different direct-comparability groups.
+    """
+    if not named_runs:
+        raise ValueError("at least one run is required")
     first = next(iter(named_runs.values()))
     baseline = first["manifest"]
+    baseline_protocol = {
+        key: value for key, value in baseline["protocol"].items()
+        if key != "view"
+    }
+    groups = defaultdict(list)
     for name, run in named_runs.items():
         manifest = run["manifest"]
-        for key in ("dataset_sha256", "protocol", "lexicon_sha256", "exclusion_hashes"):
+        if manifest.get("stage") != "internal_dev_causal_diagnostic":
+            raise ValueError(f"{name}: architecture comparison accepts internal dev diagnostics only")
+        for key in ("dataset_sha256", "lexicon_sha256", "exclusion_hashes", "code"):
             if manifest[key] != baseline[key]:
                 raise ValueError(f"{name}: incompatible {key}, cross-run metrics cannot be pooled")
+        protocol = manifest["protocol"]
+        if {key: value for key, value in protocol.items() if key != "view"} != baseline_protocol:
+            raise ValueError(
+                f"{name}: incompatible protocol beyond input view, cross-run metrics cannot be compared"
+            )
         # Independent judges/policies cannot change inside an architecture table.
         external_guards = {k: v for k, v in manifest.get("guards", {}).items() if k != "self"}
         baseline_guards = {k: v for k, v in baseline.get("guards", {}).items() if k != "self"}
@@ -149,9 +169,65 @@ def compare_runs(named_runs):
             raise ValueError(f"{name}: incompatible independent guard policy")
         if run["report"]["manifest_id"] != manifest["manifest_id"]:
             raise ValueError("report/manifest mismatch")
-    return {name: {"checkpoint": run["manifest"]["detector"], "training_hashes": run["manifest"]["detector"]["training_data_sha256"],
-                   "detection": run["report"]["detection"], "localization": run["report"]["localization"],
-                   "effects": run["report"]["effects"], "utility": run["report"]["utility"]} for name, run in named_runs.items()}
+        groups[protocol["view"]].append(name)
+
+    fields = (
+        "coverage", "detection", "localization", "strata",
+        "baseline_turn_agreement", "guard_detection", "context_diagnostics",
+        "effects", "paired_differences", "effects_by_stratum",
+        "paired_differences_by_stratum", "utility",
+        "smallest_tested_budget_with_all_repeats_flipped",
+    )
+    runs = {}
+    axes = {}
+    for name, run in named_runs.items():
+        manifest, report = run["manifest"], run["report"]
+        detector = manifest["detector"]
+        config = detector.get("config", {})
+        axes[name] = {
+            "input_view": manifest["protocol"]["view"],
+            "architecture_mode": detector.get("architecture_mode"),
+            "use_attribution_fusion": detector.get("use_attribution_fusion"),
+            "backbone_trainable_layers": config.get("backbone_trainable_layers"),
+            "turn_pooling": config.get("turn_pooling"),
+            "train_variant": config.get("train_variant"),
+        }
+        runs[name] = {
+            "view": manifest["protocol"]["view"],
+            "direct_comparability_group": manifest["protocol"]["view"],
+            "checkpoint": detector,
+            "controlled_axes": axes[name],
+            "architecture_mode": axes[name]["architecture_mode"],
+            "use_attribution_fusion": axes[name]["use_attribution_fusion"],
+            "backbone_trainable_layers": axes[name]["backbone_trainable_layers"],
+            "training_hashes": detector["training_data_sha256"],
+            **{field: report.get(field) for field in fields},
+        }
+    pairwise_axis_differences = {}
+    for left, right in itertools.combinations(sorted(axes), 2):
+        pairwise_axis_differences[f"{left}/{right}"] = [
+            key for key in axes[left]
+            if axes[left][key] != axes[right][key]
+        ]
+    return {
+        "comparison_contract": {
+            "stage": "internal_dev_architecture_diagnostic",
+            "held_out_test_accessed": False,
+            "same_dataset": True,
+            "same_evaluator_code": True,
+            "only_permitted_protocol_difference": "view",
+            "direct_comparability_groups": {
+                view: sorted(names) for view, names in sorted(groups.items())
+            },
+            "cross_view_warning": (
+                "Metrics from different views are descriptive, not an isolated "
+                "architecture comparison: retrospective runs observe the complete "
+                "conversation while pre_response runs do not observe the final response."
+            ),
+            "pairwise_axis_differences": pairwise_axis_differences,
+        },
+        "runs": runs,
+    }
 
 
 def method_utility(rows, lambdas=(0, .5, 1, 2, 5)):

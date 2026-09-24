@@ -10,7 +10,9 @@ from guardlens.config import GuardLensConfig
 from guardlens.models.components import (
     ClassificationHead,
     ContextualSpanHead,
+    CrossTokenContextEncoder,
     ConversationPooler,
+    DirectSpanHead,
     EvidenceTurnHead,
     TurnContextEncoder,
 )
@@ -75,11 +77,84 @@ class CausalLocalizationArchitectureTests(unittest.TestCase):
         self.assertEqual(tuple(span_logits.shape), (2, 3, 5))
         self.assertEqual(tuple(cls_logits.shape), (2,))
 
-    def test_main_model_has_no_fusion_pivot_or_self_cf_path(self):
+    def test_main_model_keeps_hierarchical_sibling_path(self):
         model = GuardLens(tiny_config())
-        self.assertFalse(hasattr(model, "fusion_gate"))
+        self.assertEqual(model.architecture_mode, "hierarchical_turn")
+        self.assertIsNotNone(model.turn_context)
+        self.assertIsNone(model.cross_token_context)
+        self.assertIsNone(model.fusion_gate)
         self.assertFalse(hasattr(model, "pivot_head"))
         self.assertFalse(hasattr(model, "forward_cf"))
+
+    def test_cross_token_encoder_compacts_all_realized_tokens_together(self):
+        torch.manual_seed(7)
+        config = tiny_config()
+        config.architecture_mode = "cross_token"
+        encoder = CrossTokenContextEncoder(config).eval()
+        token = torch.randn(1, 3, 4, config.backbone_dim)
+        attention = torch.tensor([[[1, 1, 0, 0], [1, 1, 1, 0], [1, 0, 0, 0]]])
+        turn_mask = torch.ones(1, 3, dtype=torch.long)
+        roles = torch.tensor([[0, 1, 0]])
+        seen = []
+        hook = encoder.transformer.register_forward_pre_hook(
+            lambda _module, args: seen.append(tuple(args[0].shape))
+        )
+        before = encoder(token, attention, turn_mask, roles)
+        changed = token.clone()
+        changed[0, 0, 0] += 5.0
+        after = encoder(changed, attention, turn_mask, roles)
+        hook.remove()
+        self.assertEqual(seen, [(1, 6, 8), (1, 6, 8)])
+        self.assertFalse(torch.allclose(before[0, 2, 0], after[0, 2, 0]))
+        self.assertTrue(torch.all(before[attention == 0] == 0))
+
+    def test_cross_token_heads_have_expected_shapes(self):
+        config = tiny_config()
+        config.architecture_mode = "cross_token"
+        token = torch.randn(2, 3, 5, config.backbone_dim)
+        attention = torch.ones(2, 3, 5, dtype=torch.long)
+        turn_mask = torch.tensor([[1, 1, 1], [1, 1, 0]])
+        roles = torch.tensor([[0, 1, 0], [0, 1, 0]])
+        context = CrossTokenContextEncoder(config)(
+            token, attention, turn_mask, roles
+        )
+        self.assertEqual(tuple(context.shape), (2, 3, 5, 8))
+        self.assertEqual(
+            tuple(DirectSpanHead(config)(context).shape), (2, 3, 5)
+        )
+
+    def test_gated_cross_token_detection_backpropagates_through_attribution(self):
+        config = tiny_config()
+        config.architecture_mode = "cross_token"
+        config.use_attribution_fusion = True
+        model = GuardLens(config)
+        model.encode_turns = lambda input_ids, attention_mask: torch.randn(
+            input_ids.size(0), input_ids.size(1), input_ids.size(2),
+            config.backbone_dim,
+        )
+        ids = torch.ones(1, 3, 2, dtype=torch.long)
+        attention = torch.ones_like(ids)
+        turns = torch.ones(1, 3, dtype=torch.long)
+        roles = torch.tensor([[0, 1, 0]])
+        output = model(
+            ids, attention, turns, roles, compute_localization=False
+        )
+        self.assertIsNotNone(output["attr_probs"])
+        output["cls_logits"].sum().backward()
+        self.assertTrue(any(
+            parameter.grad is not None and torch.any(parameter.grad != 0)
+            for parameter in model.attr_head.parameters()
+        ))
+        self.assertTrue(any(
+            parameter.grad is not None and torch.any(parameter.grad != 0)
+            for parameter in model.fusion_gate.parameters()
+        ))
+
+    def test_hierarchical_fusion_is_rejected(self):
+        config = tiny_config()
+        config.use_attribution_fusion = True
+        with self.assertRaisesRegex(ValueError, "requires architecture_mode=cross_token"):
+            GuardLens(config)
 
     def test_config_has_no_cf_oversampling_or_phase3_switches(self):
         config = tiny_config()
@@ -89,27 +164,28 @@ class CausalLocalizationArchitectureTests(unittest.TestCase):
         self.assertFalse(hasattr(config, "lambda_cf"))
         self.assertFalse(hasattr(config, "test_path"))
 
-    def test_evidence_turn_head_masks_assistant_turns(self):
-        config = tiny_config()
-        model = GuardLens(config)
-        model.encode_turns = lambda input_ids, attention_mask: torch.randn(
-            input_ids.size(0),
-            input_ids.size(1),
-            input_ids.size(2),
-            config.backbone_dim,
-        )
-        input_ids = torch.ones(1, 3, 2, dtype=torch.long)
-        attention = torch.ones_like(input_ids)
-        turn_mask = torch.ones(1, 3, dtype=torch.long)
-        roles = torch.tensor([[0, 1, 0]], dtype=torch.long)
-        out = model(
-            input_ids=input_ids,
-            attention_mask=attention,
-            turn_mask=turn_mask,
-            role_ids=roles,
-            compute_localization=True,
-        )
-        self.assertLess(float(out["turn_probs"][0, 1]), 1e-8)
+    def test_evidence_turn_head_masks_assistant_turns_in_both_designs(self):
+        for mode in ("hierarchical_turn", "cross_token"):
+            with self.subTest(mode=mode):
+                config = tiny_config()
+                config.architecture_mode = mode
+                model = GuardLens(config)
+                model.encode_turns = lambda input_ids, attention_mask: torch.randn(
+                    input_ids.size(0), input_ids.size(1), input_ids.size(2),
+                    config.backbone_dim,
+                )
+                input_ids = torch.ones(1, 3, 2, dtype=torch.long)
+                attention = torch.ones_like(input_ids)
+                turn_mask = torch.ones(1, 3, dtype=torch.long)
+                roles = torch.tensor([[0, 1, 0]], dtype=torch.long)
+                out = model(
+                    input_ids=input_ids,
+                    attention_mask=attention,
+                    turn_mask=turn_mask,
+                    role_ids=roles,
+                    compute_localization=True,
+                )
+                self.assertLess(float(out["turn_probs"][0, 1]), 1e-8)
 
     def test_frozen_backbone_encodes_turns_in_length_local_microbatches(self):
         config = tiny_config()
@@ -182,28 +258,32 @@ class CausalLocalizationArchitectureTests(unittest.TestCase):
         self.assertIsNotNone(fake.scale.grad)
         self.assertGreater(float(fake.scale.grad), 0.0)
 
-    def test_span_head_masks_assistant_and_padding_tokens(self):
-        config = tiny_config()
-        model = GuardLens(config)
-        model.encode_turns = lambda input_ids, attention_mask: torch.randn(
-            input_ids.size(0),
-            input_ids.size(1),
-            input_ids.size(2),
-            config.backbone_dim,
-        )
-        input_ids = torch.ones(1, 2, 3, dtype=torch.long)
-        attention = torch.tensor([[[1, 1, 0], [1, 1, 1]]])
-        turn_mask = torch.ones(1, 2, dtype=torch.long)
-        roles = torch.tensor([[0, 1]], dtype=torch.long)
-        out = model(
-            input_ids=input_ids,
-            attention_mask=attention,
-            turn_mask=turn_mask,
-            role_ids=roles,
-            compute_localization=True,
-        )
-        self.assertLess(float(out["attr_probs"][0, 0, 2]), 1e-8)
-        self.assertTrue(torch.all(out["attr_probs"][0, 1] < 1e-8))
+    def test_span_head_masks_assistant_and_padding_tokens_in_both_designs(self):
+        for mode in ("hierarchical_turn", "cross_token"):
+            with self.subTest(mode=mode):
+                config = tiny_config()
+                config.architecture_mode = mode
+                model = GuardLens(config)
+                model.encode_turns = lambda input_ids, attention_mask: torch.randn(
+                    input_ids.size(0), input_ids.size(1), input_ids.size(2),
+                    config.backbone_dim,
+                )
+                input_ids = torch.ones(1, 2, 3, dtype=torch.long)
+                attention = torch.tensor([[[1, 1, 0], [1, 1, 1]]])
+                localization = torch.tensor([[[0, 1, 0], [0, 1, 1]]])
+                turn_mask = torch.ones(1, 2, dtype=torch.long)
+                roles = torch.tensor([[0, 1]], dtype=torch.long)
+                out = model(
+                    input_ids=input_ids,
+                    attention_mask=attention,
+                    turn_mask=turn_mask,
+                    role_ids=roles,
+                    localization_mask=localization,
+                    compute_localization=True,
+                )
+                self.assertLess(float(out["attr_probs"][0, 0, 0]), 1e-8)
+                self.assertLess(float(out["attr_probs"][0, 0, 2]), 1e-8)
+                self.assertTrue(torch.all(out["attr_probs"][0, 1] < 1e-8))
 
     def test_localization_ramp_reaches_full_weight_early_and_plateaus(self):
         config = GuardLensConfig(

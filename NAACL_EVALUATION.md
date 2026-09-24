@@ -1,9 +1,11 @@
 # NAACL evaluation platform
 
-This platform supports historical `causal_localization_v2` checkpoints and the
-new `causal_localization_v3` / `restored_a_pre_response_v3` candidates. V3 aligns
-training, calibration and inference to the pre-response view. It replaces the
-historical single-pivot, self-mask and detected-only evaluation paths.
+This platform supports historical `causal_localization_v2` and V3 checkpoints
+for audit continuity and the current `causal_localization_v4` /
+`restored_a_multiview_v4` candidates. V4 evaluates the restored global
+cross-token design and the hierarchical sibling-head design under explicit,
+checkpoint-bound input views. It replaces the historical single-pivot,
+self-mask and detected-only evaluation paths.
 
 Public datasets, ShieldGemma and held-out internal test evaluation are paused
 until the four-candidate internal train/dev matrix receives explicit signoff.
@@ -11,9 +13,17 @@ The `diagnose-dev` command is the only evaluation stage in the current critical
 path. It accepts only the checkpoint's exact frozen internal dev SHA, uses the
 self guard only and labels every report development-only.
 
-Historical model-evaluation CLIs fail with a migration message on this branch.
-Their helper functions remain available for historical inspection. Current
-training preflight and representation audits remain active.
+Historical Slurm evaluation launchers fail with a migration message on this
+branch. Their Python helper modules remain available for historical inspection
+but are not canonical V4 entry points. Current training preflight and
+representation audits remain active.
+
+This pause is enforced in code. Legacy evaluation Slurm launchers exit before
+opening test data. The current evaluation CLI and MHJ launcher additionally
+require `EVAL_EXTERNAL_SIGNOFF=APPROVED_AFTER_INTERNAL_SIGNOFF` for external
+preparation, held-out evaluation, finalization, replay, human/robustness exports,
+or ShieldGemma configuration. Do not set that token until the internal
+comparison has been reviewed and approved.
 
 The scientific claim is **counterfactually anchored user-evidence localization**.
 Evidence agreement, classifier faithfulness, independent guard sensitivity, and
@@ -37,11 +47,12 @@ label change is not a target refusal or an attack-success reduction.
 | AC: user-only attribution overlooks assistants | Explicit scope, assistant-history input diagnostic, regenerated post-edit assistant suffix | State that assistant causal responsibility is outside this model's attribution space |
 | Reproducibility: prompts, replay, annotation instructions | Versioned templates, exact edits, source conversion manifest, raw LLM responses, paired seeds, human task export | Publish approved data exports and target/model access instructions |
 
-The candidate architecture is a supervised hierarchical multi-label
-tagger with independent detection, turn and span heads. It has no fusion or
-self-counterfactual training loss. Calling its historical NoCF/NoFusion models
-current ablations would be misleading. The evaluator accepts current-architecture
-checkpoints only and does not silently substitute a model for an unknown name.
+The current matrix contains two supervised multi-label architecture families:
+hierarchical turn context with sibling heads, and direct global cross-token
+context with either sibling heads or attribution-gated detection. All retain
+multi-label evidence-turn and span outputs. Self-counterfactual training remains
+absent. The evaluator records architecture, fusion, view, code, data, and
+checkpoint identity and never substitutes a model for an unknown name.
 
 ## Input and task contract
 
@@ -113,6 +124,14 @@ prefix unsafe merely because its final conversation is unsafe. The checkpoint's
 threshold is chosen on the same internal dev view stored in its training contract.
 The runtime rejects a diagnostic protocol whose view differs from the checkpoint.
 No external threshold fitting exists in this platform.
+
+Retrospective is the primary view for post-hoc attribution because the stated
+task is to localize evidence in the completed interaction. Assistant turns are
+visible context but cannot receive localization scores. Retrospective detection
+is not a pre-response safety claim. All four candidates in the current internal
+selection matrix use the retrospective view. The implemented pre-response view
+is deferred to a separately labelled diagnostic after the primary architecture
+and training recipe are selected.
 
 Turn and span cutoffs default to fixed .5. ShieldGemma's cutoff defaults to .5.
 Pin these in the protocol before test access. Every representation limit is hard:
@@ -223,8 +242,10 @@ python -m eval_platform shield-config --output "$PREP/shieldgemma.json"
 # Pre-download the model/tokenizer at the SHA in that config before an offline job.
 ```
 
-After training completes, explicitly select `best_joint.pt`. Do not replace it
-with separate detection and attribution checkpoints within one reported run.
+The internal architecture matrix uses each run's `best.pt`, which resolves to
+its dev localization-primary checkpoint. Do not replace it with a detection-only
+checkpoint within the same comparison. The separately saved joint and detection
+checkpoints are diagnostics, not silently interchangeable paper results.
 
 Before opening held-out test data, audit detector operating points on the exact
 prepared dev partition. `calibrate` records the checkpoint, source data and code
@@ -236,7 +257,7 @@ original dev SHA256. The primary policy is maximum dev recall subject to at most
 an operating curve, not selected after test access.
 
 ```bash
-export EVAL_CHECKPOINT=~/work/results/guardlens_naacl_redesign/primary_plus_auxiliary/guardlens/restored-a-v2-seed42-20260922/checkpoints/best_joint.pt
+export EVAL_CHECKPOINT=~/work/results/guardlens_naacl_redesign/SELECTED_SIGNED_OFF_RUN/checkpoints/best.pt
 export EVAL_DEV="$PREP/dev.jsonl"
 export EVAL_CALIBRATION=~/work/results/guardlens_eval_v1/calibration/dev_operating_points.json
 export EVAL_CALIBRATION_POLICY=max_recall_at_b_fpr_5pct
@@ -252,6 +273,7 @@ export EVAL_DEV_EXCLUDE="$PREP/dev.jsonl"
 export EVAL_SHIELD_CONFIG="$PREP/shieldgemma.json"
 export EVAL_RUN_ROOT=~/work/results/guardlens_eval_v1/mhj-attack-intent-parallel-v1
 export EVAL_SHARDS=4
+export EVAL_EXTERNAL_SIGNOFF=APPROVED_AFTER_INTERNAL_SIGNOFF  # only after recorded internal signoff
 ./submit_eval_mhj.sh
 ```
 

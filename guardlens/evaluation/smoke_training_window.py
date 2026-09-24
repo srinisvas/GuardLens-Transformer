@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 from guardlens.config import GuardLensConfig
 from guardlens.data.dataset import GuardLensCollator, GuardLensDataset
+from guardlens.data.dataset import model_visible_turns
 from guardlens.data.causal_targets import span_supervision_target
 from guardlens.data.training_contract import (
     classification_loss_weight,
@@ -27,28 +28,29 @@ def load_jsonl(path):
         return [json.loads(line) for line in handle if line.strip()]
 
 
-def token_footprint(record, tokenizer):
+def token_footprint(record, tokenizer, input_view, architecture_mode):
+    turns = model_visible_turns(record, input_view)
     lengths = [
         len(tokenizer(
             str(turn.get("text", "")),
             truncation=False,
             add_special_tokens=True,
         )["input_ids"])
-        for turn in record.get("turns", []) or []
+        for turn in turns
     ]
     max_len = max(lengths or [0])
     # First key approximates the dense post-backbone tensor footprint used by
     # the current hierarchical heads; later keys break ties toward more real
     # tokens and more turns.
-    return (
-        max_len * len(lengths),
-        max_len,
-        sum(lengths),
-        len(lengths),
-    )
+    total = sum(lengths)
+    if architecture_mode == "cross_token":
+        return (total * total, total, max_len, len(lengths))
+    return (max_len * len(lengths), max_len, total, len(lengths))
 
 
-def select_smoke_records(records, batch_size, tokenizer):
+def select_smoke_records(
+    records, batch_size, tokenizer, input_view, architecture_mode
+):
     primary = [
         r for r in records if not is_auxiliary_detection_record(r)
     ]
@@ -80,28 +82,40 @@ def select_smoke_records(records, batch_size, tokenizer):
         )
 
     selected = [
-        max(localizable_positive, key=lambda r: token_footprint(r, tokenizer)),
-        max(negatives, key=lambda r: token_footprint(r, tokenizer)),
+        max(localizable_positive, key=lambda r: token_footprint(
+            r, tokenizer, input_view, architecture_mode
+        )),
+        max(negatives, key=lambda r: token_footprint(
+            r, tokenizer, input_view, architecture_mode
+        )),
     ]
     if batch_size > 2:
         used = {str(r.get("conversation_id", "")) for r in selected}
         remaining = [
-            r for r in sorted(primary, key=lambda r: token_footprint(r, tokenizer), reverse=True)
+            r for r in sorted(primary, key=lambda r: token_footprint(
+                r, tokenizer, input_view, architecture_mode
+            ), reverse=True)
             if str(r.get("conversation_id", "")) not in used
         ]
         selected.extend(remaining[: batch_size - 2])
     return selected[:batch_size]
 
 
-def select_worst_case_records(records, batch_size, tokenizer):
+def select_worst_case_records(
+    records, batch_size, tokenizer, input_view, architecture_mode
+):
     return sorted(
         records,
-        key=lambda r: token_footprint(r, tokenizer),
+        key=lambda r: token_footprint(
+            r, tokenizer, input_view, architecture_mode
+        ),
         reverse=True,
     )[:batch_size]
 
 
-def select_auxiliary_records(records, batch_size, tokenizer):
+def select_auxiliary_records(
+    records, batch_size, tokenizer, input_view, architecture_mode
+):
     auxiliary = [r for r in records if is_auxiliary_detection_record(r)]
     by_family = {
         family: [r for r in auxiliary if source_family(r) == family]
@@ -113,12 +127,16 @@ def select_auxiliary_records(records, batch_size, tokenizer):
         )
 
     selected = [
-        max(by_family["A"], key=lambda r: token_footprint(r, tokenizer)),
+        max(by_family["A"], key=lambda r: token_footprint(
+            r, tokenizer, input_view, architecture_mode
+        )),
         max(
             by_family["B"],
             key=lambda r: (
                 training_label(r) == 1,
-                token_footprint(r, tokenizer),
+                token_footprint(
+                    r, tokenizer, input_view, architecture_mode
+                ),
             ),
         ),
     ]
@@ -127,7 +145,9 @@ def select_auxiliary_records(records, batch_size, tokenizer):
         remaining = [
             r for r in sorted(
                 auxiliary,
-                key=lambda r: token_footprint(r, tokenizer),
+                key=lambda r: token_footprint(
+                    r, tokenizer, input_view, architecture_mode
+                ),
                 reverse=True,
             )
             if str(r.get("conversation_id", "")) not in used
@@ -165,11 +185,17 @@ def main():
     parser.add_argument("--backbone-turn-microbatch", type=int, default=8)
     parser.add_argument("--backbone-trainable-layers", type=int, default=0)
     parser.add_argument(
+        "--architecture-mode",
+        choices=["hierarchical_turn", "cross_token"],
+        default="hierarchical_turn",
+    )
+    parser.add_argument("--attribution-fusion", action="store_true")
+    parser.add_argument(
         "--turn-pooling", choices=["mean", "attention"], default="attention"
     )
     parser.add_argument(
         "--input-view", choices=["pre_response", "retrospective"],
-        default="pre_response",
+        default="retrospective",
     )
     parser.add_argument("--max-turns", type=int, default=64)
     parser.add_argument("--max-tokens", type=int, default=8192)
@@ -181,6 +207,8 @@ def main():
         raise RuntimeError("CUDA is required for the training smoke")
     if args.batch_size < 2:
         raise ValueError("batch-size must be >=2")
+    if args.attribution_fusion and args.architecture_mode != "cross_token":
+        raise ValueError("attribution fusion requires cross_token architecture")
 
     records = load_jsonl(args.train)
 
@@ -189,6 +217,8 @@ def main():
         backbone_revision=args.backbone_revision,
         backbone_turn_microbatch=args.backbone_turn_microbatch,
         backbone_trainable_layers=args.backbone_trainable_layers,
+        architecture_mode=args.architecture_mode,
+        use_attribution_fusion=args.attribution_fusion,
         turn_pooling=args.turn_pooling,
         batch_size=args.batch_size,
         gradient_accumulation=8,
@@ -210,13 +240,18 @@ def main():
         use_fast=True,
     )
     selected = select_smoke_records(
-        records, args.batch_size, tokenizer
+        records, args.batch_size, tokenizer,
+        args.input_view, args.architecture_mode,
     )
     worst_case = select_worst_case_records(
-        records, args.batch_size, tokenizer
+        records, args.batch_size, tokenizer,
+        args.input_view, args.architecture_mode,
     )
     auxiliary = (
-        select_auxiliary_records(records, args.batch_size, tokenizer)
+        select_auxiliary_records(
+            records, args.batch_size, tokenizer,
+            args.input_view, args.architecture_mode,
+        )
         if args.train_variant == "primary_plus_auxiliary"
         else []
     )
@@ -265,11 +300,76 @@ def main():
             turn_neg_mass / turn_pos_mass
         )
 
+    backbone_ids = {
+        id(parameter)
+        for parameter in model.backbone.parameters()
+        if parameter.requires_grad
+    }
+    head_parameters = [
+        parameter for parameter in model.parameters()
+        if parameter.requires_grad and id(parameter) not in backbone_ids
+    ]
+    backbone_parameters = [
+        parameter for parameter in model.backbone.parameters()
+        if parameter.requires_grad
+    ]
+    optimizer_groups = [{
+        "params": head_parameters,
+        "lr": config.learning_rate,
+    }]
+    if backbone_parameters:
+        optimizer_groups.append({
+            "params": backbone_parameters,
+            "lr": config.backbone_learning_rate,
+        })
     optimizer = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=config.learning_rate,
+        optimizer_groups,
         weight_decay=config.weight_decay,
     )
+
+    tracked_modules = {
+        "classification": model.cls_head,
+        "turn": model.turn_head,
+        "span": model.attr_head,
+        "conversation_context": (
+            model.cross_token_context
+            if args.architecture_mode == "cross_token"
+            else model.turn_context
+        ),
+    }
+    if model.pooler is not None:
+        tracked_modules["conversation_pooler"] = model.pooler
+    if model.fusion_gate is not None:
+        tracked_modules["fusion"] = model.fusion_gate
+    if backbone_parameters:
+        tracked_modules["trainable_backbone"] = model.backbone
+
+    def snapshot(module):
+        return {
+            name: parameter.detach().cpu().clone()
+            for name, parameter in module.named_parameters()
+            if parameter.requires_grad
+        }
+
+    initial = {
+        name: snapshot(module)
+        for name, module in tracked_modules.items()
+    }
+
+    def assert_updated():
+        unchanged = []
+        for module_name, module in tracked_modules.items():
+            current = dict(module.named_parameters())
+            if not any(
+                not torch.equal(value, current[name].detach().cpu())
+                for name, value in initial[module_name].items()
+            ):
+                unchanged.append(module_name)
+        if unchanged:
+            raise RuntimeError(
+                "smoke optimizer step did not update required modules: "
+                + ", ".join(unchanged)
+            )
 
     def run_batch(name, records_for_batch, batch_loader):
         torch.cuda.reset_peak_memory_stats()
@@ -287,13 +387,17 @@ def main():
         peak_gib = torch.cuda.max_memory_allocated() / (1024 ** 3)
         print(f"=== {name} ===")
         for record in records_for_batch:
-            footprint = token_footprint(record, tokenizer)
+            footprint = token_footprint(
+                record, tokenizer, args.input_view,
+                args.architecture_mode,
+            )
+            visible_turns = model_visible_turns(record, args.input_view)
             print(
                 f"{record.get('conversation_id')} "
                 f"label={training_label(record)} "
-                f"turns={len(record.get('turns', []))} "
-                f"max_turn_tokens={footprint[1]} "
-                f"dense_token_slots={footprint[0]} "
+                f"turns={len(visible_turns)} "
+                f"footprint_primary={footprint[0]} "
+                f"footprint_secondary={footprint[1]} "
                 f"tier={record.get('supervision_tier')} "
                 f"source={record.get('corpus_source')} "
                 f"detection_weight={classification_loss_weight(record)}"
@@ -308,6 +412,7 @@ def main():
 
     print("=== GuardLens causal-localization training smoke ===")
     joint_peak = run_batch("joint-supervision batch", selected, loader)
+    assert_updated()
     auxiliary_peak = None
     if auxiliary_loader is not None:
         auxiliary_peak = run_batch(

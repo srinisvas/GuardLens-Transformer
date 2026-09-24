@@ -9,6 +9,11 @@
 #SBATCH --error=logs/eval_public_finalize_%j.err
 
 set -euo pipefail
+if [[ "${EVAL_RECOVER_LEGACY_SHARDS:-0}" != "1" && \
+      "${EVAL_EXTERNAL_SIGNOFF:-}" != "APPROVED_AFTER_INTERNAL_SIGNOFF" ]]; then
+  echo "ERROR: MHJ/external finalization is embargoed until internal V4 signoff." >&2
+  exit 2
+fi
 : "${EVAL_DATA:?canonical dataset required}"
 : "${EVAL_RUN_ROOT:?output directory required}"
 : "${EVAL_SHARDS:?submit with submit_eval_mhj.sh}"

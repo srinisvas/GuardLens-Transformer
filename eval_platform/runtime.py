@@ -50,9 +50,9 @@ class GuardLensBackend:
         ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
         architecture = ckpt.get("architecture_version")
         contract = ckpt.get("training_contract_version")
-        if architecture not in {"causal_localization_v2", "causal_localization_v3"} or ckpt.get("model_name") != "guardlens":
+        if architecture not in {"causal_localization_v2", "causal_localization_v3", "causal_localization_v4"} or ckpt.get("model_name") != "guardlens":
             raise ValueError("unsupported checkpoint architecture or model, no fallback")
-        if contract not in {"restored_a_primary_plus_auxiliary_v2", "restored_a_pre_response_v3"}:
+        if contract not in {"restored_a_primary_plus_auxiliary_v2", "restored_a_pre_response_v3", "restored_a_multiview_v4"}:
             raise ValueError("checkpoint uses a different supervision contract")
         if ckpt.get("phase") != 2:
             raise ValueError("localization evaluation requires a joint-phase checkpoint")
@@ -64,6 +64,13 @@ class GuardLensBackend:
             self.config.input_view = "retrospective"
             self.config.turn_pooling = "mean"
             self.config.backbone_trainable_layers = 0
+            self.config.architecture_mode = "hierarchical_turn"
+            self.config.use_attribution_fusion = False
+        elif contract == "restored_a_pre_response_v3":
+            # Fields introduced by V4 must be explicit before constructing a
+            # V3 sibling-head checkpoint under the current class definition.
+            self.config.architecture_mode = "hierarchical_turn"
+            self.config.use_attribution_fusion = False
         pinned(self.config.backbone_revision)
         self.threshold = probability(ckpt["threshold"])
         self.device = device
@@ -81,6 +88,8 @@ class GuardLensBackend:
             "epoch": ckpt["epoch"], "score_name": ckpt["score_name"], "threshold": self.threshold,
             "backbone": self.config.backbone_name, "revision": self.config.backbone_revision,
             "input_view": self.config.input_view,
+            "architecture_mode": self.config.architecture_mode,
+            "use_attribution_fusion": self.config.use_attribution_fusion,
             "max_turns": self.config.max_turns, "max_tokens_per_turn": self.config.max_tokens_per_turn,
             "config": vars(self.config)}
 
@@ -97,9 +106,20 @@ class GuardLensBackend:
         offsets = enc.pop("offset_mapping").tolist()
         ids = enc["input_ids"].unsqueeze(0).to(self.device)
         mask = enc["attention_mask"].unsqueeze(0).to(self.device)
+        localization_mask = torch.tensor(
+            [[[int(end > start) for start, end in turn] for turn in offsets]],
+            device=self.device,
+            dtype=torch.long,
+        )
         roles = torch.tensor([[0 if t["role"] == "user" else 1 for t in turns]], device=self.device)
-        with torch.inference_mode():
-            output = self.model(input_ids=ids, attention_mask=mask, turn_mask=torch.ones(1, len(turns), device=self.device), role_ids=roles, compute_localization=True)
+        amp = (
+            torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+            if self.device == "cuda" else torch.autocast(device_type="cpu", enabled=False)
+        )
+        with torch.inference_mode(), amp:
+            output = self.model(input_ids=ids, attention_mask=mask,
+                turn_mask=torch.ones(1, len(turns), device=self.device), role_ids=roles,
+                localization_mask=localization_mask, compute_localization=True)
         result = {"probability": float(output["cls_logits"].sigmoid().item()), "turn_scores": {}, "token_scores": []}
         for i, t in enumerate(turns):
             if t["role"] != "user":

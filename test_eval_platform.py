@@ -1,13 +1,14 @@
 """Scientific-contract regressions and end-to-end CPU platform tests."""
 import copy
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from eval_platform.adapters import adapt, check_overlap, validate_collection, require_mhj_cohort
+from eval_platform.adapters import adapt, check_overlap, validate_collection, require_internal_dev_strata, require_mhj_cohort
 from eval_platform.calibration import apply_calibration, calibrate_operating_points
 from eval_platform.contract import RunStore, canonical, digest, visible, validate_protocol, write_json
 from eval_platform.interventions import words, select, edit, risk_scores, project_tokens, eligible_indices, loto_scores
@@ -15,7 +16,7 @@ from eval_platform.metrics import binary, cluster_interval, effects, localizatio
 from eval_platform.replay import replay_suffix, judge_behavior, run_replay
 from eval_platform.runner import run, intervention_plan, finalize_shards, load_shard_record
 from eval_platform.runtime import CoverageError, require_transformers_dtype_support, verify_floating_dtype
-from eval_platform.studies import human_report, robustness_report, method_utility, spearman
+from eval_platform.studies import compare_runs, human_report, robustness_report, method_utility, spearman
 
 
 def record(cid="a", label=1):
@@ -73,6 +74,79 @@ class FakeJudge:
 
 
 class ContractTests(unittest.TestCase):
+    def test_internal_dev_utility_strata_are_verified_on_prepared_records(self):
+        a = record("frontier", 0)
+        b = record("interactive", 0)
+        for row in (a, b):
+            row.update(dataset="internal", split="dev", label_semantics="unsafe_trajectory")
+        a["strata"]["family"] = "frontier_authored_benign"
+        b["strata"]["family"] = "interactive_benign_twin"
+        counts = require_internal_dev_strata([a, b])
+        self.assertEqual(counts["frontier_authored_benign"], 1)
+        self.assertEqual(counts["interactive_benign_twin"], 1)
+        with self.assertRaisesRegex(ValueError, "interactive_benign_twin"):
+            require_internal_dev_strata([a])
+
+    def test_internal_matrix_separates_views_and_keeps_attribution_outputs(self):
+        def candidate(name, view, architecture, fusion, trainable_layers=0):
+            p = protocol()
+            p["view"] = view
+            manifest = {
+                "manifest_id": name,
+                "stage": "internal_dev_causal_diagnostic",
+                "dataset_sha256": "data",
+                "protocol": p,
+                "lexicon_sha256": "lexicon",
+                "exclusion_hashes": {},
+                "guards": {"self": {"checkpoint": name}},
+                "code": {"git_sha": "same", "python_source_sha256": "same"},
+                "detector": {
+                    "training_data_sha256": {"train": "train", "dev": "dev"},
+                    "architecture_mode": architecture,
+                    "use_attribution_fusion": fusion,
+                    "config": {
+                        "backbone_trainable_layers": trainable_layers,
+                        "turn_pooling": "attention",
+                        "train_variant": "primary_plus_auxiliary",
+                    },
+                },
+            }
+            report = {
+                "manifest_id": name,
+                "coverage": {"total": 2, "scored": 2},
+                "detection": {"ap": .8},
+                "localization": {"turn_macro_ap_assessed_mixed_class": .7},
+                "effects": {"self/guardlens/0.2": {"estimate": .1}},
+                "paired_differences": {"self/guardlens/0.2-minus-loto": {"estimate": .02}},
+                "effects_by_stratum": {"family": {}},
+                "paired_differences_by_stratum": {"family": {}},
+                "utility": {},
+            }
+            return {"manifest": manifest, "report": report}
+
+        runs = {
+            "hierarchical": candidate("a", "retrospective", "hierarchical_turn", False),
+            "cross": candidate("b", "retrospective", "cross_token", False),
+            "pre": candidate("c", "pre_response", "cross_token", True),
+        }
+        result = compare_runs(runs)
+        groups = result["comparison_contract"]["direct_comparability_groups"]
+        self.assertEqual(groups["retrospective"], ["cross", "hierarchical"])
+        self.assertEqual(groups["pre_response"], ["pre"])
+        self.assertIn("paired_differences", result["runs"]["cross"])
+        self.assertEqual(result["runs"]["pre"]["view"], "pre_response")
+        self.assertEqual(
+            result["comparison_contract"]["pairwise_axis_differences"][
+                "cross/hierarchical"
+            ],
+            ["architecture_mode"],
+        )
+
+        bad = copy.deepcopy(runs)
+        bad["pre"]["manifest"]["protocol"]["budgets"] = [.1]
+        with self.assertRaisesRegex(ValueError, "beyond input view"):
+            compare_runs(bad)
+
     def test_mhj_launcher_rejects_internal_cohort(self):
         with self.assertRaisesRegex(ValueError, "prepared MHJ"):
             require_mhj_cohort([record()])
@@ -497,9 +571,22 @@ class IntegrationTests(unittest.TestCase):
             source, output = Path(d) / "source.jsonl", Path(d) / "out.jsonl"
             source.write_text(canonical({"conversation_id": "a", "turns": [{"role": "human", "content": "hello"}]}) + "\n", encoding="utf-8")
             command = [sys.executable, "-m", "eval_platform", "prepare", "--source", "mhj", "--source-revision", "fixed", "--split", "test", "--input", str(source), "--output", str(output)]
-            subprocess.run(command, check=True, capture_output=True)
+            blocked_env = os.environ.copy()
+            blocked_env.pop("EVAL_EXTERNAL_SIGNOFF", None)
+            self.assertNotEqual(
+                subprocess.run(command, capture_output=True, env=blocked_env).returncode,
+                0,
+            )
+            approved_env = {
+                **blocked_env,
+                "EVAL_EXTERNAL_SIGNOFF": "APPROVED_AFTER_INTERNAL_SIGNOFF",
+            }
+            subprocess.run(command, check=True, capture_output=True, env=approved_env)
             self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["gold"], {})
-            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            self.assertNotEqual(
+                subprocess.run(command, capture_output=True, env=approved_env).returncode,
+                0,
+            )
 
     def test_human_agreement_and_robustness_require_real_alignment(self):
         r = record()

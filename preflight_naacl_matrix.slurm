@@ -18,7 +18,6 @@ BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 MAX_TURNS="${MAX_TURNS:-64}"
 MAX_TOKENS="${MAX_TOKENS:-8192}"
-INPUT_VIEW="${INPUT_VIEW:-pre_response}"
 LENGTH_AUC_CEILING="${LENGTH_AUC_CEILING:-0.650}"
 : "${SHARED_PREFLIGHT_DIR:?fresh shared preflight directory required}"
 : "${PREPARED_DEV:?fresh prepared internal dev JSONL path required}"
@@ -56,52 +55,53 @@ echo "Running complete CPU contract suite before GPU submission"
 python -m unittest discover -v -p 'test*.py'
 
 mkdir -p "$SHARED_PREFLIGHT_DIR"
-for variant in primary primary_plus_auxiliary; do
-  if [[ "$variant" == "primary" ]]; then
-    split_dir="$FREEZE_DIR/splits_primary"
-  else
-    split_dir="$FREEZE_DIR/splits_primary_plus_train_auxiliary"
-  fi
-  train_path="$split_dir/train.jsonl"
-  dev_path="$split_dir/dev.jsonl"
-  output_dir="$SHARED_PREFLIGHT_DIR/$variant"
-  mkdir -p "$output_dir"
+variant="primary_plus_auxiliary"
+split_dir="$FREEZE_DIR/splits_primary_plus_train_auxiliary"
+train_path="$split_dir/train.jsonl"
+dev_path="$split_dir/dev.jsonl"
+input_view="retrospective"
+variant_dir="$SHARED_PREFLIGHT_DIR/$variant"
+output_dir="$variant_dir/$input_view"
+mkdir -p "$output_dir"
 
-  python -m guardlens.data.verify_freeze \
-    --report "$REPORT_PATH" \
-    --train "$train_path" \
-    --dev "$dev_path" \
-    --variant "$variant" \
-    --output "$output_dir/freeze_verification.json"
+python -m guardlens.data.verify_freeze \
+  --report "$REPORT_PATH" \
+  --train "$train_path" \
+  --dev "$dev_path" \
+  --variant "$variant" \
+  --output "$variant_dir/freeze_verification.json"
 
-  python -m guardlens.data.audit_representation \
-    --train "$train_path" \
-    --dev "$dev_path" \
-    --backbone "$BACKBONE" \
-    --backbone-revision "$BACKBONE_REVISION" \
-    --max-turns "$MAX_TURNS" \
-    --max-tokens "$MAX_TOKENS" \
-    --input-view "$INPUT_VIEW" \
-    --output "$output_dir/representation_coverage.json"
+python -m guardlens.data.audit_representation \
+  --train "$train_path" \
+  --dev "$dev_path" \
+  --backbone "$BACKBONE" \
+  --backbone-revision "$BACKBONE_REVISION" \
+  --max-turns "$MAX_TURNS" \
+  --max-tokens "$MAX_TOKENS" \
+  --input-view "$input_view" \
+  --output "$output_dir/representation_coverage.json"
 
-  python -m guardlens.evaluation.eval_length_probe_preflight \
-    --train "$train_path" \
-    --dev "$dev_path" \
-    --input-view "$INPUT_VIEW" \
-    --output "$output_dir/length_probe_dev.json"
+python -m guardlens.evaluation.eval_length_probe_preflight \
+  --train "$train_path" \
+  --dev "$dev_path" \
+  --input-view "$input_view" \
+  --output "$output_dir/length_probe_dev.json"
 
-  python -m guardlens.data.preflight_marker create \
-    --variant "$variant" \
-    --train "$train_path" \
-    --dev "$dev_path" \
-    --code-sha "$CODE_SHA" \
-    --input-view "$INPUT_VIEW" \
-    --freeze-report "$output_dir/freeze_verification.json" \
-    --representation-report "$output_dir/representation_coverage.json" \
-    --length-report "$output_dir/length_probe_dev.json" \
-    --length-auc-ceiling "$LENGTH_AUC_CEILING" \
-    --output "$output_dir/marker.json"
-done
+python -m guardlens.data.preflight_marker create \
+  --variant "$variant" \
+  --train "$train_path" \
+  --dev "$dev_path" \
+  --code-sha "$CODE_SHA" \
+  --input-view "$input_view" \
+  --backbone "$BACKBONE" \
+  --backbone-revision "$BACKBONE_REVISION" \
+  --max-turns "$MAX_TURNS" \
+  --max-tokens "$MAX_TOKENS" \
+  --freeze-report "$variant_dir/freeze_verification.json" \
+  --representation-report "$output_dir/representation_coverage.json" \
+  --length-report "$output_dir/length_probe_dev.json" \
+  --length-auc-ceiling "$LENGTH_AUC_CEILING" \
+  --output "$output_dir/marker.json"
 
 DEV_PATH="$FREEZE_DIR/splits_primary/dev.jsonl"
 SOURCE_REVISION=$(sha256sum "$DEV_PATH" | awk '{print $1}')
@@ -113,6 +113,16 @@ python -m eval_platform prepare \
   --input "$DEV_PATH" \
   --output "$PREPARED_DEV"
 
-echo "Shared preflight complete for both training variants"
+python - "$PREPARED_DEV" <<'PY'
+import json
+import sys
+from eval_platform.adapters import require_internal_dev_strata
+from eval_platform.contract import read_jsonl
+
+counts = require_internal_dev_strata(list(read_jsonl(sys.argv[1])))
+print("Verified internal-dev benign utility strata: " + json.dumps(counts, sort_keys=True))
+PY
+
+echo "Shared preflight complete for primary_plus_auxiliary retrospective matrix"
 echo "Length-only AUC ceiling: $LENGTH_AUC_CEILING"
 echo "Held-out test accessed: NO"

@@ -15,6 +15,9 @@
 
 set -euo pipefail
 
+echo "ERROR: legacy evaluation launcher disabled pending V4 internal signoff and migration." >&2
+exit 2
+
 DRY_RUN=0
 if [[ "${1:-}" == "--dry-run" ]]; then
     DRY_RUN=1

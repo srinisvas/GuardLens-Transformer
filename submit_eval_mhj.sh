@@ -1,5 +1,10 @@
 #!/bin/bash
 set -euo pipefail
+if [[ "${EVAL_EXTERNAL_SIGNOFF:-}" != "APPROVED_AFTER_INTERNAL_SIGNOFF" ]]; then
+    echo "ERROR: MHJ/external evaluation is embargoed until internal V4 signoff." >&2
+    echo "After signoff, export EVAL_EXTERNAL_SIGNOFF=APPROVED_AFTER_INTERNAL_SIGNOFF." >&2
+    exit 2
+fi
 cd "$(dirname "$0")"
 for name in EVAL_DATA EVAL_DATA_SHA256 EVAL_CHECKPOINT EVAL_TRAIN_EXCLUDE EVAL_DEV_EXCLUDE \
             EVAL_SHIELD_CONFIG EVAL_CALIBRATION EVAL_CALIBRATION_POLICY EVAL_RUN_ROOT; do

@@ -50,6 +50,10 @@ def create(args):
         "code_sha": args.code_sha,
         "variant": args.variant,
         "input_view": args.input_view,
+        "backbone": args.backbone,
+        "backbone_revision": args.backbone_revision,
+        "max_turns": args.max_turns,
+        "max_tokens": args.max_tokens,
         "length_auc_ceiling": args.length_auc_ceiling,
         "dev_length_auc": auc,
         "files": {
@@ -67,6 +71,10 @@ def verify(args):
         "code_sha": args.code_sha,
         "variant": args.variant,
         "input_view": args.input_view,
+        "backbone": args.backbone,
+        "backbone_revision": args.backbone_revision,
+        "max_turns": args.max_turns,
+        "max_tokens": args.max_tokens,
         "held_out_test_accessed": False,
     }
     for key, value in expected.items():
@@ -100,6 +108,10 @@ def main():
         current.add_argument("--dev", required=True)
         current.add_argument("--code-sha", required=True)
         current.add_argument("--input-view", choices=["pre_response", "retrospective"], required=True)
+        current.add_argument("--backbone", required=True)
+        current.add_argument("--backbone-revision", required=True)
+        current.add_argument("--max-turns", type=int, required=True)
+        current.add_argument("--max-tokens", type=int, required=True)
     create_parser.add_argument("--freeze-report", required=True)
     create_parser.add_argument("--representation-report", required=True)
     create_parser.add_argument("--length-report", required=True)
@@ -114,4 +126,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

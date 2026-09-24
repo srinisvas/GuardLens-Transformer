@@ -16,6 +16,7 @@ CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
 : "${EVAL_DATA:?prepared internal dev JSONL required}"
 : "${EVAL_CHECKPOINT:?trained checkpoint required}"
 : "${EVAL_OUTPUT:?fresh diagnostic output directory required}"
+EVAL_PROTOCOL="${EVAL_PROTOCOL:-configs/eval_protocol_retrospective.json}"
 
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -34,7 +35,14 @@ cd "$PROJECT_DIR"
 for path in "$EVAL_DATA" "$EVAL_DATA.manifest.json" "$EVAL_CHECKPOINT"; do
   [[ -f "$path" ]] || { echo "ERROR: missing required file: $path"; exit 2; }
 done
-[[ ! -e "$EVAL_OUTPUT" ]] || { echo "ERROR: diagnostic output exists: $EVAL_OUTPUT"; exit 2; }
+if [[ -e "$EVAL_OUTPUT" ]]; then
+  [[ -f "$EVAL_OUTPUT/manifest.json" ]] || {
+    echo "ERROR: existing diagnostic output has no manifest: $EVAL_OUTPUT"
+    exit 2
+  }
+  echo "Resuming exact manifest-bound diagnostic: $EVAL_OUTPUT"
+fi
+[[ -f "$EVAL_PROTOCOL" ]] || { echo "ERROR: missing protocol: $EVAL_PROTOCOL"; exit 2; }
 
 EXPECTED_BRANCH="naacl-causal-localization-redesign"
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -53,6 +61,7 @@ echo "Code SHA: $CODE_SHA"
 echo "Checkpoint: $EVAL_CHECKPOINT"
 echo "Internal dev: $EVAL_DATA"
 echo "Output: $EVAL_OUTPUT"
+echo "Protocol: $EVAL_PROTOCOL"
 echo "External guards: DISABLED"
 echo "Held-out test: NOT ACCESSED"
 
@@ -61,7 +70,8 @@ python -u -m eval_platform diagnose-dev \
   --data-sha256 "$EVAL_DATA_SHA256" \
   --checkpoint "$EVAL_CHECKPOINT" \
   --output "$EVAL_OUTPUT" \
-  --protocol configs/eval_protocol.json \
+  --protocol "$EVAL_PROTOCOL" \
   --lexicon configs/eval_surface_lexicon.json \
-  --device cuda
-
+  --device cuda \
+  --shard-index 0 \
+  --shard-count 1

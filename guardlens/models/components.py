@@ -1,4 +1,4 @@
-"""Reusable components for the hierarchical GuardLens redesign."""
+"""Reusable components for hierarchical and global cross-token GuardLens."""
 
 import math
 
@@ -111,6 +111,71 @@ class TurnContextEncoder(nn.Module):
         return x.masked_fill(turn_mask.unsqueeze(-1) == 0, 0.0)
 
 
+class CrossTokenContextEncoder(nn.Module):
+    """Direct self-attention over every realized token across all turns.
+
+    Each conversation is compacted independently before attention. This
+    preserves the original T x S token interaction without paying quadratic
+    attention for batch padding or padded turns. No token is truncated.
+    """
+
+    def __init__(self, config: GuardLensConfig):
+        super().__init__()
+        self.input_proj = nn.Linear(
+            config.backbone_dim, config.cross_turn_dim
+        )
+        self.turn_pos = TurnPositionEncoding(
+            config.cross_turn_dim, config.max_turns
+        )
+        layer = nn.TransformerEncoderLayer(
+            d_model=config.cross_turn_dim,
+            nhead=config.cross_turn_heads,
+            dim_feedforward=config.cross_turn_dim * 4,
+            dropout=config.cross_turn_dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(
+            layer, num_layers=config.cross_turn_layers
+        )
+        self.layer_norm = nn.LayerNorm(config.cross_turn_dim)
+
+    def forward(
+        self,
+        token_embeds: torch.Tensor,
+        attention_mask: torch.Tensor,
+        turn_mask: torch.Tensor,
+        role_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        batch_size, turns, tokens, _ = token_embeds.shape
+        x = self.input_proj(token_embeds)
+        turn_idx = torch.arange(
+            turns, device=x.device
+        ).unsqueeze(0).expand(batch_size, -1)
+        x = x + self.turn_pos(turn_idx, role_ids).unsqueeze(2)
+        valid = attention_mask.bool() & turn_mask.bool().unsqueeze(-1)
+
+        rows = []
+        for batch_index in range(batch_size):
+            flat = x[batch_index].reshape(turns * tokens, -1)
+            indices = torch.nonzero(
+                valid[batch_index].reshape(-1), as_tuple=False
+            ).squeeze(-1)
+            if indices.numel() == 0:
+                raise RuntimeError(
+                    "conversation contains no realized tokens"
+                )
+            compact = flat.index_select(0, indices).unsqueeze(0)
+            contextual = self.transformer(compact).squeeze(0)
+            contextual = self.layer_norm(contextual)
+            restored = flat.new_zeros(flat.shape).index_copy(
+                0, indices, contextual
+            )
+            rows.append(restored.reshape(turns, tokens, -1))
+        return torch.stack(rows, dim=0)
+
+
 class ConversationPooler(nn.Module):
     """Learned attention pooling over contextualized realized turns."""
 
@@ -135,8 +200,14 @@ class ClassificationHead(nn.Module):
 
     def __init__(self, config: GuardLensConfig):
         super().__init__()
+        self.expects_fusion = bool(
+            getattr(config, "use_attribution_fusion", False)
+        )
+        input_dim = config.cross_turn_dim * (
+            2 if self.expects_fusion else 1
+        )
         self.mlp = nn.Sequential(
-            nn.Linear(config.cross_turn_dim, config.cls_hidden_dim),
+            nn.Linear(input_dim, config.cls_hidden_dim),
             nn.GELU(),
             nn.Dropout(0.1),
             nn.Linear(config.cls_hidden_dim, config.cls_hidden_dim // 2),
@@ -145,7 +216,21 @@ class ClassificationHead(nn.Module):
             nn.Linear(config.cls_hidden_dim // 2, 1),
         )
 
-    def forward(self, pooled: torch.Tensor):
+    def forward(
+        self,
+        pooled: torch.Tensor,
+        attributed: torch.Tensor = None,
+    ):
+        if self.expects_fusion:
+            if attributed is None:
+                raise RuntimeError(
+                    "gated detector requires an attributed representation"
+                )
+            pooled = torch.cat([pooled, attributed], dim=-1)
+        elif attributed is not None:
+            raise RuntimeError(
+                "attributed representation supplied to an independent detector"
+            )
         return self.mlp(pooled).squeeze(-1)
 
 
@@ -188,6 +273,22 @@ class ContextualSpanHead(nn.Module):
         h = self.norm(token_h + context_h)
         h = self.dropout(torch.nn.functional.gelu(h))
         return self.out(h).squeeze(-1)
+
+
+class DirectSpanHead(nn.Module):
+    """Score globally contextualized token states directly."""
+
+    def __init__(self, config: GuardLensConfig):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(config.cross_turn_dim, config.attr_hidden_dim),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(config.attr_hidden_dim, 1),
+        )
+
+    def forward(self, token_context: torch.Tensor) -> torch.Tensor:
+        return self.mlp(token_context).squeeze(-1)
 
 
 # Backward import alias for code that only imported the class name.

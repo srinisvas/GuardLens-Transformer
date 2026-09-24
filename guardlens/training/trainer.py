@@ -13,7 +13,8 @@ import random
 import shutil
 import subprocess
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
+from contextlib import nullcontext
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -37,8 +38,8 @@ from guardlens.training.loss import GuardLensLoss
 from guardlens.training.schedule import get_current_phase, get_lambda_schedule
 
 
-ARCHITECTURE_VERSION = "causal_localization_v3"
-TRAINING_CONTRACT_VERSION = "restored_a_pre_response_v3"
+ARCHITECTURE_VERSION = "causal_localization_v4"
+TRAINING_CONTRACT_VERSION = "restored_a_multiview_v4"
 
 
 def load_records(path: str) -> List[Dict]:
@@ -170,9 +171,24 @@ def _resolve_device(requested: str) -> torch.device:
     return device
 
 
-def _prepare_output_dir(output_dir: str) -> None:
+def _autocast_context(device: torch.device):
+    # A100 supports native bfloat16. Selectively trainable backbone layers and
+    # all task heads retain FP32 parameters while activations use BF16, which is
+    # especially important for the quadratic global cross-token candidate.
+    if device.type == "cuda":
+        return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    return nullcontext()
+
+
+def _prepare_output_dir(output_dir: str, resume: bool = False) -> None:
     if not output_dir:
         raise RuntimeError("output directory must be non-empty")
+    if resume:
+        if not os.path.isdir(output_dir):
+            raise RuntimeError(
+                f"resume output directory does not exist: {output_dir}"
+            )
+        return
     if os.path.exists(output_dir):
         raise RuntimeError(
             f"output directory already exists: {output_dir}; use a fresh run directory"
@@ -282,17 +298,19 @@ def _average_precision(scores: Sequence[float], labels: Sequence[int]) -> Option
     negatives = sum(int(x) == 0 for x in labels)
     if positives == 0 or negatives == 0:
         return None
-    order = sorted(
-        range(len(scores)),
-        key=lambda i: (-float(scores[i]), i),
-    )
-    tp = 0
-    precision_sum = 0.0
-    for rank, idx in enumerate(order, 1):
-        if int(labels[idx]) == 1:
-            tp += 1
-            precision_sum += tp / rank
-    return precision_sum / positives
+    # Process every exact-score tie as one threshold. This matches the public
+    # evaluator and prevents source-order from changing checkpoint selection.
+    groups = defaultdict(lambda: [0, 0])
+    for score, label in zip(scores, labels):
+        groups[float(score)][int(label)] += 1
+    seen = hits = 0
+    area = 0.0
+    for score in sorted(groups, reverse=True):
+        negative_n, positive_n = groups[score]
+        seen += negative_n + positive_n
+        hits += positive_n
+        area += positive_n * hits / seen
+    return area / positives
 
 
 def _roc_auc(scores: Sequence[float], labels: Sequence[int]) -> Optional[float]:
@@ -407,27 +425,29 @@ def train_epoch(
         group_size = min(accumulation, loader_steps - group_start)
 
         try:
-            outputs = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                turn_mask=turn_mask,
-                role_ids=role_ids,
-                compute_localization=(phase >= 2),
-            )
-            losses = loss_fn(
-                outputs,
-                labels,
-                token_labels,
-                span_weights=batch["span_weights"].to(device),
-                detection_weights=batch["detection_weights"].to(device),
-                turn_labels=batch["turn_labels"].to(device),
-                turn_weights=batch["turn_weights"].to(device),
-                phase=phase,
-                lambda_detection=lambda_detection,
-                lambda_turn=lambda_turn,
-                lambda_span=lambda_span,
-            )
-            loss = losses["total"]
+            with _autocast_context(device):
+                outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    turn_mask=turn_mask,
+                    role_ids=role_ids,
+                    localization_mask=batch["localization_mask"].to(device),
+                    compute_localization=(phase >= 2),
+                )
+                losses = loss_fn(
+                    outputs,
+                    labels,
+                    token_labels,
+                    span_weights=batch["span_weights"].to(device),
+                    detection_weights=batch["detection_weights"].to(device),
+                    turn_labels=batch["turn_labels"].to(device),
+                    turn_weights=batch["turn_weights"].to(device),
+                    phase=phase,
+                    lambda_detection=lambda_detection,
+                    lambda_turn=lambda_turn,
+                    lambda_span=lambda_span,
+                )
+                loss = losses["total"]
             (loss / group_size).backward()
         except RuntimeError as exc:
             if "out of memory" in str(exc).lower():
@@ -489,13 +509,15 @@ def _collect_detection_probs(
     families: List[str] = []
     model.eval()
     for batch in loader:
-        outputs = model(
-            input_ids=batch["input_ids"].to(device),
-            attention_mask=batch["attention_mask"].to(device),
-            turn_mask=batch["turn_mask"].to(device),
-            role_ids=batch["role_ids"].to(device),
-            compute_localization=False,
-        )
+        with _autocast_context(device):
+            outputs = model(
+                input_ids=batch["input_ids"].to(device),
+                attention_mask=batch["attention_mask"].to(device),
+                turn_mask=batch["turn_mask"].to(device),
+                role_ids=batch["role_ids"].to(device),
+                localization_mask=batch["localization_mask"].to(device),
+                compute_localization=False,
+            )
         probs.extend(torch.sigmoid(outputs["cls_logits"]).cpu().tolist())
         labels.extend(batch["labels"].tolist())
         families.extend(str(row["source_family"]) for row in batch["metadata"])
@@ -527,26 +549,28 @@ def evaluate_dev(
     for batch in loader:
         labels = batch["labels"].to(device)
         token_labels = batch["token_labels"].to(device)
-        outputs = model(
-            input_ids=batch["input_ids"].to(device),
-            attention_mask=batch["attention_mask"].to(device),
-            turn_mask=batch["turn_mask"].to(device),
-            role_ids=batch["role_ids"].to(device),
-            compute_localization=True,
-        )
-        losses = loss_fn(
-            outputs,
-            labels,
-            token_labels,
-            span_weights=batch["span_weights"].to(device),
-            detection_weights=batch["detection_weights"].to(device),
-            turn_labels=batch["turn_labels"].to(device),
-            turn_weights=batch["turn_weights"].to(device),
-            phase=2,
-            lambda_detection=config.lambda_detection,
-            lambda_turn=config.lambda_turn,
-            lambda_span=config.lambda_span,
-        )
+        with _autocast_context(device):
+            outputs = model(
+                input_ids=batch["input_ids"].to(device),
+                attention_mask=batch["attention_mask"].to(device),
+                turn_mask=batch["turn_mask"].to(device),
+                role_ids=batch["role_ids"].to(device),
+                localization_mask=batch["localization_mask"].to(device),
+                compute_localization=True,
+            )
+            losses = loss_fn(
+                outputs,
+                labels,
+                token_labels,
+                span_weights=batch["span_weights"].to(device),
+                detection_weights=batch["detection_weights"].to(device),
+                turn_labels=batch["turn_labels"].to(device),
+                turn_weights=batch["turn_weights"].to(device),
+                phase=2,
+                lambda_detection=config.lambda_detection,
+                lambda_turn=config.lambda_turn,
+                lambda_span=config.lambda_span,
+            )
         total_loss += float(losses["total"].item())
         n_batches += 1
 
@@ -647,10 +671,145 @@ def _checkpoint_payload(
     }
 
 
+def _config_values(config) -> Dict[str, object]:
+    return dict(config) if isinstance(config, dict) else vars(config).copy()
+
+
+def _atomic_torch_save(payload, path: str) -> None:
+    temporary = f"{path}.tmp-{os.getpid()}"
+    try:
+        torch.save(payload, temporary)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _atomic_copy(source: str, target: str) -> None:
+    temporary = f"{target}.tmp-{os.getpid()}"
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _save_resume_checkpoint(
+    *,
+    path,
+    model,
+    optimizer,
+    scheduler,
+    train_generator,
+    config,
+    model_name,
+    epoch,
+    data_sha256,
+    code_sha,
+    runtime_versions,
+    best_detection,
+    best_localization,
+    best_joint,
+    best_threshold,
+    patience_counter,
+    last_phase,
+    last_dev_metrics,
+):
+    payload = {
+        "resume_format_version": 1,
+        "architecture_version": ARCHITECTURE_VERSION,
+        "training_contract_version": TRAINING_CONTRACT_VERSION,
+        "epoch": epoch,
+        "model_name": model_name,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scheduler_state_dict": scheduler.state_dict(),
+        "train_generator_state": train_generator.get_state(),
+        "python_rng_state": random.getstate(),
+        "numpy_rng_state": np.random.get_state(),
+        "torch_rng_state": torch.get_rng_state(),
+        "cuda_rng_state_all": (
+            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else []
+        ),
+        "config": config,
+        "data_sha256": data_sha256,
+        "code_sha": code_sha,
+        "runtime_versions": runtime_versions,
+        "best_detection": best_detection,
+        "best_localization": best_localization,
+        "best_joint": best_joint,
+        "best_threshold": best_threshold,
+        "patience_counter": patience_counter,
+        "last_phase": last_phase,
+        "last_dev_metrics": last_dev_metrics,
+    }
+    _atomic_torch_save(payload, path)
+
+
+def _restore_resume_checkpoint(
+    *,
+    path,
+    model,
+    optimizer,
+    scheduler,
+    train_generator,
+    config,
+    model_name,
+    data_sha256,
+    code_sha,
+    runtime_versions,
+):
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    expected = {
+        "resume_format_version": 1,
+        "architecture_version": ARCHITECTURE_VERSION,
+        "training_contract_version": TRAINING_CONTRACT_VERSION,
+        "model_name": model_name,
+        "data_sha256": data_sha256,
+        "code_sha": code_sha,
+        "runtime_versions": runtime_versions,
+    }
+    for key, value in expected.items():
+        if payload.get(key) != value:
+            raise RuntimeError(
+                f"resume checkpoint {key} mismatch: "
+                f"expected {value!r}, got {payload.get(key)!r}"
+            )
+    saved_config = _config_values(payload.get("config", {}))
+    current_config = _config_values(config)
+    if saved_config != current_config:
+        changed = sorted(
+            key for key in saved_config.keys() | current_config.keys()
+            if saved_config.get(key) != current_config.get(key)
+        )
+        raise RuntimeError(
+            "resume checkpoint configuration mismatch for fields: "
+            + ", ".join(changed)
+        )
+
+    model.load_state_dict(payload["model_state_dict"], strict=True)
+    optimizer.load_state_dict(payload["optimizer_state_dict"])
+    scheduler.load_state_dict(payload["scheduler_state_dict"])
+    train_generator.set_state(payload["train_generator_state"])
+    random.setstate(payload["python_rng_state"])
+    np.random.set_state(payload["numpy_rng_state"])
+    torch.set_rng_state(payload["torch_rng_state"])
+    if torch.cuda.is_available():
+        saved_cuda = payload.get("cuda_rng_state_all", [])
+        if len(saved_cuda) != torch.cuda.device_count():
+            raise RuntimeError(
+                "resume checkpoint CUDA RNG device count differs from this job"
+            )
+        torch.cuda.set_rng_state_all(saved_cuda)
+    return payload
+
+
 def train(
     config: GuardLensConfig,
     output_dir: str,
     model_name: str = "guardlens",
+    resume: bool = False,
 ):
     if model_name != "guardlens":
         raise RuntimeError(
@@ -696,7 +855,12 @@ def train(
     print(f"Dev SHA256:   {data_sha256['dev']}")
     print(f"Code SHA:     {code_sha}")
     print(f"Runtime:      {runtime_versions}")
-    _prepare_output_dir(output_dir)
+    _prepare_output_dir(output_dir, resume=resume)
+    resume_path = os.path.join(output_dir, "last.pt")
+    if resume and not os.path.isfile(resume_path):
+        raise RuntimeError(
+            f"resume requested but checkpoint is missing: {resume_path}"
+        )
 
     n_pos, n_neg, pos_mass, neg_mass = _weighted_detection_balance(
         train_records
@@ -876,6 +1040,35 @@ def train(
     patience_counter = 0
     last_phase = 1
     last_dev_metrics = None
+    start_epoch = 0
+
+    if resume:
+        state = _restore_resume_checkpoint(
+            path=resume_path,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            train_generator=train_generator,
+            config=config,
+            model_name=model_name,
+            data_sha256=data_sha256,
+            code_sha=code_sha,
+            runtime_versions=runtime_versions,
+        )
+        start_epoch = int(state["epoch"]) + 1
+        best_detection = float(state["best_detection"])
+        best_localization = float(state["best_localization"])
+        best_joint = float(state["best_joint"])
+        best_threshold = float(state["best_threshold"])
+        patience_counter = int(state["patience_counter"])
+        last_phase = int(state["last_phase"])
+        last_dev_metrics = state.get("last_dev_metrics")
+        print(
+            f"Resuming after completed epoch {state['epoch']}; "
+            f"next epoch={start_epoch}"
+        )
+        if start_epoch >= config.max_epochs:
+            print("All configured epochs were already completed; rebuilding summary")
 
     print(
         f"Training {config.max_epochs} epochs: "
@@ -883,7 +1076,7 @@ def train(
         f"phase2 joint {config.phase1_epochs}-{config.max_epochs-1}"
     )
 
-    for epoch in range(config.max_epochs):
+    for epoch in range(start_epoch, config.max_epochs):
         train_metrics = train_epoch(
             model,
             train_loader,
@@ -896,6 +1089,18 @@ def train(
         )
 
         if (epoch + 1) % config.eval_every != 0:
+            _save_resume_checkpoint(
+                path=resume_path, model=model, optimizer=optimizer,
+                scheduler=scheduler, train_generator=train_generator,
+                config=config, model_name=model_name, epoch=epoch,
+                data_sha256=data_sha256, code_sha=code_sha,
+                runtime_versions=runtime_versions,
+                best_detection=best_detection,
+                best_localization=best_localization,
+                best_joint=best_joint, best_threshold=best_threshold,
+                patience_counter=patience_counter, last_phase=last_phase,
+                last_dev_metrics=last_dev_metrics,
+            )
             continue
 
         if config.tune_threshold:
@@ -945,6 +1150,7 @@ def train(
             f"thr={best_threshold:.3f}"
         )
 
+        should_stop = False
         if phase != last_phase:
             patience_counter = 0
             last_phase = phase
@@ -966,7 +1172,7 @@ def train(
                 score_name="b_dev_detection_auprc",
                 runtime_versions=runtime_versions,
             )
-            torch.save(
+            _atomic_torch_save(
                 payload, os.path.join(output_dir, "best_detection.pt")
             )
 
@@ -975,6 +1181,7 @@ def train(
             loc_score = float(loc_score)
             if loc_score > best_localization:
                 best_localization = loc_score
+                patience_counter = 0
                 payload = _checkpoint_payload(
                     model=model,
                     config=config,
@@ -989,14 +1196,20 @@ def train(
                     score_name="mean_dev_turn_span_auprc",
                     runtime_versions=runtime_versions,
                 )
-                torch.save(
+                _atomic_torch_save(
                     payload, os.path.join(output_dir, "best_localization.pt")
                 )
+            elif config.patience > 0:
+                patience_counter += 1
+                if patience_counter >= config.patience:
+                    print(
+                        f"Early stop after {config.patience} "
+                        "joint-phase evaluations without localization-score improvement"
+                    )
+                    should_stop = True
 
-            # Canonical checkpoint selection is joint, not localization-only.
-            # B-source detection AUPRC, turn AUPRC and span AUPRC are all bounded [0,1],
-            # so an equal-weight mean is transparent and avoids selecting a
-            # localization peak that materially sacrifices detection.
+            # Keep a joint checkpoint as a diagnostic, but do not make
+            # detection co-equal with the paper's primary attribution task.
             turn_ap = dev_metrics.get("turn_auprc")
             span_ap = dev_metrics.get("span_auprc")
             if turn_ap is not None and span_ap is not None:
@@ -1006,7 +1219,6 @@ def train(
                 dev_metrics["joint_selection_score"] = joint_score
                 if joint_score > best_joint:
                     best_joint = joint_score
-                    patience_counter = 0
                     payload = _checkpoint_payload(
                         model=model,
                         config=config,
@@ -1021,39 +1233,49 @@ def train(
                         score_name="mean_b_dev_detection_turn_span_auprc",
                         runtime_versions=runtime_versions,
                     )
-                    torch.save(
+                    _atomic_torch_save(
                         payload, os.path.join(output_dir, "best_joint.pt")
                     )
-                elif config.patience > 0:
-                    patience_counter += 1
-                    if patience_counter >= config.patience:
-                        print(
-                            f"Early stop after {config.patience} "
-                            "joint-phase evaluations without joint-score improvement"
-                        )
-                        break
+
+        _save_resume_checkpoint(
+            path=resume_path, model=model, optimizer=optimizer,
+            scheduler=scheduler, train_generator=train_generator,
+            config=config, model_name=model_name, epoch=epoch,
+            data_sha256=data_sha256, code_sha=code_sha,
+            runtime_versions=runtime_versions,
+            best_detection=best_detection,
+            best_localization=best_localization,
+            best_joint=best_joint, best_threshold=best_threshold,
+            patience_counter=patience_counter, last_phase=last_phase,
+            last_dev_metrics=last_dev_metrics,
+        )
+        if should_stop:
+            break
 
     joint_ckpt = os.path.join(output_dir, "best_joint.pt")
     localization_ckpt = os.path.join(
         output_dir, "best_localization.pt"
     )
     detection_ckpt = os.path.join(output_dir, "best_detection.pt")
-    if os.path.exists(joint_ckpt):
-        chosen = joint_ckpt
-    elif os.path.exists(localization_ckpt):
+    if os.path.exists(localization_ckpt):
         chosen = localization_ckpt
+    elif os.path.exists(joint_ckpt):
+        chosen = joint_ckpt
     elif os.path.exists(detection_ckpt):
         chosen = detection_ckpt
     else:
         raise RuntimeError("training produced no checkpoint")
 
-    shutil.copy2(chosen, os.path.join(output_dir, "best.pt"))
+    _atomic_copy(chosen, os.path.join(output_dir, "best.pt"))
     summary = {
         "status": "completed",
         "architecture_version": ARCHITECTURE_VERSION,
         "training_contract_version": TRAINING_CONTRACT_VERSION,
         "model_name": model_name,
         "best_checkpoint": os.path.basename(chosen),
+        "checkpoint_selection_policy": (
+            "maximize_mean_dev_turn_span_auprc;_detection_reported_separately"
+        ),
         "best_b_dev_detection_auprc": best_detection,
         "best_localization_auprc": (
             best_localization if best_localization >= 0 else None
@@ -1067,12 +1289,16 @@ def train(
         "held_out_test_accessed": False,
         "last_dev_metrics": last_dev_metrics,
     }
-    with open(
-        os.path.join(output_dir, "training_summary.json"),
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(summary, handle, indent=2, sort_keys=True)
+    summary_path = os.path.join(output_dir, "training_summary.json")
+    summary_temporary = f"{summary_path}.tmp-{os.getpid()}"
+    try:
+        with open(summary_temporary, "w", encoding="utf-8") as handle:
+            json.dump(summary, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(summary_temporary, summary_path)
+    finally:
+        if os.path.exists(summary_temporary):
+            os.unlink(summary_temporary)
 
     print(f"Best checkpoint: {chosen}")
     print("Held-out test accessed: NO")

@@ -14,6 +14,8 @@
 # Submit: sbatch eval_stage3_cross_dataset.slurm
 
 set -uo pipefail
+echo "ERROR: legacy evaluation launcher disabled pending V4 internal signoff and migration." >&2
+exit 2
 
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="$HOME/work/conda_envs/guardlens_train"
