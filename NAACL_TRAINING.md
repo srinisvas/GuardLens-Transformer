@@ -605,9 +605,9 @@ that dev remains primary-only with both A and B source families. Every full run
 uses a new run-specific output directory and refuses to reuse an existing path.
 CUDA requests fail closed instead of falling back to CPU.
 
-The matrix runs one shared CPU preflight before reserving any GPU. It verifies
-both frozen training variants, audits the pre-response representation, enforces
-the length-only AUC ceiling and prepares only internal dev. Its content-addressed
+The matrix runs one shared CPU preflight before reserving any GPU. It runs the
+complete `test*.py` contract suite, verifies both frozen training variants,
+audits the pre-response representation, enforces the length-only AUC ceiling and prepares only internal dev. Its content-addressed
 marker lets the GPU jobs verify and reuse those exact results instead of idling
 four GPUs during duplicate audits.
 

@@ -52,6 +52,9 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 2
 fi
 
+echo "Running complete CPU contract suite before GPU submission"
+python -m unittest discover -v -p 'test*.py'
+
 mkdir -p "$SHARED_PREFLIGHT_DIR"
 for variant in primary primary_plus_auxiliary; do
   if [[ "$variant" == "primary" ]]; then
@@ -113,4 +116,3 @@ python -m eval_platform prepare \
 echo "Shared preflight complete for both training variants"
 echo "Length-only AUC ceiling: $LENGTH_AUC_CEILING"
 echo "Held-out test accessed: NO"
-
