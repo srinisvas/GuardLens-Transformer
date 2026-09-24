@@ -462,6 +462,36 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(len(detector.calls), calls)
             self.assertTrue((Path(d) / "report.json").exists())
 
+    def test_causal_effects_are_reported_by_source_and_pivot_strata(self):
+        a, b = record("source-a"), record("source-b")
+        a["dataset"] = "internal_a"
+        a["strata"].update(
+            family="distributed", pivot_kind="contextual", corpus_source="source_a"
+        )
+        b["dataset"] = "internal_b"
+        b["strata"].update(
+            family="single_turn", pivot_kind="lexical", corpus_source="source_b"
+        )
+        p = protocol()
+        p.update(methods=["guardlens", "loto"], budgets=[.2], context_diagnostics=False)
+        with tempfile.TemporaryDirectory() as d:
+            report = run(
+                [a, b], FakeDetector(), {"self": FakeDetector()}, p, ["alpha"],
+                RunStore(d, {"test": True}),
+            )
+        self.assertEqual(
+            set(report["effects_by_stratum"]["dataset"]),
+            {"internal_a", "internal_b"},
+        )
+        self.assertIn(
+            "self/guardlens/0.2-minus-loto",
+            report["paired_differences_by_stratum"]["pivot_kind"]["contextual"],
+        )
+        self.assertEqual(
+            set(report["effects_by_stratum"]["corpus_source"]),
+            {"source_a", "source_b"},
+        )
+
     def test_prepare_cli_is_strict_and_does_not_invent_annotations(self):
         with tempfile.TemporaryDirectory() as d:
             source, output = Path(d) / "source.jsonl", Path(d) / "out.jsonl"

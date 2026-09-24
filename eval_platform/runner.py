@@ -292,7 +292,9 @@ def summarize(records, predictions, interventions, protocol, detection_threshold
               "coverage": {"total": len(records), "scored": len(valid), "failures": [{"id": r["id"], **r["prediction"]} for r in predictions if "error" in r["prediction"]]},
               "detection": detection, "localization": summarize_localization(valid), "strata": strata,
               "transfer_claim": "independent guard judgment sensitivity, not target attack-success reduction",
-              "effects": {}, "paired_differences": {}, "utility": {}}
+              "effects": {}, "paired_differences": {},
+              "effects_by_stratum": {}, "paired_differences_by_stratum": {},
+              "utility": {}}
     output["baseline_turn_agreement"] = {}
     for name in sorted({name for r in valid for name in r.get("baseline_localization", {})}):
         metrics = [r["baseline_localization"][name] for r in valid if name in r.get("baseline_localization", {})]
@@ -326,7 +328,10 @@ def summarize(records, predictions, interventions, protocol, detection_threshold
     for (guard, method, fraction, _rid), rs in grouped.items():
         threshold = detection_threshold if guard == "self" else protocol["guard_threshold"]
         complete = all(r.get("before") is not None and r.get("after") is not None for r in rs)
+        source = valid_by_id.get(rs[0]["id"], {})
         row = {k: rs[0][k] for k in ("id", "cluster_id", "label", "detector_probability")}
+        row["dataset"] = source.get("dataset")
+        row["strata"] = source.get("strata", {})
         row.update({k: average([r.get(k) for r in rs]) if complete else None for k in ("before", "after", "kept")})
         if complete:
             row["flip"] = average([float(r["before"] >= threshold and r["after"] < threshold) for r in rs])
@@ -347,6 +352,54 @@ def summarize(records, predictions, interventions, protocol, detection_threshold
             paired = [{"cluster_id": r["cluster_id"], "delta": (r["before"] - r["after"]) - (other[r["id"]]["before"] - other[r["id"]]["after"])}
                       for r in rs if r["label"] == 1 and r.get("after") is not None and r["id"] in other and other[r["id"]].get("after") is not None]
             output["paired_differences"][f"{key}-minus-{comparator}"] = ci(paired, lambda rows: average([r["delta"] for r in rows]))
+    # The aggregate can hide a failure confined to one data source or causal
+    # structure. Recompute intervention outcomes on each frozen subgroup using
+    # the same attempted-record accounting and paired comparisons.
+    for stratum in (
+        "dataset", "corpus_source", "family", "pivot_kind", "supervision_tier"
+    ):
+        values = sorted({
+            r["dataset"] if stratum == "dataset"
+            else r.get("strata", {}).get(stratum, "unknown")
+            for r in records
+        })
+        output["effects_by_stratum"][stratum] = {}
+        output["paired_differences_by_stratum"][stratum] = {}
+        for value in values:
+            attempted = [
+                r for r in records
+                if (r["dataset"] if stratum == "dataset"
+                    else r.get("strata", {}).get(stratum, "unknown")) == value
+            ]
+            ids = {r["id"] for r in attempted}
+            effect_rows = {}
+            pair_rows = {}
+            for (guard, method, fraction), rows in collapsed.items():
+                key = f"{guard}/{method}/{fraction:g}"
+                subset = [r for r in rows if r["id"] in ids]
+                threshold = detection_threshold if guard == "self" else protocol["guard_threshold"]
+                effect_rows[key] = effects(
+                    subset, threshold, detection_threshold,
+                    protocol["bootstrap_repeats"], protocol["seed"]
+                )
+                if method != "guardlens":
+                    continue
+                for comparator in ("random", "span_random", "surface", "last_user", "loto", "llm"):
+                    if (guard, comparator, fraction) not in collapsed:
+                        continue
+                    other = {r["id"]: r for r in collapsed[(guard, comparator, fraction)] if r["id"] in ids}
+                    paired = [
+                        {"cluster_id": r["cluster_id"],
+                         "delta": (r["before"] - r["after"]) - (other[r["id"]]["before"] - other[r["id"]]["after"])}
+                        for r in subset
+                        if r["label"] == 1 and r.get("after") is not None
+                        and r["id"] in other and other[r["id"]].get("after") is not None
+                    ]
+                    pair_rows[f"{key}-minus-{comparator}"] = ci(
+                        paired, lambda rows: average([r["delta"] for r in rows])
+                    )
+            output["effects_by_stratum"][stratum][value] = effect_rows
+            output["paired_differences_by_stratum"][stratum][value] = pair_rows
     # Utility must name the benign population. Shared detector FPR is the same
     # for every attribution method, so this cannot establish attribution specificity.
     benign_groups = {

@@ -74,6 +74,21 @@ def base_record(label=1):
 
 
 class NaaclDatasetContractTests(unittest.TestCase):
+    def test_pre_response_is_default_and_retrospective_is_explicit(self):
+        record = base_record(0)
+        record["turns"].append({
+            "turn_id": 3,
+            "role": "assistant",
+            "text": "final answer unavailable at decision time",
+            "span_annotations": [],
+        })
+        pre = GuardLensDataset([record], GuardLensConfig())[0]
+        retrospective = GuardLensDataset(
+            [record], GuardLensConfig(input_view="retrospective")
+        )[0]
+        self.assertEqual(pre["turn_texts"], ["alpha", "beta", "gamma"])
+        self.assertEqual(len(retrospective["turn_texts"]), 4)
+
     def test_primary_detection_weight_is_not_localization_confidence(self):
         record = base_record(1)
         item = GuardLensDataset([record], GuardLensConfig())[0]

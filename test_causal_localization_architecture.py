@@ -32,6 +32,26 @@ def tiny_config():
 
 
 class CausalLocalizationArchitectureTests(unittest.TestCase):
+    def test_attention_pooling_ignores_padding_and_is_not_forced_to_mean(self):
+        config = tiny_config()
+        encoder = TurnContextEncoder(config)
+        with torch.no_grad():
+            encoder.token_score[0].weight.zero_()
+            encoder.token_score[0].bias.zero_()
+            encoder.token_score[2].weight.zero_()
+            encoder.token_score[2].bias.zero_()
+        token = torch.tensor([[[[1.0] * 12, [3.0] * 12, [99.0] * 12]]])
+        mask = torch.tensor([[[1, 1, 0]]])
+        pooled = encoder.pool_tokens(token, mask)
+        self.assertTrue(torch.allclose(pooled, torch.full((1, 1, 12), 2.0)))
+
+        with torch.no_grad():
+            encoder.token_score[0].weight.fill_(0.1)
+            encoder.token_score[2].weight.fill_(0.1)
+        weighted = encoder.pool_tokens(token, mask)
+        self.assertTrue(torch.isfinite(weighted).all())
+        self.assertFalse(torch.allclose(weighted, pooled))
+
     def test_hierarchical_components_have_expected_shapes(self):
         config = tiny_config()
         token = torch.randn(2, 3, 5, 12)
@@ -130,6 +150,37 @@ class CausalLocalizationArchitectureTests(unittest.TestCase):
         self.assertEqual(fake.calls, [(2, 3), (1, 6)])
         self.assertTrue(torch.all(hidden[0, 0, 2:] == 0))
         self.assertTrue(torch.all(hidden[0, 2, 3:] == 0))
+
+    def test_trainable_backbone_microbatch_path_preserves_gradients(self):
+        config = tiny_config()
+        config.backbone_turn_microbatch = 1
+
+        class FakeBackbone(nn.Module):
+            def __init__(self, dim):
+                super().__init__()
+                self.scale = nn.Parameter(torch.tensor(2.0))
+                self.dim = dim
+                self.calls = []
+
+            def forward(self, input_ids, attention_mask):
+                self.calls.append(tuple(input_ids.shape))
+                hidden = input_ids.float().unsqueeze(-1).repeat(
+                    1, 1, self.dim
+                )
+                return SimpleNamespace(last_hidden_state=hidden * self.scale)
+
+        model = GuardLens(config)
+        fake = FakeBackbone(config.backbone_dim)
+        model.backbone = fake
+        model.backbone_loaded = True
+        model.backbone_fully_frozen = False
+        ids = torch.tensor([[[1, 2, 0], [1, 2, 3]]])
+        mask = torch.tensor([[[1, 1, 0], [1, 1, 1]]])
+        hidden = model.encode_turns(ids, mask)
+        hidden.sum().backward()
+        self.assertEqual(fake.calls, [(1, 2), (1, 3)])
+        self.assertIsNotNone(fake.scale.grad)
+        self.assertGreater(float(fake.scale.grad), 0.0)
 
     def test_span_head_masks_assistant_and_padding_tokens(self):
         config = tiny_config()

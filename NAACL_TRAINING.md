@@ -26,7 +26,7 @@ Face revision:
 
     45bb4654a4d5aaff24dd11d4781fa46d39bf8c13
 
-Transformers 4.48+ is required for native ModernBERT support. The setup script
+Transformers 4.56.2+ and below 5 is required. The setup script
 downloads that exact revision rather than following a mutable `main` ref.
 
 Heavy evaluation backends such as vLLM and bitsandbytes remain optional and are
@@ -133,19 +133,23 @@ changes subsequent unsafe behavior under the frozen replay/evaluation protocol.
 The model does not claim globally necessary and sufficient "true causal
 tokens".
 
-## 3. Canonical architecture
+## 3. V3 architecture diagnostic
 
-The main model is:
+The completed V2 internal evaluation is not the final model. V3 first aligns
+training, dev calibration and evaluation to the `pre_response` view, then runs a
+controlled four-model diagnostic matrix before any held-out or external access.
+
+The shared model skeleton is:
 
     realized turn text
         |
         v
-    frozen ModernBERT-large per turn (native 8,192-token context)
+    ModernBERT-large per turn (native 8,192-token context)
         |
         +--> token representations -----------------------------+
         |                                                       |
         v                                                       |
-    masked mean pool within turn                                |
+    masked mean or learned attention pool within turn           |
         |                                                       |
         + role embedding + sinusoidal turn position             |
         |                                                       |
@@ -167,7 +171,9 @@ therefore O(T^2), while ModernBERT models the complete within-turn token
 context natively.
 
 The contextual span head combines each raw token representation with the
-conversation-aware representation of the containing turn.
+conversation-aware representation of the containing turn. Attention pooling
+and selective fine-tuning of the final four ModernBERT layers are diagnostic
+axes. They are not paper claims until the internal dev comparison is reviewed.
 
 ### Backbone choice
 
@@ -179,7 +185,7 @@ The canonical backbone is `answerdotai/ModernBERT-large`:
 - 1,024-dimensional token states for the contextual span head
 - local/global alternating attention suitable for long inputs
 - fast-tokenizer offset mappings required by the span supervision contract
-- frozen-backbone inference in BF16 with PyTorch SDPA on the A100 path
+- BF16 with PyTorch SDPA on the A100 path
 
 The frozen train/dev representation audit showed that a 512-token encoder is
 structurally mismatched to this corpus: p95 is about 700 tokens, p99 about 1.15K,
@@ -189,11 +195,17 @@ overlapping chunks. This keeps cross-token dependencies within the turn intact.
 
 Long-context implementation must also avoid turning dynamic padding into hidden
 quadratic work. The collator remains batch-padded for a simple model interface,
-but the frozen backbone does not encode every realized turn at the batch-wide
+but the backbone does not encode every realized turn at the batch-wide
 maximum length. Realized turns are sorted by their true token length and passed
-through ModernBERT in length-local microbatches (default 8). Only each
+through ModernBERT in length-local microbatches. Frozen candidates default to
+eight turns per microbatch. Selectively fine-tuned candidates use one turn per
+microbatch plus gradient checkpointing. Only each
 microbatch's local maximum length enters the backbone. The dense tensor is
 reconstructed afterward for the hierarchical heads.
+
+All V3 candidates train on the exact `pre_response` view. The final observed
+assistant response is never available to training, calibration or diagnostics.
+Earlier assistant history remains visible.
 
 Assistant/padded turns are masked from evidence-turn output, and assistant or
 padding tokens are also masked from causal span output. Span supervision is
@@ -489,10 +501,11 @@ from silently turning a joint run into a one-class or detection-only run.
 
 `train_naacl.slurm` retains the repaired train/dev-only length probe.
 
-The locked restored-A probe is diagnostic rather than an arbitrary stop gate.
-Its dev multivariable ROC AUC is approximately 0.600. Train/dev direction
-reversal and all source-stratified detection results must remain visible in the
-reported diagnostics.
+The length-only probe is computed on the exact configured model view. Training
+fails closed if dev ROC AUC exceeds the frozen 0.650 ceiling. The ceiling must
+not be raised to make a run pass. Repair the data if the pre-response view fails.
+Train/dev direction reversal and all source-stratified detection results remain
+visible in the reported diagnostics.
 
 The held-out test is not accessed by this preflight.
 
@@ -530,8 +543,8 @@ selection score.
 
 Every checkpoint records:
 
-- architecture_version=causal_localization_v2
-- training_contract_version=restored_a_primary_plus_auxiliary_v2
+- architecture_version=causal_localization_v3
+- training_contract_version=restored_a_pre_response_v3
 - exact training-code Git SHA
 - exact ModernBERT model revision through the stored config
 - exact train SHA-256
@@ -571,6 +584,10 @@ Canonical:
 
     train_naacl.slurm
     smoke_naacl_window.slurm
+    preflight_naacl_matrix.slurm
+    eval_internal_dev.slurm
+    compare_internal_dev_matrix.slurm
+    submit_train_naacl_diagnostic.sh
 
 The canonical training launcher permits only `MODEL=guardlens` until baseline
 migration is complete.
@@ -582,17 +599,39 @@ DataLoader also uses an explicit seed-bound `torch.Generator`, pinning shuffled
 batch order to `config.seed`. This does not claim full CUDA bitwise
 determinism; it removes batch-order nondeterminism.
 
-The launchers default to `primary_plus_auxiliary`. The trainer independently
+The single-run launchers default to `primary_plus_auxiliary`. The trainer independently
 validates that canonical training contains both A and B auxiliary sources and
 that dev remains primary-only with both A and B source families. Every full run
 uses a new run-specific output directory and refuses to reuse an existing path.
 CUDA requests fail closed instead of falling back to CPU.
 
-The smoke launcher is pinned to the canonical train/dev hashes and exact
+The matrix runs one shared CPU preflight before reserving any GPU. It verifies
+both frozen training variants, audits the pre-response representation, enforces
+the length-only AUC ceiling and prepares only internal dev. Its content-addressed
+marker lets the GPU jobs verify and reuse those exact results instead of idling
+four GPUs during duplicate audits.
+
+The smoke launcher is pinned to the train/dev hashes and exact
 ModernBERT revision before it touches the GPU. It executes a localization batch,
-an A+B auxiliary-only batch that must have no localization targets, and a
+an A+B auxiliary-only batch when the variant includes auxiliaries, and a
 worst-token-footprint batch chosen across the full training population. All
-three report peak CUDA allocation.
+executed batches report peak CUDA allocation.
+
+The four internal candidates are:
+
+| Candidate | Pooling | Trainable backbone layers | Training population |
+| --- | --- | ---: | --- |
+| `mean_frozen_aux` | mean | 0 | primary + auxiliary |
+| `attention_frozen_aux` | attention | 0 | primary + auxiliary |
+| `attention_top4_aux` | attention | 4 | primary + auxiliary |
+| `attention_top4_primary` | attention | 4 | primary only |
+
+Selective fine-tuning uses a separate backbone learning rate of 2e-5 while the
+hierarchical heads use 2e-4. All four candidates run concurrently on one A100
+each. After training, four self-guard internal-dev causal diagnostics run
+concurrently and report effects plus GuardLens-minus-baseline paired differences
+by dataset, corpus source, family, pivot kind and supervision tier. The comparison job starts
+only after all four reports complete.
 
 The following historical launchers are intentionally disabled on this branch:
 
@@ -606,7 +645,7 @@ See `NAACL_EVALUATION.md` for review coverage, commands and experiment gates.
 
 This is intentional. The pre-redesign evaluators use stale target and
 representation semantics and must not silently run against
-`causal_localization_v2`.
+the current `causal_localization_v3` contract.
 
 ## 14. Baseline status
 
@@ -873,28 +912,18 @@ Run CPU contracts:
       test_training_readiness_contract.py \
       test_verify_freeze_contract.py
 
-Then run the frozen SHA verifier and representation audit from Sections 8 and 9.
+Submit the complete internal matrix from the repository root:
 
-Then submit:
+    bash submit_train_naacl_diagnostic.sh
 
-    sbatch smoke_naacl_window.slurm
+The checked-in submitter creates four concurrent smoke jobs, four concurrent
+training jobs, four concurrent internal-dev causal diagnostic jobs and one CPU
+comparison job with `afterok` dependencies. It does not open held-out test data
+and cannot load ShieldGemma or a public dataset.
 
-The smoke is pinned to the canonical auxiliary-inclusive hashes. It selects a
-localizable malicious record plus a benign record with explicit negative span
-supervision, a separate A+B auxiliary-only batch, and a worst-footprint batch
-from the full training population. It verifies positive turn/span targets in the
-joint batch and zero localization targets in the auxiliary batch.
-
-Proceed to full training only when the smoke ends with:
-
-    TRAINING ARCHITECTURE SMOKE PASSED
-
-Finally:
-
-    sbatch train_naacl.slurm
-
-Freeze the completed training checkpoint and evaluation protocol before submitting
-held-out evaluation. Follow `NAACL_EVALUATION.md` for the current launcher.
+Review `internal_dev_comparison.json` before selecting any candidate. Do not run
+held-out or external evaluation until the architecture, training population and
+internal causal results receive explicit signoff.
 
 ## 18. Current readiness status
 
@@ -909,11 +938,11 @@ Runtime test execution:
 
 Architecture redesign:
 
-    implemented
+    V3 diagnostic matrix implemented, empirical selection pending
 
 Training redesign:
 
-    implemented
+    pre-response alignment and four-candidate launcher implemented
 
 Frozen-data SHA verification code:
 
@@ -925,25 +954,24 @@ Representation/truncation audit:
 
 CPU unit/contract suite:
 
-    80-test suite passed at cd65fbb
-    calibration-policy regression passes at the current evaluation commit
+    non-Torch evaluation suite passes locally
+    Torch-dependent CPU contracts must run in the canonical HPC environment
 
 GPU architecture smoke:
 
-    passed on the restored-A primary_plus_auxiliary freeze at training code
-    8981856f58c5f70d718a112f18b1bb5a30e2cf65
+    historical V2 smoke passed
+    all four V3 candidate smokes pending
 
 Full training:
 
-    completed for restored-a-v2-seed42-20260922
-    best_joint.pt selected and copied byte-identically to best.pt
-    checkpoint SHA256 007d60195752dbf57e527b8cd74cf077b23e11f8e63aac92b687bbaeef5388f1
+    historical V2 run completed but is not accepted as the final architecture
+    four V3 candidate runs pending
 
 Evaluation migration:
 
     unified platform implemented, see NAACL_EVALUATION.md
-    dev-only operating-point calibration must precede held-out access
-    actual-checkpoint GPU evaluation and empirical review experiments remain
+    internal dev-only causal diagnostic and stratified paired effects implemented
+    held-out and external evaluation remain paused pending internal signoff
 
 Held-out test access:
 

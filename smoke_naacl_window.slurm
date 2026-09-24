@@ -15,16 +15,36 @@ PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
 FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/final-data-freeze-restored-a}"
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
-TRAIN_PATH="${TRAIN_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/train.jsonl}"
-DEV_PATH="${DEV_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/dev.jsonl}"
+TRAIN_VARIANT="${TRAIN_VARIANT:-primary_plus_auxiliary}"
+SHARED_PREFLIGHT_DIR="${SHARED_PREFLIGHT_DIR:-}"
 MAX_TURNS="${MAX_TURNS:-64}"
 MAX_TOKENS="${MAX_TOKENS:-8192}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 BACKBONE_TURN_MICROBATCH="${BACKBONE_TURN_MICROBATCH:-8}"
+BACKBONE_TRAINABLE_LAYERS="${BACKBONE_TRAINABLE_LAYERS:-0}"
+TURN_POOLING="${TURN_POOLING:-attention}"
+INPUT_VIEW="${INPUT_VIEW:-pre_response}"
 SMOKE_RUN_ID="${SMOKE_RUN_ID:-${SLURM_JOB_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
 SMOKE_OUTPUT_DIR="${SMOKE_OUTPUT_DIR:-$HOME/work/results/guardlens_naacl_redesign/smoke/$SMOKE_RUN_ID}"
+
+case "$TRAIN_VARIANT" in
+  primary)
+    TRAIN_PATH="${TRAIN_PATH:-$FREEZE_DIR/splits_primary/train.jsonl}"
+    DEV_PATH="${DEV_PATH:-$FREEZE_DIR/splits_primary/dev.jsonl}"
+    VERIFY_VARIANT="primary"
+    ;;
+  primary_plus_auxiliary)
+    TRAIN_PATH="${TRAIN_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/train.jsonl}"
+    DEV_PATH="${DEV_PATH:-$FREEZE_DIR/splits_primary_plus_train_auxiliary/dev.jsonl}"
+    VERIFY_VARIANT="primary_plus_auxiliary"
+    ;;
+  *)
+    echo "ERROR: TRAIN_VARIANT must be primary or primary_plus_auxiliary"
+    exit 2
+    ;;
+esac
 
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -66,36 +86,55 @@ for path in "$REPORT_PATH" "$TRAIN_PATH" "$DEV_PATH"; do
   [[ -f "$path" ]] || { echo "ERROR: missing required file: $path"; exit 2; }
 done
 
-python -m guardlens.data.verify_freeze \
-  --report "$REPORT_PATH" \
-  --train "$TRAIN_PATH" \
-  --dev "$DEV_PATH" \
-  --variant primary_plus_auxiliary \
-  --output "$SMOKE_OUTPUT_DIR/freeze_verification.json"
+if [[ -n "$SHARED_PREFLIGHT_DIR" ]]; then
+  python -m guardlens.data.preflight_marker verify \
+    --marker "$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/marker.json" \
+    --variant "$VERIFY_VARIANT" \
+    --train "$TRAIN_PATH" \
+    --dev "$DEV_PATH" \
+    --code-sha "$CODE_SHA" \
+    --input-view "$INPUT_VIEW"
+else
+  python -m guardlens.data.verify_freeze \
+    --report "$REPORT_PATH" \
+    --train "$TRAIN_PATH" \
+    --dev "$DEV_PATH" \
+    --variant "$VERIFY_VARIANT" \
+    --output "$SMOKE_OUTPUT_DIR/freeze_verification.json"
 
-python -m guardlens.data.audit_representation \
-  --train "$TRAIN_PATH" \
-  --dev "$DEV_PATH" \
-  --backbone "$BACKBONE" \
-  --backbone-revision "$BACKBONE_REVISION" \
-  --max-turns "$MAX_TURNS" \
-  --max-tokens "$MAX_TOKENS" \
-  --output "$SMOKE_OUTPUT_DIR/representation_coverage.json"
+  python -m guardlens.data.audit_representation \
+    --train "$TRAIN_PATH" \
+    --dev "$DEV_PATH" \
+    --backbone "$BACKBONE" \
+    --backbone-revision "$BACKBONE_REVISION" \
+    --max-turns "$MAX_TURNS" \
+    --max-tokens "$MAX_TOKENS" \
+    --input-view "$INPUT_VIEW" \
+    --output "$SMOKE_OUTPUT_DIR/representation_coverage.json"
+fi
 
 echo "========================================================"
 echo " GuardLens joint architecture GPU smoke"
 echo " Train: $TRAIN_PATH"
+echo " Variant: $TRAIN_VARIANT"
 echo " Backbone: $BACKBONE"
 echo " Revision: $BACKBONE_REVISION"
+echo " Input: $INPUT_VIEW"
+echo " Pooling: $TURN_POOLING"
+echo " Trainable backbone layers: $BACKBONE_TRAINABLE_LAYERS"
 echo " max_turns=$MAX_TURNS max_tokens=$MAX_TOKENS batch=$BATCH_SIZE"
 echo "========================================================"
 nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader || true
 
 python -m guardlens.evaluation.smoke_training_window \
   --train "$TRAIN_PATH" \
+  --train-variant "$TRAIN_VARIANT" \
   --backbone "$BACKBONE" \
   --backbone-revision "$BACKBONE_REVISION" \
   --backbone-turn-microbatch "$BACKBONE_TURN_MICROBATCH" \
+  --backbone-trainable-layers "$BACKBONE_TRAINABLE_LAYERS" \
+  --turn-pooling "$TURN_POOLING" \
+  --input-view "$INPUT_VIEW" \
   --max-turns "$MAX_TURNS" \
   --max-tokens "$MAX_TOKENS" \
   --batch-size "$BATCH_SIZE" \

@@ -21,6 +21,27 @@ from guardlens.data.training_contract import (
 )
 
 
+def model_visible_turns(record: Dict, view: str) -> List[Dict]:
+    """Return the exact conversation view used by model training.
+
+    The primary task is pre-response prediction. Removing only the suffix after
+    the final user turn preserves original turn IDs and all earlier history.
+    """
+    if view not in {"pre_response", "retrospective"}:
+        raise RuntimeError(f"unsupported model input view {view!r}")
+    turns = list(record.get("turns", []))
+    if view == "pre_response":
+        user_indices = [
+            idx for idx, turn in enumerate(turns)
+            if str(turn.get("role", "")).lower() == "user"
+        ]
+        if not user_indices:
+            cid = str(record.get("conversation_id", "")) or "<missing>"
+            raise RuntimeError(f"{cid}: pre_response view requires a user turn")
+        turns = turns[: user_indices[-1] + 1]
+    return turns
+
+
 class GuardLensDataset(Dataset):
     """Convert frozen records to model-visible text and supervision targets."""
 
@@ -35,7 +56,7 @@ class GuardLensDataset(Dataset):
         record = self.records[idx]
         validate_training_record(record)
         cid = str(record.get("conversation_id", "")) or "<missing>"
-        turns = list(record.get("turns", []))
+        turns = model_visible_turns(record, self.config.input_view)
         if not turns:
             raise RuntimeError(f"{cid}: empty realized trajectory")
         if len(turns) > self.config.max_turns:

@@ -48,14 +48,22 @@ class GuardLensBackend:
             raise RuntimeError("CUDA requested but unavailable")
         # Only load a trusted local checkpoint. Training stores its config dataclass.
         ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
-        if ckpt.get("architecture_version") != "causal_localization_v2" or ckpt.get("model_name") != "guardlens":
+        architecture = ckpt.get("architecture_version")
+        contract = ckpt.get("training_contract_version")
+        if architecture not in {"causal_localization_v2", "causal_localization_v3"} or ckpt.get("model_name") != "guardlens":
             raise ValueError("unsupported checkpoint architecture or model, no fallback")
-        if ckpt.get("training_contract_version") != "restored_a_primary_plus_auxiliary_v2":
+        if contract not in {"restored_a_primary_plus_auxiliary_v2", "restored_a_pre_response_v3"}:
             raise ValueError("checkpoint uses a different supervision contract")
         if ckpt.get("phase") != 2:
             raise ValueError("localization evaluation requires a joint-phase checkpoint")
         config = ckpt["config"]
         self.config = GuardLensConfig(**config) if isinstance(config, dict) else config
+        if contract == "restored_a_primary_plus_auxiliary_v2":
+            # V2 always trained on the complete realized trajectory. Record
+            # that historical fact explicitly instead of inheriting V3 defaults.
+            self.config.input_view = "retrospective"
+            self.config.turn_pooling = "mean"
+            self.config.backbone_trainable_layers = 0
         pinned(self.config.backbone_revision)
         self.threshold = probability(ckpt["threshold"])
         self.device = device
@@ -68,10 +76,11 @@ class GuardLensBackend:
         self.model.load_state_dict(ckpt["model_state_dict"], strict=True)
         self.model.to(device).eval()
         self.identity = {"kind": "guardlens", "checkpoint_sha256": file_hash(checkpoint),
-            "architecture": ckpt["architecture_version"], "training_contract": ckpt["training_contract_version"],
+            "architecture": architecture, "training_contract": contract,
             "training_data_sha256": ckpt["data_sha256"], "training_code_sha": ckpt["code_sha"],
             "epoch": ckpt["epoch"], "score_name": ckpt["score_name"], "threshold": self.threshold,
             "backbone": self.config.backbone_name, "revision": self.config.backbone_revision,
+            "input_view": self.config.input_view,
             "max_turns": self.config.max_turns, "max_tokens_per_turn": self.config.max_tokens_per_turn,
             "config": vars(self.config)}
 

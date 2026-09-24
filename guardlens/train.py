@@ -33,9 +33,18 @@ def main():
         default="45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
     )
     parser.add_argument("--backbone-turn-microbatch", type=int, default=8)
+    parser.add_argument("--backbone-trainable-layers", type=int, default=0)
+    parser.add_argument(
+        "--turn-pooling", choices=["mean", "attention"], default="attention"
+    )
+    parser.add_argument(
+        "--input-view", choices=["pre_response", "retrospective"],
+        default="pre_response",
+    )
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--grad-accumulation", type=int, default=8)
     parser.add_argument("--lr", type=float, default=2e-4)
+    parser.add_argument("--backbone-lr", type=float, default=2e-5)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--phase1-epochs", type=int, default=5)
     parser.add_argument("--localization-ramp-epochs", type=int, default=5)
@@ -60,14 +69,21 @@ def main():
             parser.error(f"--{name} must be positive")
     if args.phase1_epochs < 0 or args.phase1_epochs >= args.epochs:
         parser.error("--phase1-epochs must be >=0 and smaller than --epochs")
+    if args.backbone_trainable_layers < 0:
+        parser.error("--backbone-trainable-layers must be nonnegative")
+    if args.lr <= 0 or args.backbone_lr <= 0:
+        parser.error("--lr and --backbone-lr must be positive")
 
     config = GuardLensConfig(
         backbone_name=args.backbone,
         backbone_revision=args.backbone_revision,
         backbone_turn_microbatch=args.backbone_turn_microbatch,
+        backbone_trainable_layers=args.backbone_trainable_layers,
+        turn_pooling=args.turn_pooling,
         batch_size=args.batch_size,
         gradient_accumulation=args.grad_accumulation,
         learning_rate=args.lr,
+        backbone_learning_rate=args.backbone_lr,
         max_epochs=args.epochs,
         phase1_epochs=args.phase1_epochs,
         localization_ramp_epochs=args.localization_ramp_epochs,
@@ -79,6 +95,7 @@ def main():
         train_path=args.train_path,
         dev_path=args.dev_path,
         train_variant=args.train_variant,
+        input_view=args.input_view,
         tune_threshold=not args.no_threshold_tune,
     )
     train(config, args.output, model_name=args.model)

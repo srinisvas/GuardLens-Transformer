@@ -37,8 +37,8 @@ from guardlens.training.loss import GuardLensLoss
 from guardlens.training.schedule import get_current_phase, get_lambda_schedule
 
 
-ARCHITECTURE_VERSION = "causal_localization_v2"
-TRAINING_CONTRACT_VERSION = "restored_a_primary_plus_auxiliary_v2"
+ARCHITECTURE_VERSION = "causal_localization_v3"
+TRAINING_CONTRACT_VERSION = "restored_a_pre_response_v3"
 
 
 def load_records(path: str) -> List[Dict]:
@@ -376,7 +376,7 @@ def train_epoch(
     device: torch.device,
 ) -> Dict[str, float]:
     model.train()
-    if config.freeze_backbone and getattr(model, "backbone", None) is not None:
+    if getattr(model, "backbone_fully_frozen", False) and getattr(model, "backbone", None) is not None:
         model.backbone.eval()
 
     phase = get_current_phase(epoch, config)
@@ -821,9 +821,28 @@ def train(
         f"trainable={trainable:,} frozen={total_params-trainable:,}"
     )
 
+    backbone_param_ids = {
+        id(param)
+        for param in model.backbone.parameters()
+        if param.requires_grad
+    }
+    head_params = [
+        param for param in model.parameters()
+        if param.requires_grad and id(param) not in backbone_param_ids
+    ]
+    backbone_params = [
+        param for param in model.backbone.parameters() if param.requires_grad
+    ]
+    optimizer_groups = [{"params": head_params, "lr": config.learning_rate}]
+    max_learning_rates = [config.learning_rate]
+    if backbone_params:
+        optimizer_groups.append({
+            "params": backbone_params,
+            "lr": config.backbone_learning_rate,
+        })
+        max_learning_rates.append(config.backbone_learning_rate)
     optimizer = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=config.learning_rate,
+        optimizer_groups,
         weight_decay=config.weight_decay,
     )
     optimizer_steps_per_epoch = math.ceil(
@@ -839,7 +858,7 @@ def train(
     )
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
-        max_lr=config.learning_rate,
+        max_lr=max_learning_rates,
         total_steps=total_steps,
         pct_start=pct_start,
         anneal_strategy="cos",

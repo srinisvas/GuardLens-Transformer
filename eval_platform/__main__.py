@@ -177,7 +177,9 @@ def calibrate(args):
         raise ValueError("prepared dev input does not match checkpoint dev SHA256")
     rows = []
     for index, record in enumerate(records):
-        prediction = detector.predict(visible(record, "retrospective"))
+        prediction = detector.predict(
+            visible(record, detector.identity["input_view"])
+        )
         corpus_source = record.get("strata", {}).get("corpus_source")
         family = source_family({"conversation_id": record["id"], "corpus_source": corpus_source})
         rows.append({"id": record["id"], "label": record["label"],
@@ -186,9 +188,77 @@ def calibrate(args):
     report = calibrate_operating_points(rows)
     report.update({"checkpoint": detector.identity, "dataset_sha256": args.data_sha256,
                    "prepared_input_sha256": sidecar["input_sha256"], "rows": rows,
+                   "input_view": detector.identity["input_view"],
                    "code": source_identity()})
     write_json(args.output, report)
     print(args.output)
+
+
+def diagnose_dev(args):
+    """Run causal diagnostics on the checkpoint's own frozen dev cohort only."""
+    from .runner import run
+
+    protocol = validate_protocol(load(args.protocol))
+    records = load_dataset(args.data, args.data_sha256)
+    if any(record["split"] not in {"dev", "valid", "validation"} for record in records):
+        raise ValueError("dev diagnostics accept dev records only")
+    sidecar = load(args.data + ".manifest.json")
+    if (
+        sidecar.get("source") != "internal"
+        or sidecar.get("split") not in {"dev", "valid", "validation"}
+        or sidecar.get("output_sha256") != args.data_sha256
+    ):
+        raise ValueError("dev diagnostics require an unchanged prepared internal dev cohort")
+
+    detector = GuardLensBackend(args.checkpoint, args.device)
+    expected = detector.identity["training_data_sha256"]["dev"]
+    if sidecar.get("input_sha256") != expected:
+        raise ValueError("prepared dev input does not match checkpoint dev SHA256")
+    if protocol["view"] != detector.identity["input_view"]:
+        raise ValueError(
+            "evaluation protocol view differs from the checkpoint training input view"
+        )
+
+    lexicon = load(args.lexicon)
+    if not isinstance(lexicon, list) or not lexicon or not all(
+        isinstance(value, str) and value for value in lexicon
+    ):
+        raise ValueError("lexicon must be a frozen nonempty string list")
+    manifest = {
+        "stage": "internal_dev_causal_diagnostic",
+        "development_only": True,
+        "held_out_test_accessed": False,
+        "dataset_sha256": args.data_sha256,
+        "protocol": protocol,
+        "lexicon_sha256": file_hash(args.lexicon),
+        "detector": detector.identity,
+        "guards": {"self": detector.identity},
+        "llm": None,
+        "exclusion_hashes": {},
+        "code": source_identity(),
+    }
+    store = RunStore(args.output, manifest)
+    report = run(
+        records,
+        detector,
+        {"self": detector},
+        protocol,
+        lexicon,
+        store,
+        llm=None,
+    )
+    report.update({
+        "development_only": True,
+        "held_out_test_accessed": False,
+        "selection_use": "architecture_diagnostic_not_paper_result",
+    })
+    write_json(store.root / "report.json", report)
+    print(canonical({
+        "report": str(store.root / "report.json"),
+        "coverage": report["coverage"],
+        "detection": report["detection"],
+        "development_only": True,
+    }))
 
 
 def task_export(a):
@@ -279,6 +349,16 @@ def parser():
         q.add_argument("--" + name, required=True)
     q.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
     q.set_defaults(func=calibrate)
+    q = sub.add_parser(
+        "diagnose-dev",
+        help="self-guard causal diagnostics on the checkpoint's frozen internal dev cohort",
+    )
+    for name in ("data", "data-sha256", "checkpoint", "output"):
+        q.add_argument("--" + name, required=True)
+    q.add_argument("--protocol", default="configs/eval_protocol.json")
+    q.add_argument("--lexicon", default="configs/eval_surface_lexicon.json")
+    q.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
+    q.set_defaults(func=diagnose_dev)
     for name, func, arguments in [("human-tasks", task_export, ["data", "output"]),
             ("human-report", human, ["data", "annotations", "run", "output"]),
             ("robustness-report", robustness, ["original-run", "variant-run", "pairs", "output"]),

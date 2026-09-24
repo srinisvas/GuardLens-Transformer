@@ -22,6 +22,15 @@ from guardlens.evaluation.eval_length_probe import (
     predict_proba,
     tune_threshold,
 )
+from guardlens.data.dataset import model_visible_turns
+
+
+def records_for_view(records, input_view):
+    """Apply the same turn view used by training before computing features."""
+    return [
+        {**record, "turns": model_visible_turns(record, input_view)}
+        for record in records
+    ]
 
 
 def main() -> None:
@@ -32,10 +41,15 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=5000)
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--l2", type=float, default=1e-3)
+    parser.add_argument(
+        "--input-view",
+        choices=["pre_response", "retrospective"],
+        default="pre_response",
+    )
     args = parser.parse_args()
 
-    train_records = load_jsonl(args.train)
-    dev_records = load_jsonl(args.dev)
+    train_records = records_for_view(load_jsonl(args.train), args.input_view)
+    dev_records = records_for_view(load_jsonl(args.dev), args.input_view)
     x_train, y_train = make_xy(train_records)
     x_dev, y_dev = make_xy(dev_records)
     if len(set(y_train.tolist())) < 2:
@@ -83,6 +97,7 @@ def main() -> None:
 
     result = {
         "probe": "logistic_regression_length_only_preflight",
+        "input_view": args.input_view,
         "features": FEATURE_NAMES,
         "threshold_selection": "maximize dev F1",
         "train": metrics(y_train, train_probs, threshold),

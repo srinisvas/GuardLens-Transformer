@@ -11,7 +11,7 @@ import numpy as np
 
 from guardlens.config import GuardLensConfig
 from guardlens.data.causal_targets import span_supervision_target
-from guardlens.data.dataset import GuardLensDataset
+from guardlens.data.dataset import GuardLensDataset, model_visible_turns
 
 
 def load_jsonl(path: str) -> List[Dict]:
@@ -23,13 +23,14 @@ def load_jsonl(path: str) -> List[Dict]:
     return rows
 
 
-def audit_split(name, path, tokenizer, max_turns, max_tokens):
+def audit_split(name, path, tokenizer, max_turns, max_tokens, input_view="pre_response"):
     records = load_jsonl(path)
     dataset = GuardLensDataset(
         records,
         GuardLensConfig(
             max_turns=max_turns,
             max_tokens_per_turn=max_tokens,
+            input_view=input_view,
         ),
     )
 
@@ -46,7 +47,7 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens):
 
     for idx, record in enumerate(records):
         cid = str(record.get("conversation_id", "")) or "<missing>"
-        turns = list(record.get("turns", []) or [])
+        turns = model_visible_turns(record, input_view)
         max_turns_seen = max(max_turns_seen, len(turns))
 
         structural_errors = []
@@ -143,6 +144,7 @@ def audit_split(name, path, tokenizer, max_turns, max_tokens):
     arr = np.asarray(token_lengths, dtype=np.float64)
     return {
         "split": name,
+        "input_view": input_view,
         "records": len(records),
         "turns": len(token_lengths),
         "max_realized_turns": max_turns_seen,
@@ -172,6 +174,10 @@ def main():
     )
     parser.add_argument("--max-turns", type=int, default=64)
     parser.add_argument("--max-tokens", type=int, default=8192)
+    parser.add_argument(
+        "--input-view", choices=["pre_response", "retrospective"],
+        default="pre_response",
+    )
     parser.add_argument("--output", default="")
     args = parser.parse_args()
 
@@ -206,10 +212,12 @@ def main():
 
     summaries = [
         audit_split(
-            "train", args.train, tokenizer, args.max_turns, args.max_tokens
+            "train", args.train, tokenizer, args.max_turns, args.max_tokens,
+            args.input_view,
         ),
         audit_split(
-            "dev", args.dev, tokenizer, args.max_turns, args.max_tokens
+            "dev", args.dev, tokenizer, args.max_turns, args.max_tokens,
+            args.input_view,
         ),
     ]
     all_errors = [
@@ -221,6 +229,7 @@ def main():
         "backbone_revision": args.backbone_revision,
         "max_turns": args.max_turns,
         "max_tokens": args.max_tokens,
+        "input_view": args.input_view,
         "backbone_max_position_embeddings": backbone_limit,
         "held_out_test_accessed": False,
         "splits": {

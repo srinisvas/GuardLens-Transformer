@@ -27,6 +27,7 @@ class GuardLens(nn.Module):
         self.config = config
         self.backbone = None
         self.backbone_loaded = False
+        self.backbone_fully_frozen = True
 
         self.turn_context = TurnContextEncoder(config)
         self.pooler = ConversationPooler(config)
@@ -81,10 +82,46 @@ class GuardLens(nn.Module):
                 f"backbone max_position_embeddings={max_positions}; select a "
                 "backbone with native context coverage rather than truncating the turn"
             )
-        if self.config.freeze_backbone:
+        trainable_layers = int(self.config.backbone_trainable_layers)
+        if trainable_layers < 0:
+            raise RuntimeError("backbone_trainable_layers must be nonnegative")
+        if trainable_layers > 0:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+            layers = getattr(self.backbone, "layers", None)
+            if layers is None:
+                encoder = getattr(self.backbone, "encoder", None)
+                layers = getattr(encoder, "layer", None)
+            if layers is None or not isinstance(layers, (nn.ModuleList, list, tuple)):
+                raise RuntimeError(
+                    "cannot locate backbone transformer layers for selective fine-tuning"
+                )
+            if trainable_layers > len(layers):
+                raise RuntimeError(
+                    f"requested {trainable_layers} trainable backbone layers, "
+                    f"but backbone exposes {len(layers)}"
+                )
+            for layer in layers[-trainable_layers:]:
+                for param in layer.parameters():
+                    param.requires_grad = True
+            final_norm = getattr(self.backbone, "final_norm", None)
+            if final_norm is not None:
+                for param in final_norm.parameters():
+                    param.requires_grad = True
+            if hasattr(self.backbone, "gradient_checkpointing_enable"):
+                # Non-reentrant checkpointing still computes parameter gradients
+                # when inputs from the frozen prefix do not require gradients.
+                self.backbone.gradient_checkpointing_enable(
+                    gradient_checkpointing_kwargs={"use_reentrant": False}
+                )
+            self.backbone_fully_frozen = False
+        elif self.config.freeze_backbone:
             for param in self.backbone.parameters():
                 param.requires_grad = False
             self.backbone.eval()
+            self.backbone_fully_frozen = True
+        else:
+            self.backbone_fully_frozen = False
         self.backbone_loaded = True
 
     def encode_turns(self, input_ids, attention_mask):
@@ -100,45 +137,44 @@ class GuardLens(nn.Module):
 
         # With long-context turns, padding every realized turn to the single
         # longest turn in the conversation batch can multiply backbone compute.
-        # Canonical training freezes ModernBERT, so we sort realized turns by
-        # length and encode them in small length-local microbatches.
-        if self.config.freeze_backbone:
-            order = realized_idx[
-                torch.argsort(lengths[realized_idx], stable=True)
-            ]
-            hidden = torch.zeros(
-                batch_size * turns,
-                seq_len,
-                self.config.backbone_dim,
-                device=input_ids.device,
-                dtype=torch.float32,
-            )
-            microbatch = max(1, int(self.config.backbone_turn_microbatch))
+        # Sort realized turns by length and encode them in small length-local
+        # microbatches for both frozen and selectively trainable variants.
+        order = realized_idx[
+            torch.argsort(lengths[realized_idx], stable=True)
+        ]
+        hidden = torch.zeros(
+            batch_size * turns,
+            seq_len,
+            self.config.backbone_dim,
+            device=input_ids.device,
+            dtype=torch.float32,
+        )
+        trainable_backward = (
+            not self.backbone_fully_frozen
+            and self.training
+            and torch.is_grad_enabled()
+        )
+        microbatch = max(1, int(self.config.backbone_turn_microbatch))
+        if not trainable_backward and not self.backbone_fully_frozen:
+            # Eight-turn inference microbatches are already covered by the
+            # frozen-backbone memory smoke and avoid making top-layer variants
+            # needlessly slow during dev diagnostics.
+            microbatch = max(8, microbatch)
 
-            with torch.no_grad():
-                for start in range(0, order.numel(), microbatch):
-                    idx = order[start:start + microbatch]
-                    local_len = int(lengths[idx].max().item())
-                    outputs = self.backbone(
-                        input_ids=flat_ids[idx, :local_len],
-                        attention_mask=flat_mask[idx, :local_len],
-                    )
-                    chunk = outputs.last_hidden_state.float()
-                    hidden[idx, :local_len] = chunk
-        else:
-            # Fine-tuning is deliberately kept simple until a dedicated
-            # selective-unfreezing recipe is introduced.
-            outputs = self.backbone(
-                input_ids=flat_ids[realized_idx],
-                attention_mask=flat_mask[realized_idx],
-            )
-            realized_hidden = outputs.last_hidden_state.float()
-            hidden = realized_hidden.new_zeros(
-                batch_size * turns,
-                seq_len,
-                realized_hidden.size(-1),
-            )
-            hidden[realized_idx] = realized_hidden
+        # Length-local microbatches are required for both frozen and selectively
+        # trainable backbones. The latter keeps autograd enabled, while gradient
+        # checkpointing limits activation memory inside the trainable layers.
+        grad_context = torch.enable_grad if trainable_backward else torch.no_grad
+        with grad_context():
+            for start in range(0, order.numel(), microbatch):
+                idx = order[start:start + microbatch]
+                local_len = int(lengths[idx].max().item())
+                outputs = self.backbone(
+                    input_ids=flat_ids[idx, :local_len],
+                    attention_mask=flat_mask[idx, :local_len],
+                )
+                chunk = outputs.last_hidden_state.float()
+                hidden[idx, :local_len] = chunk
 
         return hidden.reshape(
             batch_size, turns, seq_len, -1

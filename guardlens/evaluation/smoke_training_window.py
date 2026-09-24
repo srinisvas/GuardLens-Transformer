@@ -152,12 +152,25 @@ def make_loader(records, config, tokenizer):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", required=True)
+    parser.add_argument(
+        "--train-variant",
+        choices=["primary", "primary_plus_auxiliary"],
+        default="primary_plus_auxiliary",
+    )
     parser.add_argument("--backbone", default="answerdotai/ModernBERT-large")
     parser.add_argument(
         "--backbone-revision",
         default="45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
     )
     parser.add_argument("--backbone-turn-microbatch", type=int, default=8)
+    parser.add_argument("--backbone-trainable-layers", type=int, default=0)
+    parser.add_argument(
+        "--turn-pooling", choices=["mean", "attention"], default="attention"
+    )
+    parser.add_argument(
+        "--input-view", choices=["pre_response", "retrospective"],
+        default="pre_response",
+    )
     parser.add_argument("--max-turns", type=int, default=64)
     parser.add_argument("--max-tokens", type=int, default=8192)
     parser.add_argument("--batch-size", type=int, default=2)
@@ -175,6 +188,8 @@ def main():
         backbone_name=args.backbone,
         backbone_revision=args.backbone_revision,
         backbone_turn_microbatch=args.backbone_turn_microbatch,
+        backbone_trainable_layers=args.backbone_trainable_layers,
+        turn_pooling=args.turn_pooling,
         batch_size=args.batch_size,
         gradient_accumulation=8,
         max_turns=args.max_turns,
@@ -184,6 +199,8 @@ def main():
         seed=args.seed,
         device="cuda",
         num_workers=0,
+        input_view=args.input_view,
+        train_variant=args.train_variant,
     )
 
     from transformers import AutoTokenizer
@@ -198,12 +215,16 @@ def main():
     worst_case = select_worst_case_records(
         records, args.batch_size, tokenizer
     )
-    auxiliary = select_auxiliary_records(
-        records, args.batch_size, tokenizer
+    auxiliary = (
+        select_auxiliary_records(records, args.batch_size, tokenizer)
+        if args.train_variant == "primary_plus_auxiliary"
+        else []
     )
     loader = make_loader(selected, config, tokenizer)
     worst_loader = make_loader(worst_case, config, tokenizer)
-    auxiliary_loader = make_loader(auxiliary, config, tokenizer)
+    auxiliary_loader = (
+        make_loader(auxiliary, config, tokenizer) if auxiliary else None
+    )
     batch = next(iter(loader))
     if int((batch["turn_labels"] == 1).sum()) == 0:
         raise RuntimeError("smoke batch has no positive evidence-turn target")
@@ -211,11 +232,12 @@ def main():
         raise RuntimeError("smoke batch has no positive causal-span target")
     if int((batch["token_labels"] == 0).sum()) == 0:
         raise RuntimeError("smoke batch has no explicit negative span target")
-    auxiliary_batch = next(iter(auxiliary_loader))
-    if int((auxiliary_batch["turn_labels"] >= 0).sum()) != 0:
-        raise RuntimeError("auxiliary smoke batch leaked evidence-turn targets")
-    if int((auxiliary_batch["token_labels"] >= 0).sum()) != 0:
-        raise RuntimeError("auxiliary smoke batch leaked span targets")
+    if auxiliary_loader is not None:
+        auxiliary_batch = next(iter(auxiliary_loader))
+        if int((auxiliary_batch["turn_labels"] >= 0).sum()) != 0:
+            raise RuntimeError("auxiliary smoke batch leaked evidence-turn targets")
+        if int((auxiliary_batch["token_labels"] >= 0).sum()) != 0:
+            raise RuntimeError("auxiliary smoke batch leaked span targets")
 
     model = MODEL_REGISTRY["guardlens"](config)
     model.setup_backbone()
@@ -286,12 +308,15 @@ def main():
 
     print("=== GuardLens causal-localization training smoke ===")
     joint_peak = run_batch("joint-supervision batch", selected, loader)
-    auxiliary_peak = run_batch(
-        "auxiliary-detection-only batch", auxiliary, auxiliary_loader
-    )
+    auxiliary_peak = None
+    if auxiliary_loader is not None:
+        auxiliary_peak = run_batch(
+            "auxiliary-detection-only batch", auxiliary, auxiliary_loader
+        )
     worst_peak = run_batch("worst-token-footprint batch", worst_case, worst_loader)
     print(f"joint_peak_gib={joint_peak:.2f}")
-    print(f"auxiliary_peak_gib={auxiliary_peak:.2f}")
+    if auxiliary_peak is not None:
+        print(f"auxiliary_peak_gib={auxiliary_peak:.2f}")
     print(f"worst_case_peak_gib={worst_peak:.2f}")
     print("TRAINING ARCHITECTURE SMOKE PASSED")
 

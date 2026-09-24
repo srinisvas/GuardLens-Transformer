@@ -22,13 +22,20 @@ BATCH_SIZE="${BATCH_SIZE:-2}"
 BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 BACKBONE_TURN_MICROBATCH="${BACKBONE_TURN_MICROBATCH:-8}"
+BACKBONE_TRAINABLE_LAYERS="${BACKBONE_TRAINABLE_LAYERS:-0}"
+TURN_POOLING="${TURN_POOLING:-attention}"
+INPUT_VIEW="${INPUT_VIEW:-pre_response}"
 GRAD_ACCUMULATION="${GRAD_ACCUMULATION:-8}"
+HEAD_LR="${HEAD_LR:-2e-4}"
+BACKBONE_LR="${BACKBONE_LR:-2e-5}"
 EPOCHS="${EPOCHS:-20}"
 LOCALIZATION_RAMP_EPOCHS="${LOCALIZATION_RAMP_EPOCHS:-5}"
 MODEL="${MODEL:-guardlens}"
 RUN_ID="${RUN_ID:-${SLURM_JOB_ID:-manual-$(date -u +%Y%m%dT%H%M%SZ)-$$}}"
 
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
+SHARED_PREFLIGHT_DIR="${SHARED_PREFLIGHT_DIR:-}"
+LENGTH_AUC_CEILING="${LENGTH_AUC_CEILING:-0.650}"
 
 case "$TRAIN_VARIANT" in
   primary)
@@ -109,35 +116,54 @@ echo " Test:    NOT ACCESSED"
 echo " Model:   $MODEL"
 echo " Backbone:$BACKBONE"
 echo " Revision:$BACKBONE_REVISION"
+echo " Input:   $INPUT_VIEW"
+echo " Pooling: $TURN_POOLING"
+echo " Trainable backbone layers: $BACKBONE_TRAINABLE_LAYERS"
+echo " Learning rates: heads=$HEAD_LR backbone=$BACKBONE_LR"
 echo " Window:  turns=$MAX_TURNS hard_token_ceiling=$MAX_TOKENS"
 echo " Batch:   micro=$BATCH_SIZE accumulation=$GRAD_ACCUMULATION backbone_turn_microbatch=$BACKBONE_TURN_MICROBATCH"
 echo " Schedule: phase1=5 localization_ramp_epochs=$LOCALIZATION_RAMP_EPOCHS"
 echo "========================================================"
 
-python -m guardlens.data.verify_freeze \
-  --report "$REPORT_PATH" \
-  --train "$TRAIN_PATH" \
-  --dev "$DEV_PATH" \
-  --variant "$VERIFY_VARIANT" \
-  --output "$PRECHECK_DIR/freeze_verification.json"
+if [[ -n "$SHARED_PREFLIGHT_DIR" ]]; then
+  python -m guardlens.data.preflight_marker verify \
+    --marker "$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/marker.json" \
+    --variant "$VERIFY_VARIANT" \
+    --train "$TRAIN_PATH" \
+    --dev "$DEV_PATH" \
+    --code-sha "$CODE_SHA" \
+    --input-view "$INPUT_VIEW"
+  LENGTH_REPORT="$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/length_probe_dev.json"
+else
+  python -m guardlens.data.verify_freeze \
+    --report "$REPORT_PATH" \
+    --train "$TRAIN_PATH" \
+    --dev "$DEV_PATH" \
+    --variant "$VERIFY_VARIANT" \
+    --output "$PRECHECK_DIR/freeze_verification.json"
 
-python -m guardlens.data.audit_representation \
-  --train "$TRAIN_PATH" \
-  --dev "$DEV_PATH" \
-  --backbone "$BACKBONE" \
-  --backbone-revision "$BACKBONE_REVISION" \
-  --max-turns "$MAX_TURNS" \
-  --max-tokens "$MAX_TOKENS" \
-  --output "$PRECHECK_DIR/representation_coverage.json"
+  python -m guardlens.data.audit_representation \
+    --train "$TRAIN_PATH" \
+    --dev "$DEV_PATH" \
+    --backbone "$BACKBONE" \
+    --backbone-revision "$BACKBONE_REVISION" \
+    --max-turns "$MAX_TURNS" \
+    --max-tokens "$MAX_TOKENS" \
+    --input-view "$INPUT_VIEW" \
+    --output "$PRECHECK_DIR/representation_coverage.json"
 
-python -m guardlens.evaluation.eval_length_probe_preflight \
-  --train "$TRAIN_PATH" \
-  --dev "$DEV_PATH" \
-  --output "$PRECHECK_DIR/length_probe_dev.json"
+  python -m guardlens.evaluation.eval_length_probe_preflight \
+    --train "$TRAIN_PATH" \
+    --dev "$DEV_PATH" \
+    --input-view "$INPUT_VIEW" \
+    --output "$PRECHECK_DIR/length_probe_dev.json"
+  LENGTH_REPORT="$PRECHECK_DIR/length_probe_dev.json"
+fi
 
-python3 - "$PRECHECK_DIR/length_probe_dev.json" <<'PY'
+python3 - "$LENGTH_REPORT" "$LENGTH_AUC_CEILING" <<'PY'
 import json, sys
 path = sys.argv[1]
+ceiling = float(sys.argv[2])
 r = json.load(open(path, encoding="utf-8"))
 auc = float(r["dev"]["roc_auc"])
 bal = float(r["dev"]["balanced_accuracy"])
@@ -146,7 +172,12 @@ print(
     f"Length shortcut diagnostic: dev AUC={auc:.3f}, "
     f"balanced_acc={bal:.3f}, F1={f1:.3f}"
 )
-print("Diagnostic only: no arbitrary AUC threshold is used as a training gate.")
+if auc > ceiling:
+    raise SystemExit(
+        f"ERROR: dev length-only AUC {auc:.3f} exceeds frozen ceiling {ceiling:.3f}; "
+        "repair the data before using a GPU for training"
+    )
+print(f"Length shortcut gate passed: AUC <= {ceiling:.3f}")
 PY
 
 python -m guardlens.train \
@@ -158,9 +189,13 @@ python -m guardlens.train \
   --backbone "$BACKBONE" \
   --backbone-revision "$BACKBONE_REVISION" \
   --backbone-turn-microbatch "$BACKBONE_TURN_MICROBATCH" \
+  --backbone-trainable-layers "$BACKBONE_TRAINABLE_LAYERS" \
+  --turn-pooling "$TURN_POOLING" \
+  --input-view "$INPUT_VIEW" \
   --batch-size "$BATCH_SIZE" \
   --grad-accumulation "$GRAD_ACCUMULATION" \
-  --lr 2e-4 \
+  --lr "$HEAD_LR" \
+  --backbone-lr "$BACKBONE_LR" \
   --epochs "$EPOCHS" \
   --phase1-epochs 5 \
   --localization-ramp-epochs "$LOCALIZATION_RAMP_EPOCHS" \

@@ -44,7 +44,8 @@ def setup(model):
 class RuntimeTests(unittest.TestCase):
     def test_current_checkpoint_load_and_offsets(self):
         config = GuardLensConfig(backbone_dim=12, cross_turn_dim=8, cross_turn_heads=2, cross_turn_layers=1,
-            attr_hidden_dim=6, cls_hidden_dim=8, max_turns=4, max_tokens_per_turn=40)
+            attr_hidden_dim=6, cls_hidden_dim=8, max_turns=4, max_tokens_per_turn=40,
+            turn_pooling="mean")
         model = GuardLens(config)
         setup(model)
         ckpt = {"architecture_version": "causal_localization_v2", "training_contract_version": "restored_a_primary_plus_auxiliary_v2",

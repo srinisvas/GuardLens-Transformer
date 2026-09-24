@@ -99,8 +99,12 @@ class TrainingReadinessContractTests(unittest.TestCase):
             'TRAIN_VARIANT="${TRAIN_VARIANT:-primary_plus_auxiliary}"',
             train_text,
         )
+        self.assertIn(
+            'TRAIN_VARIANT="${TRAIN_VARIANT:-primary_plus_auxiliary}"',
+            smoke_text,
+        )
         self.assertIn("splits_primary_plus_train_auxiliary/train.jsonl", smoke_text)
-        self.assertIn("--variant primary_plus_auxiliary", smoke_text)
+        self.assertIn('--variant "$VERIFY_VARIANT"', smoke_text)
         self.assertIn("guardlens.data.audit_representation", smoke_text)
 
 

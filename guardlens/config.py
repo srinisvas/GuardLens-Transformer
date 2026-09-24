@@ -12,12 +12,17 @@ class GuardLensConfig:
     backbone_dtype: str = "bfloat16"
     backbone_attn_implementation: str = "sdpa"
     backbone_turn_microbatch: int = 8
+    # Zero keeps the backbone frozen. A positive value selectively trains the
+    # final N transformer layers while leaving embeddings and earlier layers
+    # frozen. This is an explicit diagnostic axis, not an automatic fallback.
+    backbone_trainable_layers: int = 0
 
     # Hierarchical turn-context encoder
     cross_turn_layers: int = 2
     cross_turn_heads: int = 8
     cross_turn_dim: int = 256
     cross_turn_dropout: float = 0.1
+    turn_pooling: str = "attention"
 
     # Heads
     cls_hidden_dim: int = 256
@@ -31,6 +36,7 @@ class GuardLensConfig:
 
     # Optimization
     learning_rate: float = 2e-4
+    backbone_learning_rate: float = 2e-5
     weight_decay: float = 0.01
     warmup_steps: int = 200
     max_epochs: int = 20
@@ -66,3 +72,4 @@ class GuardLensConfig:
     train_path: str = ""
     dev_path: str = ""
     train_variant: str = "primary_plus_auxiliary"
+    input_view: str = "pre_response"

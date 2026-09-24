@@ -35,6 +35,18 @@ class TurnContextEncoder(nn.Module):
     def __init__(self, config: GuardLensConfig):
         super().__init__()
         self.input_proj = nn.Linear(config.backbone_dim, config.cross_turn_dim)
+        if config.turn_pooling not in {"mean", "attention"}:
+            raise ValueError(
+                f"turn_pooling must be 'mean' or 'attention', got {config.turn_pooling!r}"
+            )
+        self.turn_pooling = config.turn_pooling
+        self.token_score = None
+        if self.turn_pooling == "attention":
+            self.token_score = nn.Sequential(
+                nn.Linear(config.backbone_dim, config.attr_hidden_dim),
+                nn.Tanh(),
+                nn.Linear(config.attr_hidden_dim, 1),
+            )
         self.turn_pos = TurnPositionEncoding(
             config.cross_turn_dim, config.max_turns
         )
@@ -62,6 +74,20 @@ class TurnContextEncoder(nn.Module):
         counts = mask.sum(dim=2).clamp(min=1.0)
         return summed / counts
 
+    def pool_tokens(
+        self,
+        token_embeds: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.turn_pooling == "mean":
+            return self.masked_token_mean(token_embeds, attention_mask)
+        logits = self.token_score(token_embeds).squeeze(-1)
+        logits = logits.masked_fill(attention_mask == 0, -1e9)
+        weights = torch.softmax(logits, dim=2)
+        weights = weights * attention_mask.float()
+        weights = weights / weights.sum(dim=2, keepdim=True).clamp(min=1e-8)
+        return (token_embeds * weights.unsqueeze(-1)).sum(dim=2)
+
     def forward(
         self,
         token_embeds: torch.Tensor,
@@ -69,7 +95,7 @@ class TurnContextEncoder(nn.Module):
         turn_mask: torch.Tensor,
         role_ids: torch.Tensor,
     ) -> torch.Tensor:
-        pooled = self.masked_token_mean(token_embeds, attention_mask)
+        pooled = self.pool_tokens(token_embeds, attention_mask)
         x = self.input_proj(pooled)
         batch_size, turns, _ = x.shape
         turn_idx = torch.arange(

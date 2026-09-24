@@ -1,9 +1,15 @@
 # NAACL evaluation platform
 
-This platform evaluates the `causal_localization_v2` / restored-A v2 model being
-trained at commit `8981856`. It replaces the historical single-pivot, self-mask,
-and detected-only evaluation paths. Training architecture, objectives, sampling,
-and checkpoint selection are unchanged.
+This platform supports historical `causal_localization_v2` checkpoints and the
+new `causal_localization_v3` / `restored_a_pre_response_v3` candidates. V3 aligns
+training, calibration and inference to the pre-response view. It replaces the
+historical single-pivot, self-mask and detected-only evaluation paths.
+
+Public datasets, ShieldGemma and held-out internal test evaluation are paused
+until the four-candidate internal train/dev matrix receives explicit signoff.
+The `diagnose-dev` command is the only evaluation stage in the current critical
+path. It accepts only the checkpoint's exact frozen internal dev SHA, uses the
+self guard only and labels every report development-only.
 
 Historical model-evaluation CLIs fail with a migration message on this branch.
 Their helper functions remain available for historical inspection. Current
@@ -31,7 +37,7 @@ label change is not a target refusal or an attack-success reduction.
 | AC: user-only attribution overlooks assistants | Explicit scope, assistant-history input diagnostic, regenerated post-edit assistant suffix | State that assistant causal responsibility is outside this model's attribution space |
 | Reproducibility: prompts, replay, annotation instructions | Versioned templates, exact edits, source conversion manifest, raw LLM responses, paired seeds, human task export | Publish approved data exports and target/model access instructions |
 
-The canonical architecture already is a supervised hierarchical multi-label
+The candidate architecture is a supervised hierarchical multi-label
 tagger with independent detection, turn and span heads. It has no fusion or
 self-counterfactual training loss. Calling its historical NoCF/NoFusion models
 current ablations would be misleading. The evaluator accepts current-architecture
@@ -39,7 +45,8 @@ checkpoints only and does not silently substitute a model for an unknown name.
 
 ## Input and task contract
 
-`python -m eval_platform --help` lists preparation, inference, replay, human,
+`python -m eval_platform --help` lists preparation, internal dev diagnostics,
+inference, replay, human,
 robustness, utility and run-comparison commands. CPU reporting uses the standard
 library. Model inference additionally uses the training PyTorch/Transformers
 environment. `python -m guardlens.evaluate` uses the same CLI.
@@ -103,9 +110,9 @@ Sources: [MHJ](https://huggingface.co/datasets/ScaleAI/mhj),
 `retrospective` retains the realized transcript. Run and label these separately.
 Earlier assistant history remains visible in both views. Never label every early
 prefix unsafe merely because its final conversation is unsafe. The checkpoint's
-threshold was chosen on internal dev trajectories. Applying it to pre-response
-public inputs is a fixed-threshold transfer experiment, not a newly calibrated
-pre-response detector. No external threshold fitting exists in this platform.
+threshold is chosen on the same internal dev view stored in its training contract.
+The runtime rejects a diagnostic protocol whose view differs from the checkpoint.
+No external threshold fitting exists in this platform.
 
 Turn and span cutoffs default to fixed .5. ShieldGemma's cutoff defaults to .5.
 Pin these in the protocol before test access. Every representation limit is hard:
