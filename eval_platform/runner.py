@@ -353,7 +353,7 @@ def summarize(records, predictions, interventions, protocol, detection_threshold
         "all_benign": [r for r in valid if r["label"] == 0],
         "hard_benign": [r for r in valid if r["label"] == 0 and r["strata"].get("difficulty") == "hard"],
         "frontier_authored_benign": [r for r in valid if r["label"] == 0 and r["strata"].get("family") == "frontier_authored_benign"],
-        "interactive_benign": [r for r in valid if r["label"] == 0 and r["strata"].get("family") == "interactive_benign"],
+        "interactive_benign": [r for r in valid if r["label"] == 0 and r["strata"].get("family") == "interactive_benign_twin"],
     }
     for population, benign in benign_groups.items():
         fpr = detect(benign)["fpr"]

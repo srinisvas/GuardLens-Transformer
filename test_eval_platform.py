@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from eval_platform.adapters import adapt, check_overlap, validate_collection
+from eval_platform.adapters import adapt, check_overlap, validate_collection, require_mhj_cohort
 from eval_platform.calibration import apply_calibration, calibrate_operating_points
 from eval_platform.contract import RunStore, canonical, digest, visible, validate_protocol, write_json
 from eval_platform.interventions import words, select, edit, risk_scores, project_tokens, eligible_indices, loto_scores
@@ -73,6 +73,12 @@ class FakeJudge:
 
 
 class ContractTests(unittest.TestCase):
+    def test_mhj_launcher_rejects_internal_cohort(self):
+        with self.assertRaisesRegex(ValueError, "prepared MHJ"):
+            require_mhj_cohort([record()])
+        mhj = adapt({"turns": [{"role": "human", "content": "example"}]}, "mhj", "frozen", "test")
+        self.assertEqual(require_mhj_cohort([mhj]), 1)
+
     def test_recover_integer_key_shard_without_ignoring_corruption(self):
         result = {"prediction": {"id": "sample", "label": 1}, "interventions": [
             {"id": "sample", "audit": {"per_turn_count": {2: 1, 10: 1}}}]}
@@ -386,6 +392,15 @@ class ReplayTests(unittest.TestCase):
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_interactive_benign_utility_uses_frozen_family_name(self):
+        r = record("interactive", 0)
+        r["strata"]["family"] = "interactive_benign_twin"
+        p = protocol()
+        p.update(methods=["guardlens"], budgets=[.2], context_diagnostics=False)
+        with tempfile.TemporaryDirectory() as d:
+            report = run([r], FakeDetector(), {"self": FakeDetector()}, p, ["alpha"], RunStore(d, {"test": True}))
+        self.assertEqual(report["utility"]["interactive_benign"]["n"], 1)
+
     def test_parallel_shards_resume_and_match_single_run(self):
         records = [record(str(i), i % 2) for i in range(7)]
         p = protocol()

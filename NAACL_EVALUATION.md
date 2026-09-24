@@ -243,7 +243,7 @@ export EVAL_DATA_SHA256=$(sha256sum "$EVAL_DATA" | cut -d' ' -f1)
 export EVAL_TRAIN_EXCLUDE="$PREP/train.jsonl"
 export EVAL_DEV_EXCLUDE="$PREP/dev.jsonl"
 export EVAL_SHIELD_CONFIG="$PREP/shieldgemma.json"
-export EVAL_RUN_ROOT=~/work/results/guardlens_eval_v1/mhj-pre-response-parallel-v2
+export EVAL_RUN_ROOT=~/work/results/guardlens_eval_v1/mhj-attack-intent-parallel-v1
 export EVAL_SHARDS=4
 ./submit_eval_mhj.sh
 ```
@@ -254,6 +254,10 @@ and checks this before Slurm submission. To update an older environment, run
 before submitting. The ShieldGemma loader verifies all floating parameters have
 the requested dtype before transfer to CUDA. The GuardLens backbone uses the
 same `dtype=` loader argument and verifies its floating parameters after load.
+The launcher also verifies the prepared data SHA256 and requires every record to
+declare `dataset=mhj` and `label_semantics=attack_intent`. It rejects an internal
+cohort before reserving GPUs. Keep public and internal evaluations in separate
+run roots.
 
 The launcher accepts `EVAL_SHARDS` from 1 to 4, defaulting to 4. It submits a
 Slurm array with one A100 per task and a CPU
@@ -261,10 +265,8 @@ finalization job that runs only after every task succeeds. Each task handles
 indices `index % EVAL_SHARDS == task_id` and writes an atomic record result under
 `$EVAL_RUN_ROOT/shards/`. The finalizer checks all input records, combines them
 in original order, and writes `predictions.json`, `interventions.json`, and
-`report.json`. The prior single-GPU run cannot reuse this directory because the
-evaluation code identity has changed. Use the new root above for the full run.
-The 26–30 GPU-hour estimate corresponds to roughly 6.5–7.5 hours of compute
-with four busy A100s, plus scheduling and record-length imbalance.
+`report.json`. Use the new root above for the public run. The earlier runtime
+estimate came from the internal cohort and does not predict public MHJ runtime.
 
 Monitor with `squeue -u "$USER"` and `tail -f logs/eval_public_ARRAYID_0.out`
 (substitute the printed array job ID and task 0–3). If a task times out or fails,
@@ -273,7 +275,16 @@ Completed records are skipped after their manifest, identity, and checksum
 validate. A successful retry triggers a new finalization job. The old dependency
 remains unsatisfied and can be cancelled with `scancel OLD_FINALIZE_JOB_ID`.
 
-For the already completed four-shard MHJ run whose manifest has code commit
+The completed four-shard run under `mhj-pre-response-parallel-v2` used an
+**internal held-out test cohort**, despite the directory name. Its report has
+`task=unsafe_trajectory`, `strata.dataset.internal=364`, and internal source
+families. Treat its detection, localization, and guard results as internal
+evaluation only. The public MHJ attack-intent evaluation still requires an
+authorized MHJ export and a separate run root. The report's
+`utility.interactive_benign.n=0` was caused by a family-name mismatch; the 77
+`interactive_benign_twin` negatives are now included by the corrected finalizer.
+
+For that completed internal four-shard run whose manifest has code commit
 `fb30f115d49065013f072fa7b3d891d5ca8c7cb5`, an older audit serializer
 hashed integer turn IDs before writing JSON. The recovery finalizer verifies
 that exact legacy checksum after restoring only `audit.per_turn_count` keys.

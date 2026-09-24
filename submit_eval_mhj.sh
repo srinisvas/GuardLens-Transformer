@@ -28,6 +28,16 @@ from eval_platform.runtime import require_transformers_dtype_support
 require_transformers_dtype_support(transformers.__version__)
 print(f"Evaluation transformers: {transformers.__version__}")
 PY
+"$eval_python" - "$EVAL_DATA" "$EVAL_DATA_SHA256" <<'PY'
+import sys
+from eval_platform.adapters import require_mhj_cohort
+from eval_platform.contract import file_hash, read_jsonl
+
+path, expected = sys.argv[1:]
+if file_hash(path) != expected:
+    raise ValueError("EVAL_DATA bytes differ from EVAL_DATA_SHA256")
+print(f"Prepared MHJ records: {require_mhj_cohort(list(read_jsonl(path)))}")
+PY
 mkdir -p logs
 array_job=$(sbatch --parsable --array="0-$((EVAL_SHARDS - 1))%$EVAL_SHARDS" --export=ALL eval_mhj.slurm)
 final_job=$(sbatch --parsable --dependency="afterok:$array_job" --export=ALL eval_mhj_finalize.slurm)

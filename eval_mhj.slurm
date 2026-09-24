@@ -29,6 +29,16 @@ export HF_HOME="${HF_HOME:-$HOME/work/hf_models}"
 export HF_HUB_CACHE="$HF_HOME/hub"
 export HF_HUB_OFFLINE=1
 cd "$SLURM_SUBMIT_DIR"
+python - "$EVAL_DATA" "$EVAL_DATA_SHA256" <<'PY'
+import sys
+from eval_platform.adapters import require_mhj_cohort
+from eval_platform.contract import file_hash, read_jsonl
+
+path, expected = sys.argv[1:]
+if file_hash(path) != expected:
+    raise ValueError("EVAL_DATA bytes differ from EVAL_DATA_SHA256")
+print(f"Prepared MHJ records: {require_mhj_cohort(list(read_jsonl(path)))}")
+PY
 mkdir -p "$EVAL_RUN_ROOT"
 exec 9>"$EVAL_RUN_ROOT/.shard-${SLURM_ARRAY_TASK_ID}.lock"
 flock -n 9 || { echo "Shard $SLURM_ARRAY_TASK_ID is already running" >&2; exit 1; }

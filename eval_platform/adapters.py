@@ -79,6 +79,13 @@ def check_overlap(records, reference_records):
         raise ValueError(f"evaluation overlaps training/dev exclusions: {leaked[:10]}")
 
 
+def require_mhj_cohort(records):
+    """An MHJ-specific launcher must not silently evaluate internal data."""
+    if not records or any(r.get("dataset") != "mhj" or r.get("label_semantics") != "attack_intent" for r in records):
+        raise ValueError("eval_mhj requires prepared MHJ attack_intent records, not an internal or mixed cohort")
+    return len(records)
+
+
 def validate_collection(records):
     seen = set()
     for r in records:
