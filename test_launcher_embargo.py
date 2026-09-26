@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Regression tests for the internal-signoff evaluation embargo."""
+import json
 import os
 import stat
 import subprocess
@@ -35,6 +36,209 @@ LEGACY = (
 
 
 class LauncherEmbargoTests(unittest.TestCase):
+    def test_missing_top4_sibling_controls_reuse_completed_matrix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            matrix = temporary / "matrix"
+            shared = matrix / "shared"
+            shared.mkdir(parents=True)
+            (shared / "internal-dev.jsonl").write_text(
+                "{}\n" * 364, encoding="utf-8"
+            )
+            (shared / "internal-dev.jsonl.manifest.json").write_text(
+                "{}\n", encoding="utf-8"
+            )
+            base_candidates = (
+                "hierarchical_sibling_retro_frozen",
+                "cross_token_sibling_retro_frozen",
+                "cross_token_gated_retro_frozen",
+                "cross_token_gated_retro_top4",
+            )
+            report = {
+                "coverage": {"failures": [], "scored": 364, "total": 364},
+                "development_only": True,
+                "held_out_test_accessed": False,
+            }
+            for candidate in base_candidates:
+                diagnostic = matrix / "diagnostics" / candidate
+                diagnostic.mkdir(parents=True)
+                (diagnostic / "report.json").write_text(
+                    json.dumps(report), encoding="utf-8"
+                )
+
+            capture = temporary / "sbatch.args"
+            state = temporary / "sbatch.state"
+            stub = temporary / "sbatch"
+            stub.write_text(
+                "#!/bin/bash\n"
+                "set -euo pipefail\n"
+                "for name in MAX_REQUEUES EVAL_RECORD_INDEX ARCHITECTURE_MODE ATTRIBUTION_FUSION MODEL TURN_POOLING; do\n"
+                "  [[ ! -v $name ]] || exit 91\n"
+                "done\n"
+                "printf '%s\\n' \"$*\" >> \"$MOCK_SBATCH_CAPTURE\"\n"
+                "current=0\n"
+                "[[ ! -f \"$MOCK_SBATCH_STATE\" ]] || current=$(<\"$MOCK_SBATCH_STATE\")\n"
+                "current=$((current + 1))\n"
+                "printf '%s\\n' \"$current\" > \"$MOCK_SBATCH_STATE\"\n"
+                "printf '%s\\n' \"$current\"\n",
+                encoding="utf-8",
+            )
+            stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+            environment = {
+                **os.environ,
+                "PATH": f"{temporary}:{os.environ['PATH']}",
+                "MOCK_SBATCH_CAPTURE": str(capture),
+                "MOCK_SBATCH_STATE": str(state),
+                "MAX_REQUEUES": "99",
+                "EVAL_RECORD_INDEX": "999",
+                "ARCHITECTURE_MODE": "ambient-poison",
+                "ATTRIBUTION_FUSION": "ambient-poison",
+                "MODEL": "ambient-poison",
+                "TURN_POOLING": "ambient-poison",
+            }
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(ROOT / "run_missing_top4_sibling_controls.sh"),
+                    str(matrix),
+                ],
+                cwd=ROOT,
+                env=environment,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            submissions = capture.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(submissions), 12)
+            self.assertTrue(all("ambient-poison" not in row for row in submissions))
+            self.assertIn("preflight_naacl_top4_sibling_controls.slurm", submissions[0])
+            for smoke_id, train_id, gate_id, array_id, finalize_id in (
+                (2, 3, 4, 5, 6),
+                (7, 8, 9, 10, 11),
+            ):
+                smoke = submissions[smoke_id - 1]
+                train = submissions[train_id - 1]
+                gate = submissions[gate_id - 1]
+                array = submissions[array_id - 1]
+                finalize = submissions[finalize_id - 1]
+                self.assertIn("BACKBONE_TRAINABLE_LAYERS=4", smoke)
+                self.assertIn("ATTRIBUTION_FUSION=0", smoke)
+                self.assertIn("--dependency=afterok:1", smoke)
+                self.assertIn(f"--dependency=afterok:{smoke_id}", train)
+                self.assertIn(f"--dependency=afterok:{train_id}", gate)
+                self.assertIn("EVAL_RECORD_INDEX=136", gate)
+                self.assertIn("MAX_REQUEUES=0", gate)
+                self.assertIn(f"--dependency=afterok:{gate_id}", array)
+                self.assertIn("--array=0-3%4", array)
+                self.assertNotIn("EVAL_RECORD_INDEX", array)
+                self.assertIn(f"--dependency=afterok:{array_id}", finalize)
+            self.assertIn("--dependency=afterok:6:11", submissions[-1])
+            self.assertIn("compare_internal_dev_extended.slurm", submissions[-1])
+
+    def test_missing_top4_control_launcher_resumes_without_repeating_smoke(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            matrix = temporary / "matrix"
+            shared = matrix / "shared"
+            shared.mkdir(parents=True)
+            (shared / "internal-dev.jsonl").write_text("{}\n" * 364, encoding="utf-8")
+            (shared / "internal-dev.jsonl.manifest.json").write_text("{}\n", encoding="utf-8")
+            marker = (
+                shared
+                / "preflight-top4-sibling-controls"
+                / "primary_plus_auxiliary"
+                / "retrospective"
+                / "marker.json"
+            )
+            marker.parent.mkdir(parents=True)
+            marker.write_text("{}\n", encoding="utf-8")
+
+            report = {
+                "coverage": {"failures": [], "scored": 364, "total": 364},
+                "development_only": True,
+                "held_out_test_accessed": False,
+            }
+            for candidate in (
+                "hierarchical_sibling_retro_frozen",
+                "cross_token_sibling_retro_frozen",
+                "cross_token_gated_retro_frozen",
+                "cross_token_gated_retro_top4",
+                "cross_token_sibling_retro_top4",
+            ):
+                diagnostic = matrix / "diagnostics" / candidate
+                diagnostic.mkdir(parents=True)
+                (diagnostic / "report.json").write_text(
+                    json.dumps(report), encoding="utf-8"
+                )
+            checkpoint = (
+                matrix
+                / "training"
+                / "hierarchical_sibling_retro_top4"
+                / "checkpoints"
+            )
+            checkpoint.mkdir(parents=True)
+            (checkpoint / "last.pt").write_bytes(b"fixture")
+
+            capture = temporary / "sbatch.args"
+            state = temporary / "sbatch.state"
+            stub = temporary / "sbatch"
+            stub.write_text(
+                "#!/bin/bash\n"
+                "set -euo pipefail\n"
+                "printf '%s\\n' \"$*\" >> \"$MOCK_SBATCH_CAPTURE\"\n"
+                "current=0\n"
+                "[[ ! -f \"$MOCK_SBATCH_STATE\" ]] || current=$(<\"$MOCK_SBATCH_STATE\")\n"
+                "current=$((current + 1))\n"
+                "printf '%s\\n' \"$current\" > \"$MOCK_SBATCH_STATE\"\n"
+                "printf '%s\\n' \"$current\"\n",
+                encoding="utf-8",
+            )
+            stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(ROOT / "run_missing_top4_sibling_controls.sh"),
+                    str(matrix),
+                ],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "PATH": f"{temporary}:{os.environ['PATH']}",
+                    "MOCK_SBATCH_CAPTURE": str(capture),
+                    "MOCK_SBATCH_STATE": str(state),
+                },
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            submissions = capture.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(submissions), 5)
+            self.assertIn("TRAIN_RESUME=1", submissions[0])
+            self.assertNotIn("smoke_naacl_window.slurm", "\n".join(submissions))
+            self.assertIn("--dependency=afterok:1", submissions[1])
+            self.assertIn("EVAL_RECORD_INDEX=136", submissions[1])
+            self.assertIn("--dependency=afterok:2", submissions[2])
+            self.assertIn("--dependency=afterok:3", submissions[3])
+            self.assertIn("--dependency=afterok:4", submissions[4])
+
+    def test_extended_comparison_requires_six_complete_internal_reports(self):
+        text = (ROOT / "compare_internal_dev_extended.slurm").read_text(
+            encoding="utf-8"
+        )
+        for candidate in (
+            "hierarchical_sibling_retro_frozen",
+            "cross_token_sibling_retro_frozen",
+            "cross_token_gated_retro_frozen",
+            "cross_token_gated_retro_top4",
+            "hierarchical_sibling_retro_top4",
+            "cross_token_sibling_retro_top4",
+        ):
+            self.assertIn(candidate, text)
+        self.assertIn("python_source_sha256", text)
+        self.assertIn('"scored": 364', text)
+        self.assertIn("held_out_test_accessed", text)
+        self.assertIn("internal_dev_comparison_six_candidates.json", text)
+
     def test_submitter_builds_record_gates_before_arrays(self):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
