@@ -35,6 +35,66 @@ LEGACY = (
     "submit_eval_pipeline.sh",
 )
 
+LAUNCHER_ENVIRONMENT_VARIABLES = (
+    "MATRIX_ROOT",
+    "CONDA_ENV",
+    "FREEZE_DIR",
+    "REPORT_PATH",
+    "TRAIN_TIME",
+    "DIAGNOSTIC_TIME",
+    "DIAGNOSTIC_SMOKE_TIME",
+    "DIAGNOSTIC_SMOKE_INDEX",
+    "EVAL_SHARDS",
+    "MAX_REQUEUES",
+    "EVAL_RECORD_INDEX",
+    "EVAL_SHARD_INDEX",
+    "BACKBONE_TRAINABLE_LAYERS",
+    "BACKBONE_TURN_MICROBATCH",
+    "ARCHITECTURE_MODE",
+    "ATTRIBUTION_FUSION",
+    "INPUT_VIEW",
+    "MODEL",
+    "TURN_POOLING",
+    "RUN_ROOT",
+    "PRECHECK_DIR",
+    "OUTPUT",
+    "TRAIN_RESUME",
+    "EVAL_DATA",
+    "EVAL_CHECKPOINT",
+    "EVAL_OUTPUT",
+    "EVAL_PROTOCOL",
+    "SMOKE_OUTPUT_DIR",
+    "SHARED_PREFLIGHT_DIR",
+    "EXPECTED_ARCHITECTURE_MODE",
+    "EXPECTED_ATTRIBUTION_FUSION",
+    "EXPECTED_BACKBONE_TRAINABLE_LAYERS",
+    "EXPECTED_INPUT_VIEW",
+    "EXPECTED_TRAIN_VARIANT",
+    "BACKBONE",
+    "BACKBONE_REVISION",
+    "MAX_TURNS",
+    "MAX_TOKENS",
+    "BATCH_SIZE",
+    "GRAD_ACCUMULATION",
+    "HEAD_LR",
+    "BACKBONE_LR",
+    "EPOCHS",
+    "LOCALIZATION_RAMP_EPOCHS",
+    "LENGTH_AUC_CEILING",
+    "TRAIN_VARIANT",
+    "TRAIN_PATH",
+    "DEV_PATH",
+    "PREPARED_DEV",
+)
+
+
+def isolated_launcher_environment(**updates):
+    environment = dict(os.environ)
+    for name in LAUNCHER_ENVIRONMENT_VARIABLES:
+        environment.pop(name, None)
+    environment.update(updates)
+    return environment
+
 
 def write_internal_artifact(matrix, data_path, candidate, architecture, fusion, layers):
     diagnostic = matrix / "diagnostics" / candidate
@@ -108,24 +168,23 @@ class LauncherEmbargoTests(unittest.TestCase):
                 encoding="utf-8",
             )
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
-            environment = {
-                **os.environ,
-                "PATH": f"{temporary}:{os.environ['PATH']}",
-                "MOCK_SBATCH_CAPTURE": str(capture),
-                "MOCK_SBATCH_STATE": str(state),
-                "MAX_REQUEUES": "99",
-                "EVAL_RECORD_INDEX": "999",
-                "ARCHITECTURE_MODE": "ambient-poison",
-                "ATTRIBUTION_FUSION": "ambient-poison",
-                "MODEL": "ambient-poison",
-                "TURN_POOLING": "ambient-poison",
-                "SHARED_PREFLIGHT_DIR": "ambient-poison",
-                "EXPECTED_ARCHITECTURE_MODE": "ambient-poison",
-                "EXPECTED_ATTRIBUTION_FUSION": "ambient-poison",
-                "EXPECTED_BACKBONE_TRAINABLE_LAYERS": "ambient-poison",
-                "EXPECTED_INPUT_VIEW": "ambient-poison",
-                "EXPECTED_TRAIN_VARIANT": "ambient-poison",
-            }
+            environment = isolated_launcher_environment(
+                PATH=f"{temporary}:{os.environ['PATH']}",
+                MOCK_SBATCH_CAPTURE=str(capture),
+                MOCK_SBATCH_STATE=str(state),
+                MAX_REQUEUES="99",
+                EVAL_RECORD_INDEX="999",
+                ARCHITECTURE_MODE="ambient-poison",
+                ATTRIBUTION_FUSION="ambient-poison",
+                MODEL="ambient-poison",
+                TURN_POOLING="ambient-poison",
+                SHARED_PREFLIGHT_DIR="ambient-poison",
+                EXPECTED_ARCHITECTURE_MODE="ambient-poison",
+                EXPECTED_ATTRIBUTION_FUSION="ambient-poison",
+                EXPECTED_BACKBONE_TRAINABLE_LAYERS="ambient-poison",
+                EXPECTED_INPUT_VIEW="ambient-poison",
+                EXPECTED_TRAIN_VARIANT="ambient-poison",
+            )
             result = subprocess.run(
                 [
                     "bash",
@@ -239,12 +298,11 @@ class LauncherEmbargoTests(unittest.TestCase):
                     str(matrix),
                 ],
                 cwd=ROOT,
-                env={
-                    **os.environ,
-                    "PATH": f"{temporary}:{os.environ['PATH']}",
-                    "MOCK_SBATCH_CAPTURE": str(capture),
-                    "MOCK_SBATCH_STATE": str(state),
-                },
+                env=isolated_launcher_environment(
+                    PATH=f"{temporary}:{os.environ['PATH']}",
+                    MOCK_SBATCH_CAPTURE=str(capture),
+                    MOCK_SBATCH_STATE=str(state),
+                ),
                 text=True,
                 capture_output=True,
             )
@@ -328,19 +386,18 @@ class LauncherEmbargoTests(unittest.TestCase):
                 encoding="utf-8",
             )
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
-            environment = {
-                **os.environ,
-                "PATH": f"{temporary}:{os.environ['PATH']}",
-                "MATRIX_ROOT": str(temporary / "matrix"),
-                "MOCK_SBATCH_CAPTURE": str(capture),
-                "MOCK_SBATCH_STATE": str(state),
-                "MAX_REQUEUES": "99",
-                "EVAL_RECORD_INDEX": "999",
-                "ARCHITECTURE_MODE": "ambient-poison",
-                "ATTRIBUTION_FUSION": "ambient-poison",
-                "MODEL": "ambient-poison",
-                "TURN_POOLING": "ambient-poison",
-            }
+            environment = isolated_launcher_environment(
+                PATH=f"{temporary}:{os.environ['PATH']}",
+                MATRIX_ROOT=str(temporary / "matrix"),
+                MOCK_SBATCH_CAPTURE=str(capture),
+                MOCK_SBATCH_STATE=str(state),
+                MAX_REQUEUES="99",
+                EVAL_RECORD_INDEX="999",
+                ARCHITECTURE_MODE="ambient-poison",
+                ATTRIBUTION_FUSION="ambient-poison",
+                MODEL="ambient-poison",
+                TURN_POOLING="ambient-poison",
+            )
             result = subprocess.run(
                 ["bash", str(ROOT / "submit_train_naacl_diagnostic.sh")],
                 cwd=ROOT,
@@ -403,18 +460,17 @@ class LauncherEmbargoTests(unittest.TestCase):
                 encoding="utf-8",
             )
             stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
-            environment = {
-                **os.environ,
-                "PATH": f"{temporary}:{os.environ['PATH']}",
-                "MOCK_SBATCH_CAPTURE": str(capture),
-                "MOCK_SBATCH_STATE": str(state),
-                "MAX_REQUEUES": "99",
-                "EVAL_RECORD_INDEX": "999",
-                "ARCHITECTURE_MODE": "ambient-poison",
-                "ATTRIBUTION_FUSION": "ambient-poison",
-                "MODEL": "ambient-poison",
-                "TURN_POOLING": "ambient-poison",
-            }
+            environment = isolated_launcher_environment(
+                PATH=f"{temporary}:{os.environ['PATH']}",
+                MOCK_SBATCH_CAPTURE=str(capture),
+                MOCK_SBATCH_STATE=str(state),
+                MAX_REQUEUES="99",
+                EVAL_RECORD_INDEX="999",
+                ARCHITECTURE_MODE="ambient-poison",
+                ATTRIBUTION_FUSION="ambient-poison",
+                MODEL="ambient-poison",
+                TURN_POOLING="ambient-poison",
+            )
             result = subprocess.run(
                 [
                     "bash",
