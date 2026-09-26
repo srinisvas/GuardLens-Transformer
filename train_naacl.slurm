@@ -174,7 +174,8 @@ if [[ -n "$SHARED_PREFLIGHT_DIR" ]]; then
     --backbone "$BACKBONE" \
     --backbone-revision "$BACKBONE_REVISION" \
     --max-turns "$MAX_TURNS" \
-    --max-tokens "$MAX_TOKENS"
+    --max-tokens "$MAX_TOKENS" \
+    --length-auc-ceiling "$LENGTH_AUC_CEILING"
   LENGTH_REPORT="$SHARED_PREFLIGHT_DIR/$VERIFY_VARIANT/$INPUT_VIEW/length_probe_dev.json"
 else
   python -m guardlens.data.verify_freeze \

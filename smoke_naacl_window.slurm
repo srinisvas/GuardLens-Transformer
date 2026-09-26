@@ -17,6 +17,7 @@ FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/fina
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
 TRAIN_VARIANT="${TRAIN_VARIANT:-primary_plus_auxiliary}"
 SHARED_PREFLIGHT_DIR="${SHARED_PREFLIGHT_DIR:-}"
+LENGTH_AUC_CEILING="${LENGTH_AUC_CEILING:-0.650}"
 MAX_TURNS="${MAX_TURNS:-64}"
 MAX_TOKENS="${MAX_TOKENS:-8192}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
@@ -99,7 +100,8 @@ if [[ -n "$SHARED_PREFLIGHT_DIR" ]]; then
     --backbone "$BACKBONE" \
     --backbone-revision "$BACKBONE_REVISION" \
     --max-turns "$MAX_TURNS" \
-    --max-tokens "$MAX_TOKENS"
+    --max-tokens "$MAX_TOKENS" \
+    --length-auc-ceiling "$LENGTH_AUC_CEILING"
 else
   python -m guardlens.data.verify_freeze \
     --report "$REPORT_PATH" \

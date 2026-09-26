@@ -75,6 +75,7 @@ def verify(args):
         "backbone_revision": args.backbone_revision,
         "max_turns": args.max_turns,
         "max_tokens": args.max_tokens,
+        "length_auc_ceiling": args.length_auc_ceiling,
         "held_out_test_accessed": False,
     }
     for key, value in expected.items():
@@ -91,6 +92,12 @@ def verify(args):
         path = recorded.get("path")
         if not path or not Path(path).is_file() or recorded.get("sha256") != file_hash(path):
             raise RuntimeError(f"preflight marker {name} is missing or changed")
+    auc = float(marker.get("dev_length_auc", float("inf")))
+    if auc > args.length_auc_ceiling:
+        raise RuntimeError(
+            f"preflight marker dev length-only AUC {auc:.6f} exceeds ceiling "
+            f"{args.length_auc_ceiling:.6f}"
+        )
     print(
         f"verified shared preflight variant={args.variant} "
         f"view={args.input_view} dev_length_auc={marker['dev_length_auc']:.6f}"
@@ -118,6 +125,9 @@ def main():
     create_parser.add_argument("--length-auc-ceiling", type=float, default=0.650)
     create_parser.add_argument("--output", required=True)
     verify_parser.add_argument("--marker", required=True)
+    verify_parser.add_argument(
+        "--length-auc-ceiling", type=float, default=0.650
+    )
     create_parser.set_defaults(func=create)
     verify_parser.set_defaults(func=verify)
     args = parser.parse_args()

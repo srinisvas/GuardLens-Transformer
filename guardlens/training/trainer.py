@@ -1256,15 +1256,15 @@ def train(
     localization_ckpt = os.path.join(
         output_dir, "best_localization.pt"
     )
-    detection_ckpt = os.path.join(output_dir, "best_detection.pt")
     if os.path.exists(localization_ckpt):
         chosen = localization_ckpt
     elif os.path.exists(joint_ckpt):
         chosen = joint_ckpt
-    elif os.path.exists(detection_ckpt):
-        chosen = detection_ckpt
     else:
-        raise RuntimeError("training produced no checkpoint")
+        raise RuntimeError(
+            "training produced no joint-phase localization checkpoint; "
+            "refusing to publish a detection-only checkpoint as best.pt"
+        )
 
     _atomic_copy(chosen, os.path.join(output_dir, "best.pt"))
     summary = {
@@ -1273,6 +1273,7 @@ def train(
         "training_contract_version": TRAINING_CONTRACT_VERSION,
         "model_name": model_name,
         "best_checkpoint": os.path.basename(chosen),
+        "best_checkpoint_phase": 2,
         "checkpoint_selection_policy": (
             "maximize_mean_dev_turn_span_auprc;_detection_reported_separately"
         ),

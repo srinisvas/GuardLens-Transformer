@@ -62,6 +62,10 @@ CURRENT_SHA=$(git rev-parse HEAD)
   echo "ERROR: expected git branch $EXPECTED_BRANCH, got $CURRENT_BRANCH"
   exit 2
 }
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "ERROR: tracked working-tree changes detected; commit or stash them before submission"
+  exit 2
+fi
 
 validate_internal_artifact() {
   local manifest=$1
@@ -96,6 +100,7 @@ expected = {
     ),
     "detector.config.train_variant": (config.get("train_variant"), variant),
 }
+
 failures = [f"{key}: observed={observed!r}, expected={wanted!r}"
             for key, (observed, wanted) in expected.items() if observed != wanted]
 if failures:
@@ -110,6 +115,53 @@ if report_path != "-":
         raise SystemExit(f"ERROR: incomplete internal report: {report_path}")
     if not report.get("development_only") or report.get("held_out_test_accessed") is not False:
         raise SystemExit(f"ERROR: report is not development-only: {report_path}")
+PY
+}
+
+validate_training_artifact() {
+  local summary=$1
+  python - "$summary" "$TRAIN_PATH" "$DEV_PATH" "$CURRENT_SHA" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+summary_path, train_path, dev_path, code_sha = sys.argv[1:]
+summary = json.loads(Path(summary_path).read_text(encoding="utf-8"))
+
+def sha256(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+expected = {
+    "status": (summary.get("status"), "completed"),
+    "best_checkpoint_phase": (summary.get("best_checkpoint_phase"), 2),
+    "code_sha": (summary.get("code_sha"), code_sha),
+    "data_sha256.train": (
+        summary.get("data_sha256", {}).get("train"), sha256(train_path)
+    ),
+    "data_sha256.dev": (
+        summary.get("data_sha256", {}).get("dev"), sha256(dev_path)
+    ),
+    "held_out_test_accessed": (
+        summary.get("held_out_test_accessed"), False
+    ),
+}
+failures = [
+    f"{key}: observed={observed!r}, expected={wanted!r}"
+    for key, (observed, wanted) in expected.items()
+    if observed != wanted
+]
+if failures:
+    raise SystemExit(
+        f"ERROR: invalid completed training summary {summary_path}: "
+        + "; ".join(failures)
+    )
+if summary.get("best_checkpoint") not in {
+    "best_localization.pt", "best_joint.pt"
+}:
+    raise SystemExit(
+        "ERROR: completed training summary does not select a joint-phase checkpoint"
+    )
 PY
 }
 
@@ -150,29 +202,18 @@ trap cancel_submitted_jobs ERR INT TERM
 
 preflight_dependency=()
 if [[ -f "$CONTROL_PREFLIGHT_DIR/$TRAIN_VARIANT/retrospective/marker.json" ]]; then
-  python - "$CONTROL_PREFLIGHT_DIR/$TRAIN_VARIANT/retrospective/marker.json" \
-    "$CURRENT_SHA" "$BACKBONE" "$BACKBONE_REVISION" "$MAX_TURNS" "$MAX_TOKENS" <<'PY'
-import json
-import sys
-
-path, code_sha, backbone, revision, max_turns, max_tokens = sys.argv[1:]
-marker = json.load(open(path, encoding="utf-8"))
-expected = {
-    "version": 1,
-    "code_sha": code_sha,
-    "variant": "primary_plus_auxiliary",
-    "input_view": "retrospective",
-    "backbone": backbone,
-    "backbone_revision": revision,
-    "max_turns": int(max_turns),
-    "max_tokens": int(max_tokens),
-    "held_out_test_accessed": False,
-}
-failures = [f"{key}: observed={marker.get(key)!r}, expected={value!r}"
-            for key, value in expected.items() if marker.get(key) != value]
-if failures:
-    raise SystemExit("ERROR: stale or incompatible control preflight marker: " + "; ".join(failures))
-PY
+  python -m guardlens.data.preflight_marker verify \
+    --marker "$CONTROL_PREFLIGHT_DIR/$TRAIN_VARIANT/retrospective/marker.json" \
+    --variant "$TRAIN_VARIANT" \
+    --train "$TRAIN_PATH" \
+    --dev "$DEV_PATH" \
+    --code-sha "$CURRENT_SHA" \
+    --input-view retrospective \
+    --backbone "$BACKBONE" \
+    --backbone-revision "$BACKBONE_REVISION" \
+    --max-turns "$MAX_TURNS" \
+    --max-tokens "$MAX_TOKENS" \
+    --length-auc-ceiling "$LENGTH_AUC_CEILING"
   echo "control preflight already complete: $CONTROL_PREFLIGHT_DIR"
 else
   [[ ! -e "$CONTROL_PREFLIGHT_DIR" ]] || {
@@ -203,6 +244,8 @@ for index in "${!names[@]}"; do
     continue
   fi
   if [[ -f "$train_root/checkpoints/training_summary.json" && -f "$train_root/checkpoints/best.pt" ]]; then
+    validate_training_artifact \
+      "$train_root/checkpoints/training_summary.json"
     states[$index]=trained
     echo "training complete $name: reusing best.pt"
   elif [[ -f "$train_root/checkpoints/last.pt" ]]; then

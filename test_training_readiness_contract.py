@@ -116,6 +116,15 @@ class TrainingReadinessContractTests(unittest.TestCase):
         self.assertIn('--variant "$VERIFY_VARIANT"', smoke_text)
         self.assertIn("guardlens.data.audit_representation", smoke_text)
 
+    def test_best_checkpoint_cannot_fall_back_to_detection_only(self):
+        trainer = (Path(__file__).resolve().parent / "guardlens" / "training" / "trainer.py").read_text(
+            encoding="utf-8"
+        )
+        final_selection = trainer[trainer.index('joint_ckpt = os.path.join(output_dir, "best_joint.pt")'):]
+        self.assertNotIn("best_detection.pt", final_selection)
+        self.assertIn("no joint-phase localization checkpoint", final_selection)
+        self.assertIn('"best_checkpoint_phase": 2', final_selection)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

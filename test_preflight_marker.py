@@ -58,6 +58,7 @@ class PreflightMarkerTests(unittest.TestCase):
                 backbone_revision=args.backbone_revision,
                 max_turns=args.max_turns,
                 max_tokens=args.max_tokens,
+                length_auc_ceiling=args.length_auc_ceiling,
             ))
             paths["train"].write_text("changed\n", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "train SHA256 mismatch"):
@@ -72,7 +73,29 @@ class PreflightMarkerTests(unittest.TestCase):
                     backbone_revision=args.backbone_revision,
                     max_turns=args.max_turns,
                     max_tokens=args.max_tokens,
+                    length_auc_ceiling=args.length_auc_ceiling,
                 ))
+
+    def test_marker_rejects_changed_length_ceiling(self):
+        with tempfile.TemporaryDirectory() as root:
+            paths = self.fixture(root)
+            args = self.create_args(root, paths)
+            create(args)
+            verify_args = SimpleNamespace(
+                marker=args.output,
+                train=args.train,
+                dev=args.dev,
+                code_sha=args.code_sha,
+                variant=args.variant,
+                input_view=args.input_view,
+                backbone=args.backbone,
+                backbone_revision=args.backbone_revision,
+                max_turns=args.max_turns,
+                max_tokens=args.max_tokens,
+                length_auc_ceiling=0.60,
+            )
+            with self.assertRaisesRegex(RuntimeError, "length_auc_ceiling"):
+                verify(verify_args)
 
     def test_length_auc_ceiling_fails_closed(self):
         with tempfile.TemporaryDirectory() as root:

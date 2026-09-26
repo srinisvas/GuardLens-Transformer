@@ -127,6 +127,65 @@ def write_internal_artifact(matrix, data_path, candidate, architecture, fusion, 
     (diagnostic / "report.json").write_text(json.dumps(report), encoding="utf-8")
 
 
+def write_preflight_artifact(shared, freeze_dir):
+    train = freeze_dir / "splits_primary_plus_train_auxiliary" / "train.jsonl"
+    dev = freeze_dir / "splits_primary_plus_train_auxiliary" / "dev.jsonl"
+    train.parent.mkdir(parents=True, exist_ok=True)
+    train.write_text('{"conversation_id":"train"}\n', encoding="utf-8")
+    dev.write_text('{"conversation_id":"dev"}\n', encoding="utf-8")
+    freeze_report = freeze_dir / "data_prep_freeze_report.json"
+    freeze_report.write_text("{}\n", encoding="utf-8")
+
+    output = (
+        shared
+        / "preflight-top4-sibling-controls"
+        / "primary_plus_auxiliary"
+        / "retrospective"
+    )
+    output.mkdir(parents=True, exist_ok=True)
+    representation = output / "representation_coverage.json"
+    length = output / "length_probe_dev.json"
+    representation.write_text("{}\n", encoding="utf-8")
+    length.write_text(
+        json.dumps({
+            "input_view": "retrospective",
+            "dev": {"roc_auc": 0.60},
+        }),
+        encoding="utf-8",
+    )
+    marker = {
+        "version": 1,
+        "code_sha": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+        ).strip(),
+        "variant": "primary_plus_auxiliary",
+        "input_view": "retrospective",
+        "backbone": "answerdotai/ModernBERT-large",
+        "backbone_revision": "45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
+        "max_turns": 64,
+        "max_tokens": 8192,
+        "length_auc_ceiling": 0.650,
+        "dev_length_auc": 0.60,
+        "files": {
+            name: {
+                "path": str(path.resolve()),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for name, path in {
+                "train": train,
+                "dev": dev,
+                "freeze_report": freeze_report,
+                "representation_report": representation,
+                "length_report": length,
+            }.items()
+        },
+        "held_out_test_accessed": False,
+    }
+    (output / "marker.json").write_text(
+        json.dumps(marker), encoding="utf-8"
+    )
+
+
 class LauncherEmbargoTests(unittest.TestCase):
     def test_missing_top4_sibling_controls_reuse_completed_matrix(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -236,27 +295,8 @@ class LauncherEmbargoTests(unittest.TestCase):
             data_path = shared / "internal-dev.jsonl"
             data_path.write_text("{}\n" * 364, encoding="utf-8")
             (shared / "internal-dev.jsonl.manifest.json").write_text("{}\n", encoding="utf-8")
-            marker = (
-                shared
-                / "preflight-top4-sibling-controls"
-                / "primary_plus_auxiliary"
-                / "retrospective"
-                / "marker.json"
-            )
-            marker.parent.mkdir(parents=True)
-            marker.write_text(json.dumps({
-                "version": 1,
-                "code_sha": subprocess.check_output(
-                    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-                ).strip(),
-                "variant": "primary_plus_auxiliary",
-                "input_view": "retrospective",
-                "backbone": "answerdotai/ModernBERT-large",
-                "backbone_revision": "45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
-                "max_turns": 64,
-                "max_tokens": 8192,
-                "held_out_test_accessed": False,
-            }), encoding="utf-8")
+            freeze_dir = temporary / "freeze"
+            write_preflight_artifact(shared, freeze_dir)
 
             candidates = (
                 ("hierarchical_sibling_retro_frozen", "hierarchical_turn", False, 0),
@@ -302,6 +342,7 @@ class LauncherEmbargoTests(unittest.TestCase):
                     PATH=f"{temporary}:{os.environ['PATH']}",
                     MOCK_SBATCH_CAPTURE=str(capture),
                     MOCK_SBATCH_STATE=str(state),
+                    FREEZE_DIR=str(freeze_dir),
                 ),
                 text=True,
                 capture_output=True,
@@ -361,6 +402,8 @@ class LauncherEmbargoTests(unittest.TestCase):
         )
         self.assertIn("MATRIX_ROOT=$MATRIX_ROOT", launcher)
         self.assertIn('fresh_training_dependency=(--dependency="afterok:$smoke_dependency_ids")', launcher)
+        self.assertIn("guardlens.data.preflight_marker verify", launcher)
+        self.assertIn("tracked working-tree changes detected", launcher)
 
     def test_internal_diagnostic_can_enforce_checkpoint_axes(self):
         text = (ROOT / "eval_internal_dev.slurm").read_text(encoding="utf-8")
