@@ -972,10 +972,18 @@ Submit the complete internal matrix from the repository root:
     bash submit_train_naacl_diagnostic.sh
 
 The checked-in submitter creates four concurrent smoke jobs, four concurrent
-training jobs, four internal-dev GPU diagnostic jobs, four CPU finalizers and
-one CPU comparison job with `afterok` dependencies. Each diagnostic starts when
-its matching training run completes. It does not open held-out test data and
-cannot load ShieldGemma or a public dataset.
+training jobs, four four-way internal-dev GPU diagnostic arrays, four CPU
+finalizers and one CPU comparison job with `afterok` dependencies. The cluster
+schedules at most the GPUs it has, while record sharding prevents idle GPUs
+when one candidate remains. Each diagnostic starts when its matching training
+run completes. It does not open held-out test data and cannot load ShieldGemma
+or a public dataset.
+
+The matched-span random baseline uses a nonrecursive construction. It preserves
+the reference run-length multiset within each user turn and contiguous eligible
+block, preserves the exact word budget, and terminates in linear time. Record
+logs report the conversation size and every tenth intervention plan so a slow
+model inference is distinguishable from stalled plan construction.
 
 Review `internal_dev_comparison.json` before selecting any candidate. Do not run
 held-out or external evaluation until the architecture, training population and
@@ -991,6 +999,10 @@ work with:
 The resume submitter reuses validated epoch checkpoints and per-record diagnostic
 shards, sends already complete diagnostic shards straight to a CPU finalizer,
 and rebuilds the final comparison only after all four reports exist.
+It rejects diagnostic manifests produced by a different evaluator commit.
+Evaluator changes that affect intervention construction require all four
+diagnostics to restart under one fresh diagnostic directory, while the trained
+checkpoints remain reusable.
 
 ## 18. Current readiness status
 

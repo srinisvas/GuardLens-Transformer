@@ -100,6 +100,34 @@ class LauncherEmbargoTests(unittest.TestCase):
         )
         self.assertIn("if (( diagnostic_status != 0 )); then", diagnostic)
 
+    def test_internal_diagnostics_use_all_four_gpus_and_matching_finalizer(self):
+        for name in (
+            "submit_train_naacl_diagnostic.sh",
+            "resume_train_naacl_diagnostic.sh",
+        ):
+            with self.subTest(name=name):
+                text = (ROOT / name).read_text(encoding="utf-8")
+                self.assertIn('EVAL_SHARDS="${EVAL_SHARDS:-4}"', text)
+                self.assertIn('--array="0-$((EVAL_SHARDS - 1))%$EVAL_SHARDS"', text)
+                self.assertIn("EVAL_SHARDS=$EVAL_SHARDS", text)
+        diagnostic = (ROOT / "eval_internal_dev.slurm").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("SLURM_ARRAY_TASK_ID", diagnostic)
+        self.assertIn('--shard-index "$EVAL_SHARD_INDEX"', diagnostic)
+        self.assertIn('--shard-count "$EVAL_SHARDS"', diagnostic)
+        finalizer = (ROOT / "eval_internal_dev_finalize.slurm").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('--shard-count "$EVAL_SHARDS"', finalizer)
+
+    def test_resume_rejects_mixed_evaluator_provenance(self):
+        text = (ROOT / "resume_train_naacl_diagnostic.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('manifest.get("code", {}).get("git_sha")', text)
+        self.assertIn("archive the complete diagnostics directory", text)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -14,6 +14,11 @@ PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
 : "${EVAL_DATA:?prepared internal dev JSONL required}"
 : "${EVAL_OUTPUT:?diagnostic output directory required}"
+EVAL_SHARDS="${EVAL_SHARDS:-1}"
+[[ "$EVAL_SHARDS" =~ ^[1-9][0-9]*$ ]] || {
+  echo "ERROR: EVAL_SHARDS must be a positive integer"
+  exit 2
+}
 
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -28,7 +33,7 @@ cd "$PROJECT_DIR"
 python -u -m eval_platform finalize \
   --data "$EVAL_DATA" \
   --output "$EVAL_OUTPUT" \
-  --shard-count 1
+  --shard-count "$EVAL_SHARDS"
 
 echo "Internal dev diagnostic finalized: $EVAL_OUTPUT/report.json"
 echo "Held-out test accessed: NO"

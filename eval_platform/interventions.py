@@ -36,30 +36,57 @@ def select(units, scores, fraction, eligible, method="rank", seed=0, matched=Non
     if method == "span_random":
         if matched is None or len(matched) != count:
             raise ValueError("span-random needs the reference selection")
-        # Match each selected contiguous run length and its user turn. Place
-        # nonoverlapping runs by randomized backtracking. No count fallback.
-        runs = []
-        for i in sorted(matched):
-            if runs and i == runs[-1][-1] + 1 and units[i]["turn_id"] == units[runs[-1][-1]]["turn_id"]:
-                runs[-1].append(i)
-            else:
-                runs.append([i])
-        available = set(eligible)
-        tasks = sorted([(units[r[0]]["turn_id"], len(r)) for r in runs], key=lambda x: -x[1])
-        def place(pos, occupied):
-            if pos == len(tasks):
-                return occupied
-            tid, size = tasks[pos]
-            starts = [i for i in eligible if all(j in available and j not in occupied and units[j]["turn_id"] == tid for j in range(i, i + size))]
-            rng.shuffle(starts)
-            for start in starts:
-                result = place(pos + 1, occupied | set(range(start, start + size)))
-                if result is not None:
-                    return result
-            return None
-        result = place(0, set())
-        if result is None:
-            raise ValueError("cannot place matched random spans")
+        eligible_set = set(eligible)
+        if (len(set(matched)) != len(matched) or
+                any(type(i) is not int or i not in eligible_set for i in matched)):
+            raise ValueError("span-random reference must be unique and eligible")
+
+        # Preserve the reference run-length multiset within each contiguous
+        # eligible block and turn. Randomize run order and surrounding gaps.
+        # This construction is linear and always succeeds because the original
+        # matched selection proves that every block has sufficient capacity.
+        def contiguous_runs(indices):
+            runs = []
+            for i in sorted(indices):
+                if (runs and i == runs[-1][-1] + 1 and
+                        units[i]["turn_id"] == units[runs[-1][-1]]["turn_id"]):
+                    runs[-1].append(i)
+                else:
+                    runs.append([i])
+            return runs
+
+        blocks = contiguous_runs(eligible)
+        block_by_index = {
+            index: block_id
+            for block_id, block in enumerate(blocks)
+            for index in block
+        }
+        lengths_by_block = [[] for _ in blocks]
+        for run in contiguous_runs(matched):
+            block_ids = {block_by_index.get(index) for index in run}
+            if len(block_ids) != 1 or None in block_ids:
+                raise ValueError("matched span crosses an ineligible boundary")
+            lengths_by_block[block_ids.pop()].append(len(run))
+
+        result = []
+        for block, lengths in zip(blocks, lengths_by_block, strict=True):
+            if not lengths:
+                continue
+            rng.shuffle(lengths)
+            slack = len(block) - sum(lengths)
+            if slack < 0:
+                raise ValueError("matched spans exceed eligible block capacity")
+            # Uniform stars-and-bars composition of slack into len(lengths)+1
+            # gaps. Adjacent spans remain permitted, matching the old contract.
+            bars = sorted(rng.sample(range(slack + len(lengths)), len(lengths)))
+            points = [-1, *bars, slack + len(lengths)]
+            gaps = [points[i + 1] - points[i] - 1 for i in range(len(points) - 1)]
+            cursor = gaps[0]
+            for position, length in enumerate(lengths):
+                result.extend(block[cursor:cursor + length])
+                cursor += length + gaps[position + 1]
+        if len(result) != count or len(set(result)) != count:
+            raise RuntimeError("span-random construction violated the exact budget")
         return sorted(result)
     if method != "rank":
         raise ValueError("unknown selector")

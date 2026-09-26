@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -244,6 +245,21 @@ class ContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 s.cached("x", {"input": 1}, lambda: None)
 
+    def test_atomic_json_writes_are_safe_for_concurrent_array_tasks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            value = {"same": "manifest", "records": 364}
+            threads = [
+                threading.Thread(target=write_json, args=(path, value))
+                for _ in range(16)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), value)
+            self.assertEqual(list(Path(directory).glob("*.tmp")), [])
+
     def test_protocol_rejects_external_tuning(self):
         with self.assertRaises(ValueError):
             validate_protocol({**protocol(), "threshold_source": "external_dev"})
@@ -287,6 +303,37 @@ class InterventionTests(unittest.TestCase):
             self.assertEqual(sum(units[i]["turn_id"] == 0 for i in chosen), 2)
             first = [i for i in chosen if units[i]["turn_id"] == 0]
             self.assertEqual(first[1] - first[0], 1)
+
+    def test_matched_random_large_fragmented_selection_is_nonrecursive(self):
+        units = [
+            {
+                "turn_id": int(i >= 4000),
+                "start": i * 2,
+                "end": i * 2 + 1,
+                "text": "x",
+            }
+            for i in range(8000)
+        ]
+        eligible = list(range(8000))
+        matched = list(range(0, 1600, 2)) + list(range(4000, 5600, 2))
+        first = select(
+            units, [0.0] * len(units), .2, eligible,
+            "span_random", 20260926, matched,
+        )
+        again = select(
+            units, [0.0] * len(units), .2, eligible,
+            "span_random", 20260926, matched,
+        )
+        other = select(
+            units, [0.0] * len(units), .2, eligible,
+            "span_random", 20260927, matched,
+        )
+        self.assertEqual(first, again)
+        self.assertNotEqual(first, other)
+        self.assertEqual(len(first), 1600)
+        self.assertEqual(len(set(first)), 1600)
+        self.assertEqual(sum(i < 4000 for i in first), 800)
+        self.assertEqual(sum(i >= 4000 for i in first), 800)
 
     def test_non_surface_masks_all_methods_and_empty_scope_is_explicit(self):
         ts = record()["turns"]

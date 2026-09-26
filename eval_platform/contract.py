@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import uuid
 from pathlib import Path
 
 from . import VERSION
@@ -40,9 +41,14 @@ def read_jsonl(path):
 def write_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_name(path.name + f".{os.getpid()}.tmp")
-    temp.write_text(canonical(value) + "\n", encoding="utf-8")
-    temp.replace(path)
+    temp = path.with_name(
+        path.name + f".{os.getpid()}.{uuid.uuid4().hex}.tmp"
+    )
+    try:
+        temp.write_text(canonical(value) + "\n", encoding="utf-8")
+        temp.replace(path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def probability(value):

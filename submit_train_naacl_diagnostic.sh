@@ -12,7 +12,12 @@ MATRIX_ID="${MATRIX_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 MATRIX_ROOT="${MATRIX_ROOT:-$BASE_OUTPUT/$MATRIX_ID}"
 TRAIN_TIME="${TRAIN_TIME:-24:00:00}"
 DIAGNOSTIC_TIME="${DIAGNOSTIC_TIME:-24:00:00}"
+EVAL_SHARDS="${EVAL_SHARDS:-4}"
 MAX_REQUEUES="${MAX_REQUEUES:-3}"
+[[ "$EVAL_SHARDS" =~ ^[1-4]$ ]] || {
+  echo "ERROR: EVAL_SHARDS must be an integer from 1 to 4"
+  exit 2
+}
 [[ "$MAX_REQUEUES" =~ ^[0-9]+$ ]] || {
   echo "ERROR: MAX_REQUEUES must be a non-negative integer"
   exit 2
@@ -120,15 +125,16 @@ for index in "${!names[@]}"; do
   diagnostic_output="$MATRIX_ROOT/diagnostics/$name"
   diagnostic_job=$(sbatch --parsable \
     --time="$DIAGNOSTIC_TIME" \
+    --array="0-$((EVAL_SHARDS - 1))%$EVAL_SHARDS" \
     --dependency="afterok:${train_jobs[$index]}" \
-    --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$MATRIX_ROOT/training/$name/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},MAX_REQUEUES=$MAX_REQUEUES" \
+    --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$MATRIX_ROOT/training/$name/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},EVAL_SHARDS=$EVAL_SHARDS,MAX_REQUEUES=$MAX_REQUEUES" \
     eval_internal_dev.slurm)
   diagnostic_job="${diagnostic_job%%;*}"
   submitted_jobs+=("$diagnostic_job")
 
   finalize_job=$(sbatch --parsable \
     --dependency="afterok:$diagnostic_job" \
-    --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_OUTPUT=$diagnostic_output" \
+    --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_OUTPUT=$diagnostic_output,EVAL_SHARDS=$EVAL_SHARDS" \
     eval_internal_dev_finalize.slurm)
   finalize_job="${finalize_job%%;*}"
   finalize_jobs+=("$finalize_job")
@@ -148,6 +154,7 @@ trap - ERR INT TERM
 echo "shared CPU preflight: $preflight_job"
 echo "compare matrix: $compare_job"
 echo "matrix root: $MATRIX_ROOT"
+echo "internal diagnostic shards per candidate: $EVAL_SHARDS"
 echo "automatic requeues per training/diagnostic job: $MAX_REQUEUES"
 echo "held-out test accessed: NO"
 echo "external evaluation submitted: NO"

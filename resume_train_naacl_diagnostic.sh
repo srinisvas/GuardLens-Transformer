@@ -13,7 +13,12 @@ FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/fina
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
 TRAIN_TIME="${TRAIN_TIME:-24:00:00}"
 DIAGNOSTIC_TIME="${DIAGNOSTIC_TIME:-24:00:00}"
+EVAL_SHARDS="${EVAL_SHARDS:-4}"
 MAX_REQUEUES="${MAX_REQUEUES:-3}"
+[[ "$EVAL_SHARDS" =~ ^[1-4]$ ]] || {
+  echo "ERROR: EVAL_SHARDS must be an integer from 1 to 4"
+  exit 2
+}
 [[ "$MAX_REQUEUES" =~ ^[0-9]+$ ]] || {
   echo "ERROR: MAX_REQUEUES must be a non-negative integer"
   exit 2
@@ -38,6 +43,7 @@ SHARED_PREFLIGHT_DIR="$MATRIX_ROOT/shared/preflight"
 [[ -d "$SHARED_PREFLIGHT_DIR" ]] || { echo "ERROR: shared preflight missing: $SHARED_PREFLIGHT_DIR"; exit 2; }
 comparison="$MATRIX_ROOT/internal_dev_comparison.json"
 [[ ! -e "$comparison" ]] || { echo "ERROR: comparison already exists: $comparison"; exit 2; }
+CODE_SHA=$(git rev-parse HEAD)
 
 names=(
   hierarchical_sibling_retro_frozen
@@ -61,6 +67,22 @@ protocols=(
 for name in "${names[@]}"; do
   train_root="$MATRIX_ROOT/training/$name"
   report="$MATRIX_ROOT/diagnostics/$name/report.json"
+  manifest="$MATRIX_ROOT/diagnostics/$name/manifest.json"
+  if [[ -f "$manifest" ]]; then
+    python - "$manifest" "$CODE_SHA" <<'PY'
+import json
+import sys
+
+path, expected = sys.argv[1:]
+manifest = json.load(open(path, encoding="utf-8"))
+actual = manifest.get("code", {}).get("git_sha")
+if actual != expected:
+    raise SystemExit(
+        f"ERROR: diagnostic manifest uses evaluator {actual}, current code is {expected}; "
+        "archive the complete diagnostics directory and rerun all four candidates"
+    )
+PY
+  fi
   if [[ -f "$report" ]]; then
     continue
   fi
@@ -123,8 +145,9 @@ for index in "${!names[@]}"; do
   else
     diagnostic_job=$(sbatch --parsable \
       --time="$DIAGNOSTIC_TIME" \
+      --array="0-$((EVAL_SHARDS - 1))%$EVAL_SHARDS" \
       "${dependency[@]}" \
-      --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$train_root/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},MAX_REQUEUES=$MAX_REQUEUES" \
+      --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$train_root/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},EVAL_SHARDS=$EVAL_SHARDS,MAX_REQUEUES=$MAX_REQUEUES" \
       eval_internal_dev.slurm)
     diagnostic_job="${diagnostic_job%%;*}"
     submitted_jobs+=("$diagnostic_job")
@@ -134,7 +157,7 @@ for index in "${!names[@]}"; do
 
   finalize_job=$(sbatch --parsable \
     "${diagnostic_dependency[@]}" \
-    --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_OUTPUT=$diagnostic_output" \
+    --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_OUTPUT=$diagnostic_output,EVAL_SHARDS=$EVAL_SHARDS" \
     eval_internal_dev_finalize.slurm)
   finalize_job="${finalize_job%%;*}"
   finalize_jobs+=("$finalize_job")
@@ -157,6 +180,7 @@ submitted_jobs+=("$compare_job")
 trap - ERR INT TERM
 echo "compare matrix: $compare_job"
 echo "matrix root: $MATRIX_ROOT"
+echo "internal diagnostic shards per candidate: $EVAL_SHARDS"
 echo "automatic requeues per training/diagnostic job: $MAX_REQUEUES"
 echo "held-out test accessed: NO"
 echo "external evaluation submitted: NO"

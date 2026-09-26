@@ -20,9 +20,23 @@ CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
 : "${EVAL_CHECKPOINT:?trained checkpoint required}"
 : "${EVAL_OUTPUT:?fresh diagnostic output directory required}"
 EVAL_PROTOCOL="${EVAL_PROTOCOL:-configs/eval_protocol_retrospective.json}"
+EVAL_SHARDS="${EVAL_SHARDS:-1}"
+EVAL_SHARD_INDEX="${EVAL_SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
 MAX_REQUEUES="${MAX_REQUEUES:-3}"
 RESTART_COUNT="${SLURM_RESTART_COUNT:-0}"
 
+[[ "$EVAL_SHARDS" =~ ^[1-9][0-9]*$ ]] || {
+  echo "ERROR: EVAL_SHARDS must be a positive integer"
+  exit 2
+}
+[[ "$EVAL_SHARD_INDEX" =~ ^[0-9]+$ ]] || {
+  echo "ERROR: EVAL_SHARD_INDEX must be a non-negative integer"
+  exit 2
+}
+if (( EVAL_SHARD_INDEX >= EVAL_SHARDS )); then
+  echo "ERROR: EVAL_SHARD_INDEX=$EVAL_SHARD_INDEX is outside EVAL_SHARDS=$EVAL_SHARDS"
+  exit 2
+fi
 [[ "$MAX_REQUEUES" =~ ^[0-9]+$ ]] || {
   echo "ERROR: MAX_REQUEUES must be a non-negative integer"
   exit 2
@@ -54,11 +68,7 @@ for path in "$EVAL_DATA" "$EVAL_DATA.manifest.json" "$EVAL_CHECKPOINT"; do
   [[ -f "$path" ]] || { echo "ERROR: missing required file: $path"; exit 2; }
 done
 if [[ -e "$EVAL_OUTPUT" ]]; then
-  [[ -f "$EVAL_OUTPUT/manifest.json" ]] || {
-    echo "ERROR: existing diagnostic output has no manifest: $EVAL_OUTPUT"
-    exit 2
-  }
-  echo "Resuming exact manifest-bound diagnostic: $EVAL_OUTPUT"
+  echo "Diagnostic output exists; evaluator will verify its manifest identity: $EVAL_OUTPUT"
 fi
 [[ -f "$EVAL_PROTOCOL" ]] || { echo "ERROR: missing protocol: $EVAL_PROTOCOL"; exit 2; }
 
@@ -82,6 +92,7 @@ echo "Output: $EVAL_OUTPUT"
 echo "Protocol: $EVAL_PROTOCOL"
 echo "External guards: DISABLED"
 echo "Held-out test: NOT ACCESSED"
+echo "Diagnostic shard: $EVAL_SHARD_INDEX/$EVAL_SHARDS"
 echo "Slurm restart: $RESTART_COUNT/$MAX_REQUEUES"
 
 requeue_requested=0
@@ -104,8 +115,8 @@ python -u -m eval_platform diagnose-dev \
   --protocol "$EVAL_PROTOCOL" \
   --lexicon configs/eval_surface_lexicon.json \
   --device cuda \
-  --shard-index 0 \
-  --shard-count 1 &
+  --shard-index "$EVAL_SHARD_INDEX" \
+  --shard-count "$EVAL_SHARDS" &
 diagnostic_pid=$!
 wait "$diagnostic_pid"
 diagnostic_status=$?
@@ -124,7 +135,7 @@ if (( requeue_requested == 1 )); then
     echo "ERROR: cannot requeue because the diagnostic manifest was not created"
     exit 2
   }
-  echo "Requeuing Slurm job $SLURM_JOB_ID with its completed record shards"
+  echo "Requeuing Slurm job $SLURM_JOB_ID shard $EVAL_SHARD_INDEX/$EVAL_SHARDS"
   scontrol requeue "$SLURM_JOB_ID"
   exit 0
 fi

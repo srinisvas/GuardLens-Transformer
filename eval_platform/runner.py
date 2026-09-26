@@ -92,6 +92,12 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_ind
             continue
         record_interventions = []
         turns = visible(r, protocol["view"])
+        user_word_count = len(words(turns))
+        print(
+            f"[{index + 1}/{len(records)}] {r['id']} starting "
+            f"turns={len(turns)} user_words={user_word_count}",
+            flush=True,
+        )
         prediction = infer(store, "detector", detector, turns)
         row = {"id": r["id"], "cluster_id": r["cluster_id"], "label": r["label"], "dataset": r["dataset"],
                "strata": r.get("strata", {}), "prediction": prediction, "visible_sha256": digest(turns)}
@@ -120,13 +126,32 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_ind
                 for name, backend in guards.items()
             }
             row["guard_originals"] = before
-            try:
-                plans = list(intervention_plan(turns, prediction, protocol, lexicon, detector_score, llm_pred)) if guards else []
-            except CoverageError as e:
-                # A LOTO request can exceed coverage only for malformed/empty context.
-                # Fail instead of silently dropping all other methods for this record.
-                raise CoverageError(f"{r['id']}: LOTO cannot cover this context: {e}") from e
-            for plan in plans:
+            def guarded_plans():
+                try:
+                    yield from intervention_plan(
+                        turns, prediction, protocol, lexicon,
+                        detector_score, llm_pred,
+                    )
+                except CoverageError as e:
+                    # Fail instead of silently dropping the other methods.
+                    raise CoverageError(
+                        f"{r['id']}: LOTO cannot cover this context: {e}"
+                    ) from e
+            plans = guarded_plans() if guards else ()
+            plan_total = len(protocol["budgets"]) * sum(
+                protocol["random_repeats"]
+                if method in {"random", "span_random"} else 1
+                for method in protocol["methods"]
+            )
+            for plan_index, plan in enumerate(plans, 1):
+                if plan_index == 1 or plan_index % 10 == 0 or plan_index == plan_total:
+                    print(
+                        f"[{index + 1}/{len(records)}] {r['id']} "
+                        f"plan={plan_index}/{plan_total} "
+                        f"method={plan['method']} budget={plan['fraction']} "
+                        f"repeat={plan['repeat']}",
+                        flush=True,
+                    )
                 if plan.get("turn_ranking") and plan["fraction"] == protocol["budgets"][0]:
                     row.setdefault("baseline_localization", {})[plan["method"]] = localization(r, {"turn_scores": plan["turn_ranking"]}, threshold=None)
                 common = {"id": r["id"], "cluster_id": r["cluster_id"], "label": r["label"],
