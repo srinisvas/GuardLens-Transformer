@@ -44,6 +44,9 @@ class LauncherEmbargoTests(unittest.TestCase):
             stub.write_text(
                 "#!/bin/bash\n"
                 "set -euo pipefail\n"
+                "for name in MAX_REQUEUES EVAL_RECORD_INDEX ARCHITECTURE_MODE ATTRIBUTION_FUSION MODEL TURN_POOLING; do\n"
+                "  [[ ! -v $name ]] || exit 91\n"
+                "done\n"
                 "capture=$MOCK_SBATCH_CAPTURE\n"
                 "state=$MOCK_SBATCH_STATE\n"
                 "printf '%s\\n' \"$*\" >> \"$capture\"\n"
@@ -61,6 +64,12 @@ class LauncherEmbargoTests(unittest.TestCase):
                 "MATRIX_ROOT": str(temporary / "matrix"),
                 "MOCK_SBATCH_CAPTURE": str(capture),
                 "MOCK_SBATCH_STATE": str(state),
+                "MAX_REQUEUES": "99",
+                "EVAL_RECORD_INDEX": "999",
+                "ARCHITECTURE_MODE": "ambient-poison",
+                "ATTRIBUTION_FUSION": "ambient-poison",
+                "MODEL": "ambient-poison",
+                "TURN_POOLING": "ambient-poison",
             }
             result = subprocess.run(
                 ["bash", str(ROOT / "submit_train_naacl_diagnostic.sh")],
@@ -72,6 +81,8 @@ class LauncherEmbargoTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             submissions = capture.read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(submissions), 22)
+            self.assertTrue(all("ambient-poison" not in row for row in submissions))
+            self.assertTrue(all("EVAL_RECORD_INDEX=999" not in row for row in submissions))
             for smoke_id, train_id in zip((10, 13, 16, 19), (6, 7, 8, 9)):
                 smoke = submissions[smoke_id - 1]
                 array = submissions[smoke_id]
@@ -110,6 +121,9 @@ class LauncherEmbargoTests(unittest.TestCase):
             stub.write_text(
                 "#!/bin/bash\n"
                 "set -euo pipefail\n"
+                "for name in MAX_REQUEUES EVAL_RECORD_INDEX ARCHITECTURE_MODE ATTRIBUTION_FUSION MODEL TURN_POOLING; do\n"
+                "  [[ ! -v $name ]] || exit 91\n"
+                "done\n"
                 "printf '%s\\n' \"$*\" >> \"$MOCK_SBATCH_CAPTURE\"\n"
                 "current=0\n"
                 "[[ ! -f \"$MOCK_SBATCH_STATE\" ]] || current=$(<\"$MOCK_SBATCH_STATE\")\n"
@@ -124,6 +138,12 @@ class LauncherEmbargoTests(unittest.TestCase):
                 "PATH": f"{temporary}:{os.environ['PATH']}",
                 "MOCK_SBATCH_CAPTURE": str(capture),
                 "MOCK_SBATCH_STATE": str(state),
+                "MAX_REQUEUES": "99",
+                "EVAL_RECORD_INDEX": "999",
+                "ARCHITECTURE_MODE": "ambient-poison",
+                "ATTRIBUTION_FUSION": "ambient-poison",
+                "MODEL": "ambient-poison",
+                "TURN_POOLING": "ambient-poison",
             }
             result = subprocess.run(
                 [
@@ -139,6 +159,8 @@ class LauncherEmbargoTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             submissions = capture.read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(submissions), 13)
+            self.assertTrue(all("ambient-poison" not in row for row in submissions))
+            self.assertTrue(all("EVAL_RECORD_INDEX=999" not in row for row in submissions))
             for smoke_id in (1, 4, 7, 10):
                 smoke = submissions[smoke_id - 1]
                 array = submissions[smoke_id]

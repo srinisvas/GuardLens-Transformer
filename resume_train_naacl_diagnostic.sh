@@ -16,12 +16,12 @@ DIAGNOSTIC_TIME="${DIAGNOSTIC_TIME:-24:00:00}"
 DIAGNOSTIC_SMOKE_TIME="${DIAGNOSTIC_SMOKE_TIME:-01:00:00}"
 DIAGNOSTIC_SMOKE_INDEX="${DIAGNOSTIC_SMOKE_INDEX:-136}"
 EVAL_SHARDS="${EVAL_SHARDS:-4}"
-MAX_REQUEUES="${MAX_REQUEUES:-3}"
+REQUEUE_LIMIT="${MAX_REQUEUES:-3}"
 [[ "$EVAL_SHARDS" =~ ^[1-4]$ ]] || {
   echo "ERROR: EVAL_SHARDS must be an integer from 1 to 4"
   exit 2
 }
-[[ "$MAX_REQUEUES" =~ ^[0-9]+$ ]] || {
+[[ "$REQUEUE_LIMIT" =~ ^[0-9]+$ ]] || {
   echo "ERROR: MAX_REQUEUES must be a non-negative integer"
   exit 2
 }
@@ -29,7 +29,11 @@ MAX_REQUEUES="${MAX_REQUEUES:-3}"
   echo "ERROR: DIAGNOSTIC_SMOKE_INDEX must be a non-negative integer"
   exit 2
 }
-unset EVAL_RECORD_INDEX EVAL_SHARD_INDEX
+unset MAX_REQUEUES EVAL_RECORD_INDEX EVAL_SHARD_INDEX \
+  BACKBONE_TRAINABLE_LAYERS BACKBONE_TURN_MICROBATCH ARCHITECTURE_MODE \
+  ATTRIBUTION_FUSION INPUT_VIEW MODEL TURN_POOLING \
+  RUN_ROOT PRECHECK_DIR OUTPUT TRAIN_RESUME \
+  EVAL_DATA EVAL_CHECKPOINT EVAL_OUTPUT EVAL_PROTOCOL SMOKE_OUTPUT_DIR
 BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 MAX_TURNS="${MAX_TURNS:-64}"
@@ -115,7 +119,7 @@ cancel_submitted_jobs() {
 trap cancel_submitted_jobs ERR INT TERM
 
 common_export="CONDA_ENV=$CONDA_ENV,FREEZE_DIR=$FREEZE_DIR,REPORT_PATH=$REPORT_PATH,BACKBONE=$BACKBONE,BACKBONE_REVISION=$BACKBONE_REVISION,MAX_TURNS=$MAX_TURNS,MAX_TOKENS=$MAX_TOKENS,LENGTH_AUC_CEILING=$LENGTH_AUC_CEILING"
-train_export="$common_export,TRAIN_VARIANT=$TRAIN_VARIANT,TRAIN_PATH=$TRAIN_PATH,DEV_PATH=$DEV_PATH,MODEL=guardlens,BATCH_SIZE=$BATCH_SIZE,GRAD_ACCUMULATION=$GRAD_ACCUMULATION,HEAD_LR=$HEAD_LR,BACKBONE_LR=$BACKBONE_LR,EPOCHS=$EPOCHS,LOCALIZATION_RAMP_EPOCHS=$LOCALIZATION_RAMP_EPOCHS,TURN_POOLING=attention,MAX_REQUEUES=$MAX_REQUEUES"
+train_export="$common_export,TRAIN_VARIANT=$TRAIN_VARIANT,TRAIN_PATH=$TRAIN_PATH,DEV_PATH=$DEV_PATH,MODEL=guardlens,BATCH_SIZE=$BATCH_SIZE,GRAD_ACCUMULATION=$GRAD_ACCUMULATION,HEAD_LR=$HEAD_LR,BACKBONE_LR=$BACKBONE_LR,EPOCHS=$EPOCHS,LOCALIZATION_RAMP_EPOCHS=$LOCALIZATION_RAMP_EPOCHS,TURN_POOLING=attention,MAX_REQUEUES=$REQUEUE_LIMIT"
 expected_records=$(wc -l < "$PREPARED_DEV")
 finalize_jobs=()
 
@@ -168,7 +172,7 @@ for index in "${!names[@]}"; do
       --error="logs/eval_internal_dev_%A_%a.err" \
       --array="0-$((EVAL_SHARDS - 1))%$EVAL_SHARDS" \
       --dependency="afterok:$diagnostic_smoke_job" \
-      --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$train_root/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},EVAL_SHARDS=$EVAL_SHARDS,MAX_REQUEUES=$MAX_REQUEUES" \
+      --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$train_root/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},EVAL_SHARDS=$EVAL_SHARDS,MAX_REQUEUES=$REQUEUE_LIMIT" \
       eval_internal_dev.slurm)
     diagnostic_job="${diagnostic_job%%;*}"
     submitted_jobs+=("$diagnostic_job")
@@ -205,6 +209,6 @@ echo "compare matrix: $compare_job"
 echo "matrix root: $MATRIX_ROOT"
 echo "internal diagnostic shards per candidate: $EVAL_SHARDS"
 echo "diagnostic record gate: index $DIAGNOSTIC_SMOKE_INDEX with limit $DIAGNOSTIC_SMOKE_TIME"
-echo "automatic requeues per training/diagnostic job: $MAX_REQUEUES"
+echo "automatic requeues per training/diagnostic job: $REQUEUE_LIMIT"
 echo "held-out test accessed: NO"
 echo "external evaluation submitted: NO"
