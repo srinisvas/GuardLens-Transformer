@@ -21,6 +21,7 @@ MAX_TOKENS="${MAX_TOKENS:-8192}"
 LENGTH_AUC_CEILING="${LENGTH_AUC_CEILING:-0.650}"
 : "${SHARED_PREFLIGHT_DIR:?fresh control preflight directory required}"
 : "${PREPARED_DEV:?existing prepared internal dev JSONL required}"
+: "${MATRIX_ROOT:?completed four-candidate matrix root required}"
 
 set +u
 CONDA_BASE=$(conda info --base 2>/dev/null)
@@ -59,6 +60,68 @@ fi
 
 echo "Running complete CPU contract suite before the two missing GPU controls"
 python -m unittest discover -v -p 'test*.py'
+
+python - "$MATRIX_ROOT" "$PREPARED_DEV" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+from eval_platform.__main__ import source_identity
+from eval_platform.contract import file_hash
+
+root = Path(sys.argv[1])
+data = Path(sys.argv[2])
+current = source_identity()
+expected_axes = {
+    "hierarchical_sibling_retro_frozen": ("hierarchical_turn", False, 0),
+    "cross_token_sibling_retro_frozen": ("cross_token", False, 0),
+    "cross_token_gated_retro_frozen": ("cross_token", True, 0),
+    "cross_token_gated_retro_top4": ("cross_token", True, 4),
+}
+
+def evaluator_identity(code):
+    return {key: value for key, value in code.items() if key != "git_sha"}
+
+current_evaluator = evaluator_identity(current)
+for name, (architecture, fusion, layers) in expected_axes.items():
+    directory = root / "diagnostics" / name
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    report = json.loads((directory / "report.json").read_text(encoding="utf-8"))
+    detector = manifest.get("detector", {})
+    config = detector.get("config", {})
+    expected = {
+        "stage": (manifest.get("stage"), "internal_dev_causal_diagnostic"),
+        "development_only": (manifest.get("development_only"), True),
+        "held_out_test_accessed": (manifest.get("held_out_test_accessed"), False),
+        "dataset_sha256": (manifest.get("dataset_sha256"), file_hash(data)),
+        "protocol.view": (manifest.get("protocol", {}).get("view"), "retrospective"),
+        "detector.input_view": (detector.get("input_view"), "retrospective"),
+        "detector.architecture_mode": (detector.get("architecture_mode"), architecture),
+        "detector.use_attribution_fusion": (detector.get("use_attribution_fusion"), fusion),
+        "detector.config.backbone_trainable_layers": (
+            config.get("backbone_trainable_layers"), layers
+        ),
+        "detector.config.train_variant": (
+            config.get("train_variant"), "primary_plus_auxiliary"
+        ),
+    }
+    failures = [f"{key}: observed={observed!r}, expected={wanted!r}"
+                for key, (observed, wanted) in expected.items() if observed != wanted]
+    if failures:
+        raise SystemExit(f"ERROR: invalid base diagnostic {name}: " + "; ".join(failures))
+    if report.get("manifest_id") != manifest.get("manifest_id"):
+        raise SystemExit(f"ERROR: report/manifest mismatch for {name}")
+    if report.get("coverage") != {"failures": [], "scored": 364, "total": 364}:
+        raise SystemExit(f"ERROR: incomplete base report for {name}")
+    if not report.get("development_only") or report.get("held_out_test_accessed") is not False:
+        raise SystemExit(f"ERROR: base report is not development-only for {name}")
+    if evaluator_identity(manifest.get("code", {})) != current_evaluator:
+        raise SystemExit(
+            f"ERROR: evaluator source/runtime incompatibility for {name}; "
+            "refusing GPU control jobs"
+        )
+print("Verified four base reports and current evaluator/runtime compatibility")
+PY
 
 variant="primary_plus_auxiliary"
 train_path="$FREEZE_DIR/splits_primary_plus_train_auxiliary/train.jsonl"

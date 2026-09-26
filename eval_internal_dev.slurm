@@ -25,6 +25,37 @@ EVAL_SHARD_INDEX="${EVAL_SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
 EVAL_RECORD_INDEX="${EVAL_RECORD_INDEX:-}"
 MAX_REQUEUES="${MAX_REQUEUES:-3}"
 RESTART_COUNT="${SLURM_RESTART_COUNT:-0}"
+EXPECTED_ARCHITECTURE_MODE="${EXPECTED_ARCHITECTURE_MODE:-}"
+EXPECTED_ATTRIBUTION_FUSION="${EXPECTED_ATTRIBUTION_FUSION:-}"
+EXPECTED_BACKBONE_TRAINABLE_LAYERS="${EXPECTED_BACKBONE_TRAINABLE_LAYERS:-}"
+EXPECTED_INPUT_VIEW="${EXPECTED_INPUT_VIEW:-}"
+EXPECTED_TRAIN_VARIANT="${EXPECTED_TRAIN_VARIANT:-}"
+
+expected_axes=(
+  "$EXPECTED_ARCHITECTURE_MODE"
+  "$EXPECTED_ATTRIBUTION_FUSION"
+  "$EXPECTED_BACKBONE_TRAINABLE_LAYERS"
+  "$EXPECTED_INPUT_VIEW"
+  "$EXPECTED_TRAIN_VARIANT"
+)
+expected_count=0
+for value in "${expected_axes[@]}"; do
+  [[ -z "$value" ]] || expected_count=$((expected_count + 1))
+done
+if (( expected_count != 0 && expected_count != ${#expected_axes[@]} )); then
+  echo "ERROR: supply all five EXPECTED_* diagnostic axes or none of them"
+  exit 2
+fi
+if (( expected_count > 0 )); then
+  [[ "$EXPECTED_ATTRIBUTION_FUSION" =~ ^[01]$ ]] || {
+    echo "ERROR: EXPECTED_ATTRIBUTION_FUSION must be 0 or 1"
+    exit 2
+  }
+  [[ "$EXPECTED_BACKBONE_TRAINABLE_LAYERS" =~ ^[0-9]+$ ]] || {
+    echo "ERROR: EXPECTED_BACKBONE_TRAINABLE_LAYERS must be non-negative"
+    exit 2
+  }
+fi
 
 selection_args=()
 if [[ -n "$EVAL_RECORD_INDEX" ]]; then
@@ -188,4 +219,47 @@ fi
 if (( diagnostic_status != 0 )); then
   echo "ERROR: diagnostic process exited with status $diagnostic_status"
   exit "$diagnostic_status"
+fi
+
+if (( expected_count > 0 )); then
+  python - "$EVAL_OUTPUT/manifest.json" \
+    "$EXPECTED_ARCHITECTURE_MODE" \
+    "$EXPECTED_ATTRIBUTION_FUSION" \
+    "$EXPECTED_BACKBONE_TRAINABLE_LAYERS" \
+    "$EXPECTED_INPUT_VIEW" \
+    "$EXPECTED_TRAIN_VARIANT" <<'PY'
+import json
+import sys
+
+path, architecture, fusion, layers, view, variant = sys.argv[1:]
+manifest = json.load(open(path, encoding="utf-8"))
+detector = manifest.get("detector", {})
+config = detector.get("config", {})
+expected = {
+    "stage": (manifest.get("stage"), "internal_dev_causal_diagnostic"),
+    "development_only": (manifest.get("development_only"), True),
+    "held_out_test_accessed": (manifest.get("held_out_test_accessed"), False),
+    "protocol.view": (manifest.get("protocol", {}).get("view"), view),
+    "detector.input_view": (detector.get("input_view"), view),
+    "detector.architecture_mode": (detector.get("architecture_mode"), architecture),
+    "detector.use_attribution_fusion": (
+        detector.get("use_attribution_fusion"), bool(int(fusion))
+    ),
+    "detector.config.backbone_trainable_layers": (
+        config.get("backbone_trainable_layers"), int(layers)
+    ),
+    "detector.config.train_variant": (config.get("train_variant"), variant),
+}
+failures = [f"{key}: observed={observed!r}, expected={wanted!r}"
+            for key, (observed, wanted) in expected.items() if observed != wanted]
+if failures:
+    raise SystemExit("ERROR: diagnostic manifest axes mismatch: " + "; ".join(failures))
+print("Verified diagnostic manifest axes: " + json.dumps({
+    "architecture_mode": architecture,
+    "use_attribution_fusion": bool(int(fusion)),
+    "backbone_trainable_layers": int(layers),
+    "input_view": view,
+    "train_variant": variant,
+}, sort_keys=True))
+PY
 fi

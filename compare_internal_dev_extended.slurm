@@ -43,6 +43,14 @@ names = (
     "hierarchical_sibling_retro_top4",
     "cross_token_sibling_retro_top4",
 )
+expected_axes = {
+    "hierarchical_sibling_retro_frozen": ("hierarchical_turn", False, 0),
+    "cross_token_sibling_retro_frozen": ("cross_token", False, 0),
+    "cross_token_gated_retro_frozen": ("cross_token", True, 0),
+    "cross_token_gated_retro_top4": ("cross_token", True, 4),
+    "hierarchical_sibling_retro_top4": ("hierarchical_turn", False, 4),
+    "cross_token_sibling_retro_top4": ("cross_token", False, 4),
+}
 runs = {}
 code_identities = {}
 for name in names:
@@ -53,6 +61,28 @@ for name in names:
         raise SystemExit(f"ERROR: {name} does not have complete 364/364 coverage")
     if not report.get("development_only") or report.get("held_out_test_accessed") is not False:
         raise SystemExit(f"ERROR: {name} is not an internal-development-only report")
+    detector = manifest.get("detector", {})
+    config = detector.get("config", {})
+    architecture, fusion, layers = expected_axes[name]
+    expected = {
+        "stage": (manifest.get("stage"), "internal_dev_causal_diagnostic"),
+        "development_only": (manifest.get("development_only"), True),
+        "held_out_test_accessed": (manifest.get("held_out_test_accessed"), False),
+        "protocol.view": (manifest.get("protocol", {}).get("view"), "retrospective"),
+        "detector.input_view": (detector.get("input_view"), "retrospective"),
+        "detector.architecture_mode": (detector.get("architecture_mode"), architecture),
+        "detector.use_attribution_fusion": (detector.get("use_attribution_fusion"), fusion),
+        "detector.config.backbone_trainable_layers": (
+            config.get("backbone_trainable_layers"), layers
+        ),
+        "detector.config.train_variant": (
+            config.get("train_variant"), "primary_plus_auxiliary"
+        ),
+    }
+    failures = [f"{key}: observed={observed!r}, expected={wanted!r}"
+                for key, (observed, wanted) in expected.items() if observed != wanted]
+    if failures:
+        raise SystemExit(f"ERROR: controlled-axis mismatch for {name}: " + "; ".join(failures))
     runs[name] = {"manifest": manifest, "report": report}
     code_identities[name] = manifest["code"]
 

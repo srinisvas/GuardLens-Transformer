@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Regression tests for the internal-signoff evaluation embargo."""
+import hashlib
 import json
 import os
 import stat
@@ -35,6 +36,37 @@ LEGACY = (
 )
 
 
+def write_internal_artifact(matrix, data_path, candidate, architecture, fusion, layers):
+    diagnostic = matrix / "diagnostics" / candidate
+    diagnostic.mkdir(parents=True, exist_ok=True)
+    manifest_id = f"fixture-{candidate}"
+    manifest = {
+        "manifest_id": manifest_id,
+        "stage": "internal_dev_causal_diagnostic",
+        "development_only": True,
+        "held_out_test_accessed": False,
+        "dataset_sha256": hashlib.sha256(data_path.read_bytes()).hexdigest(),
+        "protocol": {"view": "retrospective"},
+        "detector": {
+            "input_view": "retrospective",
+            "architecture_mode": architecture,
+            "use_attribution_fusion": fusion,
+            "config": {
+                "backbone_trainable_layers": layers,
+                "train_variant": "primary_plus_auxiliary",
+            },
+        },
+    }
+    report = {
+        "manifest_id": manifest_id,
+        "coverage": {"failures": [], "scored": 364, "total": 364},
+        "development_only": True,
+        "held_out_test_accessed": False,
+    }
+    (diagnostic / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (diagnostic / "report.json").write_text(json.dumps(report), encoding="utf-8")
+
+
 class LauncherEmbargoTests(unittest.TestCase):
     def test_missing_top4_sibling_controls_reuse_completed_matrix(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -42,29 +74,21 @@ class LauncherEmbargoTests(unittest.TestCase):
             matrix = temporary / "matrix"
             shared = matrix / "shared"
             shared.mkdir(parents=True)
-            (shared / "internal-dev.jsonl").write_text(
+            data_path = shared / "internal-dev.jsonl"
+            data_path.write_text(
                 "{}\n" * 364, encoding="utf-8"
             )
             (shared / "internal-dev.jsonl.manifest.json").write_text(
                 "{}\n", encoding="utf-8"
             )
             base_candidates = (
-                "hierarchical_sibling_retro_frozen",
-                "cross_token_sibling_retro_frozen",
-                "cross_token_gated_retro_frozen",
-                "cross_token_gated_retro_top4",
+                ("hierarchical_sibling_retro_frozen", "hierarchical_turn", False, 0),
+                ("cross_token_sibling_retro_frozen", "cross_token", False, 0),
+                ("cross_token_gated_retro_frozen", "cross_token", True, 0),
+                ("cross_token_gated_retro_top4", "cross_token", True, 4),
             )
-            report = {
-                "coverage": {"failures": [], "scored": 364, "total": 364},
-                "development_only": True,
-                "held_out_test_accessed": False,
-            }
             for candidate in base_candidates:
-                diagnostic = matrix / "diagnostics" / candidate
-                diagnostic.mkdir(parents=True)
-                (diagnostic / "report.json").write_text(
-                    json.dumps(report), encoding="utf-8"
-                )
+                write_internal_artifact(matrix, data_path, *candidate)
 
             capture = temporary / "sbatch.args"
             state = temporary / "sbatch.state"
@@ -72,7 +96,7 @@ class LauncherEmbargoTests(unittest.TestCase):
             stub.write_text(
                 "#!/bin/bash\n"
                 "set -euo pipefail\n"
-                "for name in MAX_REQUEUES EVAL_RECORD_INDEX ARCHITECTURE_MODE ATTRIBUTION_FUSION MODEL TURN_POOLING; do\n"
+                "for name in MAX_REQUEUES EVAL_RECORD_INDEX ARCHITECTURE_MODE ATTRIBUTION_FUSION MODEL TURN_POOLING SHARED_PREFLIGHT_DIR EXPECTED_ARCHITECTURE_MODE EXPECTED_ATTRIBUTION_FUSION EXPECTED_BACKBONE_TRAINABLE_LAYERS EXPECTED_INPUT_VIEW EXPECTED_TRAIN_VARIANT; do\n"
                 "  [[ ! -v $name ]] || exit 91\n"
                 "done\n"
                 "printf '%s\\n' \"$*\" >> \"$MOCK_SBATCH_CAPTURE\"\n"
@@ -95,6 +119,12 @@ class LauncherEmbargoTests(unittest.TestCase):
                 "ATTRIBUTION_FUSION": "ambient-poison",
                 "MODEL": "ambient-poison",
                 "TURN_POOLING": "ambient-poison",
+                "SHARED_PREFLIGHT_DIR": "ambient-poison",
+                "EXPECTED_ARCHITECTURE_MODE": "ambient-poison",
+                "EXPECTED_ATTRIBUTION_FUSION": "ambient-poison",
+                "EXPECTED_BACKBONE_TRAINABLE_LAYERS": "ambient-poison",
+                "EXPECTED_INPUT_VIEW": "ambient-poison",
+                "EXPECTED_TRAIN_VARIANT": "ambient-poison",
             }
             result = subprocess.run(
                 [
@@ -113,8 +143,8 @@ class LauncherEmbargoTests(unittest.TestCase):
             self.assertTrue(all("ambient-poison" not in row for row in submissions))
             self.assertIn("preflight_naacl_top4_sibling_controls.slurm", submissions[0])
             for smoke_id, train_id, gate_id, array_id, finalize_id in (
-                (2, 3, 4, 5, 6),
-                (7, 8, 9, 10, 11),
+                (2, 4, 5, 6, 7),
+                (3, 8, 9, 10, 11),
             ):
                 smoke = submissions[smoke_id - 1]
                 train = submissions[train_id - 1]
@@ -124,15 +154,18 @@ class LauncherEmbargoTests(unittest.TestCase):
                 self.assertIn("BACKBONE_TRAINABLE_LAYERS=4", smoke)
                 self.assertIn("ATTRIBUTION_FUSION=0", smoke)
                 self.assertIn("--dependency=afterok:1", smoke)
-                self.assertIn(f"--dependency=afterok:{smoke_id}", train)
+                self.assertIn("--dependency=afterok:2:3", train)
                 self.assertIn(f"--dependency=afterok:{train_id}", gate)
                 self.assertIn("EVAL_RECORD_INDEX=136", gate)
                 self.assertIn("MAX_REQUEUES=0", gate)
+                self.assertIn("EXPECTED_BACKBONE_TRAINABLE_LAYERS=4", gate)
+                self.assertIn("EXPECTED_ATTRIBUTION_FUSION=0", gate)
                 self.assertIn(f"--dependency=afterok:{gate_id}", array)
                 self.assertIn("--array=0-3%4", array)
                 self.assertNotIn("EVAL_RECORD_INDEX", array)
+                self.assertIn("EXPECTED_INPUT_VIEW=retrospective", array)
                 self.assertIn(f"--dependency=afterok:{array_id}", finalize)
-            self.assertIn("--dependency=afterok:6:11", submissions[-1])
+            self.assertIn("--dependency=afterok:7:11", submissions[-1])
             self.assertIn("compare_internal_dev_extended.slurm", submissions[-1])
 
     def test_missing_top4_control_launcher_resumes_without_repeating_smoke(self):
@@ -141,7 +174,8 @@ class LauncherEmbargoTests(unittest.TestCase):
             matrix = temporary / "matrix"
             shared = matrix / "shared"
             shared.mkdir(parents=True)
-            (shared / "internal-dev.jsonl").write_text("{}\n" * 364, encoding="utf-8")
+            data_path = shared / "internal-dev.jsonl"
+            data_path.write_text("{}\n" * 364, encoding="utf-8")
             (shared / "internal-dev.jsonl.manifest.json").write_text("{}\n", encoding="utf-8")
             marker = (
                 shared
@@ -151,25 +185,29 @@ class LauncherEmbargoTests(unittest.TestCase):
                 / "marker.json"
             )
             marker.parent.mkdir(parents=True)
-            marker.write_text("{}\n", encoding="utf-8")
-
-            report = {
-                "coverage": {"failures": [], "scored": 364, "total": 364},
-                "development_only": True,
+            marker.write_text(json.dumps({
+                "version": 1,
+                "code_sha": subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+                ).strip(),
+                "variant": "primary_plus_auxiliary",
+                "input_view": "retrospective",
+                "backbone": "answerdotai/ModernBERT-large",
+                "backbone_revision": "45bb4654a4d5aaff24dd11d4781fa46d39bf8c13",
+                "max_turns": 64,
+                "max_tokens": 8192,
                 "held_out_test_accessed": False,
-            }
-            for candidate in (
-                "hierarchical_sibling_retro_frozen",
-                "cross_token_sibling_retro_frozen",
-                "cross_token_gated_retro_frozen",
-                "cross_token_gated_retro_top4",
-                "cross_token_sibling_retro_top4",
-            ):
-                diagnostic = matrix / "diagnostics" / candidate
-                diagnostic.mkdir(parents=True)
-                (diagnostic / "report.json").write_text(
-                    json.dumps(report), encoding="utf-8"
-                )
+            }), encoding="utf-8")
+
+            candidates = (
+                ("hierarchical_sibling_retro_frozen", "hierarchical_turn", False, 0),
+                ("cross_token_sibling_retro_frozen", "cross_token", False, 0),
+                ("cross_token_gated_retro_frozen", "cross_token", True, 0),
+                ("cross_token_gated_retro_top4", "cross_token", True, 4),
+                ("cross_token_sibling_retro_top4", "cross_token", False, 4),
+            )
+            for candidate in candidates:
+                write_internal_artifact(matrix, data_path, *candidate)
             checkpoint = (
                 matrix
                 / "training"
@@ -238,6 +276,34 @@ class LauncherEmbargoTests(unittest.TestCase):
         self.assertIn('"scored": 364', text)
         self.assertIn("held_out_test_accessed", text)
         self.assertIn("internal_dev_comparison_six_candidates.json", text)
+        self.assertIn("expected_axes", text)
+        self.assertIn("controlled-axis mismatch", text)
+
+    def test_top4_control_preflight_checks_base_evaluator_before_gpu_work(self):
+        preflight = (ROOT / "preflight_naacl_top4_sibling_controls.slurm").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("source_identity", preflight)
+        self.assertIn("evaluator source/runtime incompatibility", preflight)
+        self.assertIn('"dataset_sha256": (manifest.get("dataset_sha256"), file_hash(data))', preflight)
+        launcher = (ROOT / "run_missing_top4_sibling_controls.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("MATRIX_ROOT=$MATRIX_ROOT", launcher)
+        self.assertIn('fresh_training_dependency=(--dependency="afterok:$smoke_dependency_ids")', launcher)
+
+    def test_internal_diagnostic_can_enforce_checkpoint_axes(self):
+        text = (ROOT / "eval_internal_dev.slurm").read_text(encoding="utf-8")
+        for name in (
+            "EXPECTED_ARCHITECTURE_MODE",
+            "EXPECTED_ATTRIBUTION_FUSION",
+            "EXPECTED_BACKBONE_TRAINABLE_LAYERS",
+            "EXPECTED_INPUT_VIEW",
+            "EXPECTED_TRAIN_VARIANT",
+        ):
+            self.assertIn(name, text)
+        self.assertIn("supply all five EXPECTED_* diagnostic axes", text)
+        self.assertIn("diagnostic manifest axes mismatch", text)
 
     def test_submitter_builds_record_gates_before_arrays(self):
         with tempfile.TemporaryDirectory() as directory:
