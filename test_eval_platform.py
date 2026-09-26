@@ -304,6 +304,23 @@ class InterventionTests(unittest.TestCase):
             first = [i for i in chosen if units[i]["turn_id"] == 0]
             self.assertEqual(first[1] - first[0], 1)
 
+    def test_matched_random_never_merges_distinct_reference_runs(self):
+        units = [
+            {"turn_id": 0, "start": i * 2, "end": i * 2 + 1, "text": "x"}
+            for i in range(10)
+        ]
+        chosen = select(
+            units, [0.0] * len(units), .3, list(range(10)),
+            "span_random", 8, matched=[0, 1, 5],
+        )
+        runs = []
+        for index in chosen:
+            if runs and index == runs[-1][-1] + 1:
+                runs[-1].append(index)
+            else:
+                runs.append([index])
+        self.assertEqual(sorted(map(len, runs)), [1, 2])
+
     def test_matched_random_large_fragmented_selection_is_nonrecursive(self):
         units = [
             {
@@ -528,18 +545,30 @@ class IntegrationTests(unittest.TestCase):
         p.update(methods=["guardlens", "random"], budgets=[.2], context_diagnostics=False)
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            manifest = {"protocol": p, "detector": {"threshold": .5}, "guards": {"self": {"fixture": True}}}
+            manifest = {
+                "stage": "internal_dev_causal_diagnostic",
+                "intervention_scoring_labels": [1],
+                "protocol": p,
+                "detector": {"threshold": .5},
+                "guards": {"self": {"fixture": True}},
+            }
             serial = run(records, FakeDetector(), {"self": FakeDetector()}, p, ["alpha"],
-                         RunStore(root / "serial", manifest))
+                         RunStore(root / "serial", manifest),
+                         score_intervention_labels={1})
             store = RunStore(root / "parallel", manifest)
             for index in range(4):
                 run(records, FakeDetector(), {"self": FakeDetector()}, p, ["alpha"], store,
-                    shard_index=index, shard_count=4)
+                    shard_index=index, shard_count=4,
+                    score_intervention_labels={1})
             detector = FakeDetector()
             run(records, detector, {"self": FakeDetector()}, p, ["alpha"], store,
-                shard_index=0, shard_count=4)
+                shard_index=0, shard_count=4,
+                score_intervention_labels={1})
             self.assertEqual(detector.calls, [])
             self.assertEqual(serial, finalize_shards(records, store, 4))
+            self.assertTrue(serial["development_only"])
+            self.assertFalse(serial["held_out_test_accessed"])
+            self.assertEqual(serial["intervention_scoring_labels"], [1])
             self.assertEqual(json.loads((root / "serial" / "predictions.json").read_text()),
                              json.loads((root / "parallel" / "predictions.json").read_text()))
             self.assertEqual(json.loads((root / "serial" / "interventions.json").read_text()),
@@ -547,6 +576,67 @@ class IntegrationTests(unittest.TestCase):
             (root / "parallel" / "shards" / "record-000006.json").unlink()
             with self.assertRaisesRegex(ValueError, "shards incomplete"):
                 finalize_shards(records, store, 4)
+
+    def test_single_record_gate_writes_only_the_requested_reusable_shard(self):
+        records = [record(str(index), index % 2) for index in range(4)]
+        p = protocol()
+        p.update(methods=["guardlens"], budgets=[.2], context_diagnostics=False)
+        with tempfile.TemporaryDirectory() as d:
+            store = RunStore(d, {"test": True})
+            run(
+                records, FakeDetector(), {"self": FakeDetector()}, p, ["alpha"],
+                store, record_index=2,
+            )
+            self.assertEqual(
+                [path.name for path in (Path(d) / "shards").glob("record-*.json")],
+                ["record-000002.json"],
+            )
+            with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+                run(
+                    records, FakeDetector(), {"self": FakeDetector()}, p,
+                    ["alpha"], store, shard_index=0, shard_count=4,
+                    record_index=2,
+                )
+            with self.assertRaisesRegex(ValueError, "invalid record index"):
+                run(
+                    records, FakeDetector(), {"self": FakeDetector()}, p,
+                    ["alpha"], store, record_index=4,
+                )
+
+    def test_internal_positive_only_scoring_preserves_report_and_benign_plans(self):
+        positive = record("positive", 1)
+        benign = record("benign", 0)
+        benign["turns"][0]["text"] = "safe café beta"
+        benign["strata"]["family"] = "frontier_authored_benign"
+        p = protocol()
+        p.update(methods=["guardlens"], budgets=[.2], context_diagnostics=False)
+        with tempfile.TemporaryDirectory() as d:
+            full_detector = FakeDetector()
+            full = run(
+                [positive, benign], full_detector, {"self": full_detector}, p,
+                ["alpha"], RunStore(Path(d) / "full", {"test": True}),
+            )
+            filtered_detector = FakeDetector()
+            filtered_root = Path(d) / "filtered"
+            filtered = run(
+                [positive, benign], filtered_detector,
+                {"self": filtered_detector}, p, ["alpha"],
+                RunStore(filtered_root, {"test": True}),
+                score_intervention_labels={1},
+            )
+            self.assertEqual(full, filtered)
+            self.assertLess(len(filtered_detector.calls), len(full_detector.calls))
+            interventions = json.loads(
+                (filtered_root / "interventions.json").read_text(encoding="utf-8")
+            )
+            benign_plans = [row for row in interventions if row["id"] == "benign"]
+            self.assertTrue(benign_plans)
+            self.assertTrue(all(row["edited"] for row in benign_plans))
+            self.assertTrue(all(row["after"] is None for row in benign_plans))
+            self.assertTrue(all(
+                row["scoring_skipped"] == "label_outside_internal_effect_estimand"
+                for row in benign_plans
+            ))
 
     def test_all_overflow_still_reports_each_effect_denominator(self):
         r = record()

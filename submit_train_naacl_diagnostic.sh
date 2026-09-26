@@ -12,6 +12,8 @@ MATRIX_ID="${MATRIX_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 MATRIX_ROOT="${MATRIX_ROOT:-$BASE_OUTPUT/$MATRIX_ID}"
 TRAIN_TIME="${TRAIN_TIME:-24:00:00}"
 DIAGNOSTIC_TIME="${DIAGNOSTIC_TIME:-24:00:00}"
+DIAGNOSTIC_SMOKE_TIME="${DIAGNOSTIC_SMOKE_TIME:-01:00:00}"
+DIAGNOSTIC_SMOKE_INDEX="${DIAGNOSTIC_SMOKE_INDEX:-136}"
 EVAL_SHARDS="${EVAL_SHARDS:-4}"
 MAX_REQUEUES="${MAX_REQUEUES:-3}"
 [[ "$EVAL_SHARDS" =~ ^[1-4]$ ]] || {
@@ -22,6 +24,13 @@ MAX_REQUEUES="${MAX_REQUEUES:-3}"
   echo "ERROR: MAX_REQUEUES must be a non-negative integer"
   exit 2
 }
+[[ "$DIAGNOSTIC_SMOKE_INDEX" =~ ^[0-9]+$ ]] || {
+  echo "ERROR: DIAGNOSTIC_SMOKE_INDEX must be a non-negative integer"
+  exit 2
+}
+# Do not let an interactive shell's single-record/shard override leak into the
+# jobs below. Each selection is passed explicitly.
+unset EVAL_RECORD_INDEX EVAL_SHARD_INDEX
 BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 MAX_TURNS="${MAX_TURNS:-64}"
@@ -94,6 +103,7 @@ smoke_jobs=()
 for index in "${!names[@]}"; do
   name="${names[$index]}"
   job=$(sbatch --parsable \
+    --kill-on-invalid-dep=yes \
     --dependency="afterok:$preflight_job" \
     --export="ALL,$train_export,BACKBONE_TRAINABLE_LAYERS=${trainable_layers[$index]},BACKBONE_TURN_MICROBATCH=${backbone_microbatches[$index]},ARCHITECTURE_MODE=${architectures[$index]},ATTRIBUTION_FUSION=${fusions[$index]},INPUT_VIEW=${views[$index]},SHARED_PREFLIGHT_DIR=$SHARED_PREFLIGHT_DIR,SMOKE_OUTPUT_DIR=$MATRIX_ROOT/smoke/$name" \
     smoke_naacl_window.slurm)
@@ -110,6 +120,7 @@ for index in "${!names[@]}"; do
   name="${names[$index]}"
   job=$(sbatch --parsable \
     --time="$TRAIN_TIME" \
+    --kill-on-invalid-dep=yes \
     --dependency="afterok:$smoke_dependency" \
     --export="ALL,$train_export,BACKBONE_TRAINABLE_LAYERS=${trainable_layers[$index]},BACKBONE_TURN_MICROBATCH=${backbone_microbatches[$index]},ARCHITECTURE_MODE=${architectures[$index]},ATTRIBUTION_FUSION=${fusions[$index]},INPUT_VIEW=${views[$index]},SHARED_PREFLIGHT_DIR=$SHARED_PREFLIGHT_DIR,RUN_ROOT=$MATRIX_ROOT/training/$name,PRECHECK_DIR=$MATRIX_ROOT/training/$name/preflight,OUTPUT=$MATRIX_ROOT/training/$name/checkpoints,TRAIN_RESUME=0" \
     train_naacl.slurm)
@@ -123,27 +134,43 @@ finalize_jobs=()
 for index in "${!names[@]}"; do
   name="${names[$index]}"
   diagnostic_output="$MATRIX_ROOT/diagnostics/$name"
+  diagnostic_smoke_job=$(sbatch --parsable \
+    --time="$DIAGNOSTIC_SMOKE_TIME" \
+    --kill-on-invalid-dep=yes \
+    --output="logs/eval_internal_dev_smoke_%j.out" \
+    --error="logs/eval_internal_dev_smoke_%j.err" \
+    --dependency="afterok:${train_jobs[$index]}" \
+    --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$MATRIX_ROOT/training/$name/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},EVAL_RECORD_INDEX=$DIAGNOSTIC_SMOKE_INDEX,MAX_REQUEUES=0" \
+    eval_internal_dev.slurm)
+  diagnostic_smoke_job="${diagnostic_smoke_job%%;*}"
+  submitted_jobs+=("$diagnostic_smoke_job")
+
   diagnostic_job=$(sbatch --parsable \
     --time="$DIAGNOSTIC_TIME" \
+    --kill-on-invalid-dep=yes \
+    --output="logs/eval_internal_dev_%A_%a.out" \
+    --error="logs/eval_internal_dev_%A_%a.err" \
     --array="0-$((EVAL_SHARDS - 1))%$EVAL_SHARDS" \
-    --dependency="afterok:${train_jobs[$index]}" \
+    --dependency="afterok:$diagnostic_smoke_job" \
     --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$MATRIX_ROOT/training/$name/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},EVAL_SHARDS=$EVAL_SHARDS,MAX_REQUEUES=$MAX_REQUEUES" \
     eval_internal_dev.slurm)
   diagnostic_job="${diagnostic_job%%;*}"
   submitted_jobs+=("$diagnostic_job")
 
   finalize_job=$(sbatch --parsable \
+    --kill-on-invalid-dep=yes \
     --dependency="afterok:$diagnostic_job" \
     --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_OUTPUT=$diagnostic_output,EVAL_SHARDS=$EVAL_SHARDS" \
     eval_internal_dev_finalize.slurm)
   finalize_job="${finalize_job%%;*}"
   finalize_jobs+=("$finalize_job")
   submitted_jobs+=("$finalize_job")
-  echo "diagnose/finalize $name: $diagnostic_job/$finalize_job"
+  echo "diagnostic gate/array/finalize $name: $diagnostic_smoke_job/$diagnostic_job/$finalize_job"
 done
 
 finalize_dependency=$(IFS=:; echo "${finalize_jobs[*]}")
 compare_job=$(sbatch --parsable \
+  --kill-on-invalid-dep=yes \
   --dependency="afterok:$finalize_dependency" \
   --export="ALL,CONDA_ENV=$CONDA_ENV,MATRIX_ROOT=$MATRIX_ROOT" \
   compare_internal_dev_matrix.slurm)
@@ -155,6 +182,7 @@ echo "shared CPU preflight: $preflight_job"
 echo "compare matrix: $compare_job"
 echo "matrix root: $MATRIX_ROOT"
 echo "internal diagnostic shards per candidate: $EVAL_SHARDS"
+echo "diagnostic record gate: index $DIAGNOSTIC_SMOKE_INDEX with limit $DIAGNOSTIC_SMOKE_TIME"
 echo "automatic requeues per training/diagnostic job: $MAX_REQUEUES"
 echo "held-out test accessed: NO"
 echo "external evaluation submitted: NO"

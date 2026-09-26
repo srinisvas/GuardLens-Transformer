@@ -272,6 +272,7 @@ def diagnose_dev(args):
         "lexicon_sha256": file_hash(args.lexicon),
         "detector": detector.identity,
         "guards": {"self": detector.identity},
+        "intervention_scoring_labels": [1],
         "llm": None,
         "exclusion_hashes": {},
         "code": source_identity(),
@@ -287,12 +288,18 @@ def diagnose_dev(args):
         llm=None,
         shard_index=args.shard_index,
         shard_count=args.shard_count,
+        record_index=args.record_index,
+        # Internal causal effects are estimated on harmful examples. Benign
+        # plans and original predictions are retained, but their edited/kept
+        # self-guard calls do not contribute to this development report.
+        score_intervention_labels={1},
     )
     if report is None:
         print(canonical({
             "output": str(store.root),
             "shard_index": args.shard_index,
             "shard_count": args.shard_count,
+            "record_index": args.record_index,
             "development_only": True,
         }))
         return
@@ -300,6 +307,7 @@ def diagnose_dev(args):
         "development_only": True,
         "held_out_test_accessed": False,
         "selection_use": "architecture_diagnostic_not_paper_result",
+        "intervention_scoring_labels": [1],
     })
     write_json(store.root / "report.json", report)
     print(canonical({
@@ -412,6 +420,7 @@ def parser():
     q.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
     q.add_argument("--shard-index", type=int)
     q.add_argument("--shard-count", type=int)
+    q.add_argument("--record-index", type=int)
     q.set_defaults(func=diagnose_dev)
     for name, func, arguments in [("human-tasks", task_export, ["data", "output"]),
             ("human-report", human, ["data", "annotations", "run", "output"]),

@@ -22,20 +22,31 @@ CONDA_ENV="${CONDA_ENV:-$HOME/work/conda_envs/guardlens_train}"
 EVAL_PROTOCOL="${EVAL_PROTOCOL:-configs/eval_protocol_retrospective.json}"
 EVAL_SHARDS="${EVAL_SHARDS:-1}"
 EVAL_SHARD_INDEX="${EVAL_SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
+EVAL_RECORD_INDEX="${EVAL_RECORD_INDEX:-}"
 MAX_REQUEUES="${MAX_REQUEUES:-3}"
 RESTART_COUNT="${SLURM_RESTART_COUNT:-0}"
 
-[[ "$EVAL_SHARDS" =~ ^[1-9][0-9]*$ ]] || {
-  echo "ERROR: EVAL_SHARDS must be a positive integer"
-  exit 2
-}
-[[ "$EVAL_SHARD_INDEX" =~ ^[0-9]+$ ]] || {
-  echo "ERROR: EVAL_SHARD_INDEX must be a non-negative integer"
-  exit 2
-}
-if (( EVAL_SHARD_INDEX >= EVAL_SHARDS )); then
-  echo "ERROR: EVAL_SHARD_INDEX=$EVAL_SHARD_INDEX is outside EVAL_SHARDS=$EVAL_SHARDS"
-  exit 2
+selection_args=()
+if [[ -n "$EVAL_RECORD_INDEX" ]]; then
+  [[ "$EVAL_RECORD_INDEX" =~ ^[0-9]+$ ]] || {
+    echo "ERROR: EVAL_RECORD_INDEX must be a non-negative integer"
+    exit 2
+  }
+  selection_args=(--record-index "$EVAL_RECORD_INDEX")
+else
+  [[ "$EVAL_SHARDS" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ERROR: EVAL_SHARDS must be a positive integer"
+    exit 2
+  }
+  [[ "$EVAL_SHARD_INDEX" =~ ^[0-9]+$ ]] || {
+    echo "ERROR: EVAL_SHARD_INDEX must be a non-negative integer"
+    exit 2
+  }
+  if (( EVAL_SHARD_INDEX >= EVAL_SHARDS )); then
+    echo "ERROR: EVAL_SHARD_INDEX=$EVAL_SHARD_INDEX is outside EVAL_SHARDS=$EVAL_SHARDS"
+    exit 2
+  fi
+  selection_args=(--shard-index "$EVAL_SHARD_INDEX" --shard-count "$EVAL_SHARDS")
 fi
 [[ "$MAX_REQUEUES" =~ ^[0-9]+$ ]] || {
   echo "ERROR: MAX_REQUEUES must be a non-negative integer"
@@ -92,8 +103,38 @@ echo "Output: $EVAL_OUTPUT"
 echo "Protocol: $EVAL_PROTOCOL"
 echo "External guards: DISABLED"
 echo "Held-out test: NOT ACCESSED"
-echo "Diagnostic shard: $EVAL_SHARD_INDEX/$EVAL_SHARDS"
+if [[ -n "$EVAL_RECORD_INDEX" ]]; then
+  echo "Diagnostic record gate: zero-based index $EVAL_RECORD_INDEX"
+else
+  echo "Diagnostic shard: $EVAL_SHARD_INDEX/$EVAL_SHARDS"
+fi
 echo "Slurm restart: $RESTART_COUNT/$MAX_REQUEUES"
+
+count_completed_work() {
+  python - "$EVAL_OUTPUT/shards" "$EVAL_SHARD_INDEX" "$EVAL_SHARDS" "$EVAL_RECORD_INDEX" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+directory = Path(sys.argv[1])
+shard_index = int(sys.argv[2])
+shard_count = int(sys.argv[3])
+record_index = sys.argv[4]
+completed = []
+if directory.is_dir():
+    for path in directory.iterdir():
+        match = re.fullmatch(r"record-(\d{6})\.json", path.name)
+        if match:
+            completed.append(int(match.group(1)))
+if record_index:
+    print(int(int(record_index) in completed))
+else:
+    print(sum(index % shard_count == shard_index for index in completed))
+PY
+}
+
+COMPLETED_AT_START=$(count_completed_work)
+echo "Completed records for this allocation at start: $COMPLETED_AT_START"
 
 requeue_requested=0
 diagnostic_pid=""
@@ -115,8 +156,7 @@ python -u -m eval_platform diagnose-dev \
   --protocol "$EVAL_PROTOCOL" \
   --lexicon configs/eval_surface_lexicon.json \
   --device cuda \
-  --shard-index "$EVAL_SHARD_INDEX" \
-  --shard-count "$EVAL_SHARDS" &
+  "${selection_args[@]}" &
 diagnostic_pid=$!
 wait "$diagnostic_pid"
 diagnostic_status=$?
@@ -127,6 +167,12 @@ set -e
 trap - USR1
 
 if (( requeue_requested == 1 )); then
+  COMPLETED_NOW=$(count_completed_work)
+  echo "Completed records for this allocation at timeout: $COMPLETED_NOW"
+  if (( COMPLETED_NOW <= COMPLETED_AT_START )); then
+    echo "ERROR: no completed-record progress in this allocation; refusing automatic requeue"
+    exit 2
+  fi
   if (( RESTART_COUNT >= MAX_REQUEUES )); then
     echo "ERROR: diagnostic needs another allocation but MAX_REQUEUES=$MAX_REQUEUES is exhausted"
     exit 2
@@ -135,7 +181,7 @@ if (( requeue_requested == 1 )); then
     echo "ERROR: cannot requeue because the diagnostic manifest was not created"
     exit 2
   }
-  echo "Requeuing Slurm job $SLURM_JOB_ID shard $EVAL_SHARD_INDEX/$EVAL_SHARDS"
+  echo "Requeuing Slurm job $SLURM_JOB_ID after verified record progress"
   scontrol requeue "$SLURM_JOB_ID"
   exit 0
 fi

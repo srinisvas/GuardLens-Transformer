@@ -13,6 +13,8 @@ FREEZE_DIR="${FREEZE_DIR:-$HOME/projects/GuardLens-DataGen-V2/results-naacl/fina
 REPORT_PATH="${REPORT_PATH:-$FREEZE_DIR/data_prep_freeze_report.json}"
 TRAIN_TIME="${TRAIN_TIME:-24:00:00}"
 DIAGNOSTIC_TIME="${DIAGNOSTIC_TIME:-24:00:00}"
+DIAGNOSTIC_SMOKE_TIME="${DIAGNOSTIC_SMOKE_TIME:-01:00:00}"
+DIAGNOSTIC_SMOKE_INDEX="${DIAGNOSTIC_SMOKE_INDEX:-136}"
 EVAL_SHARDS="${EVAL_SHARDS:-4}"
 MAX_REQUEUES="${MAX_REQUEUES:-3}"
 [[ "$EVAL_SHARDS" =~ ^[1-4]$ ]] || {
@@ -23,6 +25,11 @@ MAX_REQUEUES="${MAX_REQUEUES:-3}"
   echo "ERROR: MAX_REQUEUES must be a non-negative integer"
   exit 2
 }
+[[ "$DIAGNOSTIC_SMOKE_INDEX" =~ ^[0-9]+$ ]] || {
+  echo "ERROR: DIAGNOSTIC_SMOKE_INDEX must be a non-negative integer"
+  exit 2
+}
+unset EVAL_RECORD_INDEX EVAL_SHARD_INDEX
 BACKBONE="${BACKBONE:-answerdotai/ModernBERT-large}"
 BACKBONE_REVISION="${BACKBONE_REVISION:-45bb4654a4d5aaff24dd11d4781fa46d39bf8c13}"
 MAX_TURNS="${MAX_TURNS:-64}"
@@ -143,19 +150,34 @@ for index in "${!names[@]}"; do
     diagnostic_dependency=("${dependency[@]}")
     echo "diagnostic shards complete $name: using CPU finalizer directly"
   else
+    diagnostic_smoke_job=$(sbatch --parsable \
+      --time="$DIAGNOSTIC_SMOKE_TIME" \
+      --kill-on-invalid-dep=yes \
+      --output="logs/eval_internal_dev_smoke_%j.out" \
+      --error="logs/eval_internal_dev_smoke_%j.err" \
+      "${dependency[@]}" \
+      --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$train_root/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},EVAL_RECORD_INDEX=$DIAGNOSTIC_SMOKE_INDEX,MAX_REQUEUES=0" \
+      eval_internal_dev.slurm)
+    diagnostic_smoke_job="${diagnostic_smoke_job%%;*}"
+    submitted_jobs+=("$diagnostic_smoke_job")
+
     diagnostic_job=$(sbatch --parsable \
       --time="$DIAGNOSTIC_TIME" \
+      --kill-on-invalid-dep=yes \
+      --output="logs/eval_internal_dev_%A_%a.out" \
+      --error="logs/eval_internal_dev_%A_%a.err" \
       --array="0-$((EVAL_SHARDS - 1))%$EVAL_SHARDS" \
-      "${dependency[@]}" \
+      --dependency="afterok:$diagnostic_smoke_job" \
       --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_CHECKPOINT=$train_root/checkpoints/best.pt,EVAL_OUTPUT=$diagnostic_output,EVAL_PROTOCOL=${protocols[$index]},EVAL_SHARDS=$EVAL_SHARDS,MAX_REQUEUES=$MAX_REQUEUES" \
       eval_internal_dev.slurm)
     diagnostic_job="${diagnostic_job%%;*}"
     submitted_jobs+=("$diagnostic_job")
     diagnostic_dependency=(--dependency="afterok:$diagnostic_job")
-    echo "resume diagnose $name: $diagnostic_job"
+    echo "resume diagnostic gate/array $name: $diagnostic_smoke_job/$diagnostic_job"
   fi
 
   finalize_job=$(sbatch --parsable \
+    --kill-on-invalid-dep=yes \
     "${diagnostic_dependency[@]}" \
     --export="ALL,CONDA_ENV=$CONDA_ENV,EVAL_DATA=$PREPARED_DEV,EVAL_OUTPUT=$diagnostic_output,EVAL_SHARDS=$EVAL_SHARDS" \
     eval_internal_dev_finalize.slurm)
@@ -171,6 +193,7 @@ if (( ${#finalize_jobs[@]} > 0 )); then
   compare_dependency=(--dependency="afterok:$dependency_ids")
 fi
 compare_job=$(sbatch --parsable \
+  --kill-on-invalid-dep=yes \
   "${compare_dependency[@]}" \
   --export="ALL,CONDA_ENV=$CONDA_ENV,MATRIX_ROOT=$MATRIX_ROOT" \
   compare_internal_dev_matrix.slurm)
@@ -181,6 +204,7 @@ trap - ERR INT TERM
 echo "compare matrix: $compare_job"
 echo "matrix root: $MATRIX_ROOT"
 echo "internal diagnostic shards per candidate: $EVAL_SHARDS"
+echo "diagnostic record gate: index $DIAGNOSTIC_SMOKE_INDEX with limit $DIAGNOSTIC_SMOKE_TIME"
 echo "automatic requeues per training/diagnostic job: $MAX_REQUEUES"
 echo "held-out test accessed: NO"
 echo "external evaluation submitted: NO"

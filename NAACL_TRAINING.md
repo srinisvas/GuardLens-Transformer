@@ -971,13 +971,17 @@ Submit the complete internal matrix from the repository root:
 
     bash submit_train_naacl_diagnostic.sh
 
-The checked-in submitter creates four concurrent smoke jobs, four concurrent
-training jobs, four four-way internal-dev GPU diagnostic arrays, four CPU
-finalizers and one CPU comparison job with `afterok` dependencies. The cluster
-schedules at most the GPUs it has, while record sharding prevents idle GPUs
-when one candidate remains. Each diagnostic starts when its matching training
-run completes. It does not open held-out test data and cannot load ShieldGemma
-or a public dataset.
+The checked-in submitter creates four concurrent architecture smoke jobs, four
+concurrent training jobs, four exact-record diagnostic gates, four four-way
+internal-dev GPU diagnostic arrays, four CPU finalizers and one CPU comparison
+job with `afterok` dependencies. Each exact-record gate evaluates zero-based
+record 136 with a one-hour limit and no automatic requeue. Its successful shard
+is reused by the following array. This forces the first known long conversation
+through the real checkpoint and complete retrospective intervention protocol
+before a 24-hour array can start. The cluster schedules at most the GPUs it has,
+while record sharding prevents idle GPUs when one candidate remains. Each
+diagnostic starts when its matching training run completes. It does not open
+held-out test data and cannot load ShieldGemma or a public dataset.
 
 The matched-span random baseline uses a nonrecursive construction. It preserves
 the reference run-length multiset within each user turn and contiguous eligible
@@ -989,7 +993,15 @@ Review `internal_dev_comparison.json` before selecting any candidate. Do not run
 held-out or external evaluation until the architecture, training population and
 internal causal results receive explicit signoff.
 
-Wall-time exhaustion is handled automatically by Slurm requeue. If a job is
+The internal causal-effect estimand uses harmful records. The evaluator still
+constructs and stores every benign intervention plan and original prediction,
+including inputs needed for later replay and baseline localization, but skips
+edited and kept self-guard inference for benign records. Benign detection and
+utility metrics are unchanged.
+
+Wall-time exhaustion is handled by Slurm requeue only when the allocation has
+completed at least one new record. A pre-timeout signal with no completed-record
+progress fails the job instead of repeating the same stall. If a job is
 cancelled manually, encounters a node failure that is not requeued by the
 cluster, or exhausts its configured requeue limit, resubmit only incomplete
 work with:

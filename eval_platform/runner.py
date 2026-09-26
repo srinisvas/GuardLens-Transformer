@@ -21,6 +21,22 @@ def infer(store, name, backend, turns):
     return store.cached("inference", {"backend": name, "turns": turns}, compute)
 
 
+def bind_manifest_report(report, store):
+    """Attach run-contract metadata identically for serial and sharded runs."""
+    report["manifest_id"] = store.manifest_id
+    if "intervention_scoring_labels" in store.manifest:
+        report["intervention_scoring_labels"] = store.manifest[
+            "intervention_scoring_labels"
+        ]
+    if store.manifest.get("stage") == "internal_dev_causal_diagnostic":
+        report.update({
+            "development_only": True,
+            "held_out_test_accessed": False,
+            "selection_use": "architecture_diagnostic_not_paper_result",
+        })
+    return report
+
+
 def intervention_plan(turns, prediction, protocol, lexicon, detector_score=None, llm_prediction=None):
     units = words(turns)
     surface = risk_scores(units, lexicon)
@@ -72,15 +88,31 @@ def intervention_plan(turns, prediction, protocol, lexicon, detector_score=None,
                        "audit": audit_edit(turns, units, selected, changed)}
 
 
-def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_index=None, shard_count=None):
-    sharded = shard_index is not None
-    if sharded and (type(shard_index) is not int or type(shard_count) is not int or
-                    shard_count < 1 or not 0 <= shard_index < shard_count):
+def run(records, detector, guards, protocol, lexicon, store, llm=None,
+        shard_index=None, shard_count=None, record_index=None,
+        score_intervention_labels=None):
+    targeted = record_index is not None
+    sharded = targeted or shard_index is not None
+    if targeted and (shard_index is not None or shard_count is not None):
+        raise ValueError("record index and shard selection are mutually exclusive")
+    if targeted and (type(record_index) is not int or
+                     not 0 <= record_index < len(records)):
+        raise ValueError("invalid record index")
+    if not targeted and sharded and (
+            type(shard_index) is not int or type(shard_count) is not int or
+            shard_count < 1 or not 0 <= shard_index < shard_count):
         raise ValueError("invalid shard index/count")
+    if score_intervention_labels is not None:
+        score_intervention_labels = frozenset(score_intervention_labels)
+        if (not score_intervention_labels or
+                not score_intervention_labels <= {0, 1}):
+            raise ValueError("intervention scoring labels must be a nonempty subset of {0, 1}")
     predictions, interventions = [], []
     completed_count = 0
     for index, r in enumerate(records):
-        if sharded and index % shard_count != shard_index:
+        if targeted and index != record_index:
+            continue
+        if not targeted and sharded and index % shard_count != shard_index:
             continue
         artifact = store.root / "shards" / f"record-{index:06d}.json" if sharded else None
         if artifact is not None and artifact.exists():
@@ -160,6 +192,21 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_ind
                     for name in guards:
                         record_interventions.append({**common, "guard": name, "before": None, "after": None})
                     continue
+                if (score_intervention_labels is not None and
+                        r["label"] not in score_intervention_labels):
+                    for name in guards:
+                        record_interventions.append({
+                            **common,
+                            "guard": name,
+                            "before": before[name].get("probability"),
+                            "after": None,
+                            "kept": None,
+                            "original_result": before[name],
+                            "edited_result": None,
+                            "kept_result": None,
+                            "scoring_skipped": "label_outside_internal_effect_estimand",
+                        })
+                    continue
                 for name, backend in guards.items():
                     namespace = "detector" if backend is detector else name
                     changed = infer(store, namespace, backend, plan["edited"])
@@ -181,12 +228,15 @@ def run(records, detector, guards, protocol, lexicon, store, llm=None, shard_ind
             write_json(store.root / "progress.json", {"completed": index + 1, "total": len(records), "last_id": r["id"]})
         print(f"[{index + 1}/{len(records)}] {r['id']}", flush=True)
     if sharded:
-        print(f"shard {shard_index}/{shard_count} complete: {completed_count} records", flush=True)
+        if targeted:
+            print(f"record {record_index} complete: {completed_count} record", flush=True)
+        else:
+            print(f"shard {shard_index}/{shard_count} complete: {completed_count} records", flush=True)
         return None
     write_json(store.root / "predictions.json", predictions)
     write_json(store.root / "interventions.json", interventions)
     report = summarize(records, predictions, interventions, protocol, detector.threshold, list(guards))
-    report["manifest_id"] = store.manifest_id
+    bind_manifest_report(report, store)
     write_json(store.root / "report.json", report)
     return report
 
@@ -293,7 +343,7 @@ def finalize_shards(records, store, shard_count, recover_legacy=False):
     protocol = store.manifest["protocol"]
     report = summarize(records, predictions, interventions, protocol,
                        store.manifest["detector"]["threshold"], list(store.manifest["guards"]))
-    report["manifest_id"] = store.manifest_id
+    bind_manifest_report(report, store)
     write_json(store.root / "report.json", report)
     return report
 

@@ -73,20 +73,40 @@ def select(units, scores, fraction, eligible, method="rank", seed=0, matched=Non
             if not lengths:
                 continue
             rng.shuffle(lengths)
-            slack = len(block) - sum(lengths)
-            if slack < 0:
+            # Distinct reference runs are separated by at least one eligible,
+            # unselected word. Reserve those internal separators before
+            # randomizing the remaining slack so adjacent sampled runs cannot
+            # merge into a different run-length multiset.
+            internal_separators = len(lengths) - 1
+            free_slack = len(block) - sum(lengths) - internal_separators
+            if free_slack < 0:
                 raise ValueError("matched spans exceed eligible block capacity")
-            # Uniform stars-and-bars composition of slack into len(lengths)+1
-            # gaps. Adjacent spans remain permitted, matching the old contract.
-            bars = sorted(rng.sample(range(slack + len(lengths)), len(lengths)))
-            points = [-1, *bars, slack + len(lengths)]
+            # Uniform stars-and-bars composition of the remaining slack into
+            # leading, internal, and trailing gaps. Each internal gap then gets
+            # its mandatory separator.
+            bars = sorted(rng.sample(
+                range(free_slack + len(lengths)), len(lengths)
+            ))
+            points = [-1, *bars, free_slack + len(lengths)]
             gaps = [points[i + 1] - points[i] - 1 for i in range(len(points) - 1)]
+            for gap_index in range(1, len(gaps) - 1):
+                gaps[gap_index] += 1
             cursor = gaps[0]
             for position, length in enumerate(lengths):
                 result.extend(block[cursor:cursor + length])
                 cursor += length + gaps[position + 1]
         if len(result) != count or len(set(result)) != count:
             raise RuntimeError("span-random construction violated the exact budget")
+        reference_shape = sorted(
+            (block_by_index[run[0]], len(run))
+            for run in contiguous_runs(matched)
+        )
+        result_shape = sorted(
+            (block_by_index[run[0]], len(run))
+            for run in contiguous_runs(result)
+        )
+        if result_shape != reference_shape:
+            raise RuntimeError("span-random construction changed the matched runs")
         return sorted(result)
     if method != "rank":
         raise ValueError("unknown selector")
