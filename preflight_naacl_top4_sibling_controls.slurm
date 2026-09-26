@@ -154,6 +154,24 @@ python -m guardlens.evaluation.eval_length_probe_preflight \
   --input-view "$input_view" \
   --output "$output_dir/length_probe_dev.json"
 
+python - "$PREPARED_DEV" <<'PY'
+import json
+import sys
+from eval_platform.adapters import require_internal_dev_strata, validate_collection
+from eval_platform.contract import file_hash, read_jsonl
+
+path = sys.argv[1]
+manifest = json.load(open(path + ".manifest.json", encoding="utf-8"))
+if manifest.get("source") != "internal" or manifest.get("split") != "dev":
+    raise SystemExit("ERROR: prepared input is not the internal development split")
+if manifest.get("output_sha256") != file_hash(path):
+    raise SystemExit("ERROR: prepared internal dev bytes differ from its manifest")
+records = validate_collection(list(read_jsonl(path)))
+counts = require_internal_dev_strata(records)
+print("Reverified existing internal dev: " + json.dumps(counts, sort_keys=True))
+PY
+
+# Write the reusable completion marker only after every verification succeeds.
 python -m guardlens.data.preflight_marker create \
   --variant "$variant" \
   --train "$train_path" \
@@ -169,23 +187,6 @@ python -m guardlens.data.preflight_marker create \
   --length-report "$output_dir/length_probe_dev.json" \
   --length-auc-ceiling "$LENGTH_AUC_CEILING" \
   --output "$output_dir/marker.json"
-
-python - "$PREPARED_DEV" <<'PY'
-import json
-import sys
-from eval_platform.adapters import require_internal_dev_strata
-from eval_platform.contract import file_hash, read_jsonl, validate_collection
-
-path = sys.argv[1]
-manifest = json.load(open(path + ".manifest.json", encoding="utf-8"))
-if manifest.get("source") != "internal" or manifest.get("split") != "dev":
-    raise SystemExit("ERROR: prepared input is not the internal development split")
-if manifest.get("output_sha256") != file_hash(path):
-    raise SystemExit("ERROR: prepared internal dev bytes differ from its manifest")
-records = validate_collection(list(read_jsonl(path)))
-counts = require_internal_dev_strata(records)
-print("Reverified existing internal dev: " + json.dumps(counts, sort_keys=True))
-PY
 
 echo "Top-4 sibling control preflight complete"
 echo "Prepared internal dev reused byte-for-byte: $PREPARED_DEV"

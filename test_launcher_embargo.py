@@ -344,6 +344,18 @@ class LauncherEmbargoTests(unittest.TestCase):
         self.assertIn("source_identity", preflight)
         self.assertIn("evaluator source/runtime incompatibility", preflight)
         self.assertIn('"dataset_sha256": (manifest.get("dataset_sha256"), file_hash(data))', preflight)
+        self.assertIn(
+            "from eval_platform.adapters import require_internal_dev_strata, validate_collection",
+            preflight,
+        )
+        self.assertNotIn(
+            "from eval_platform.contract import file_hash, read_jsonl, validate_collection",
+            preflight,
+        )
+        self.assertLess(
+            preflight.index('python - "$PREPARED_DEV"'),
+            preflight.index("python -m guardlens.data.preflight_marker create"),
+        )
         launcher = (ROOT / "run_missing_top4_sibling_controls.sh").read_text(
             encoding="utf-8"
         )
